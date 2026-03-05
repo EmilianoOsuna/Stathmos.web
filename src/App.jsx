@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
+import { supabase } from './supabaseClient'
+import Login from './Login'
 
-// ── SUPABASE CONFIG ────────────────────────────────────────
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-
+// ── SUPABASE REST HELPER ───────────────────────────────────
+// Usamos el token de sesión activo para cada request
 async function sbFetch(path, method = 'GET', body = null) {
-  if (!SUPABASE_URL || !SUPABASE_KEY)
-    throw new Error('Configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu .env')
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Sin sesión activa')
+
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+  const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
   const opts = {
     method,
     headers: {
       apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       Prefer: method === 'POST' || method === 'PATCH' ? 'return=representation' : '',
     },
@@ -39,7 +44,7 @@ const BADGE = {
   Cerrado:    'bg-neutral-500/15 text-neutral-500 border border-neutral-500/30',
 }
 
-// ── ICONS (inline SVG) ────────────────────────────────────
+// ── ICONS ─────────────────────────────────────────────────
 const Icons = {
   users:   () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   clip:    () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>,
@@ -53,9 +58,9 @@ const Icons = {
   check:   () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>,
   warn:    () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   spin:    () => <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>,
+  logout:  () => <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
 }
 
-// ── SHARED INPUT CLASS ─────────────────────────────────────
 const inputCls = "w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-neutral-100 text-sm focus:outline-none focus:border-amber-500 placeholder-neutral-600 transition-colors"
 
 // ── BUTTONS ───────────────────────────────────────────────
@@ -92,7 +97,6 @@ function Modal({ open, title, onClose, footer, children }) {
   )
 }
 
-// ── FORM FIELD ────────────────────────────────────────────
 function Field({ label, children }) {
   return (
     <div className="mb-4">
@@ -102,7 +106,6 @@ function Field({ label, children }) {
   )
 }
 
-// ── EMPTY STATE ───────────────────────────────────────────
 function Empty({ Icon, text }) {
   return (
     <tr><td colSpan={99}>
@@ -113,7 +116,6 @@ function Empty({ Icon, text }) {
   )
 }
 
-// ── CONFIRM MODAL ─────────────────────────────────────────
 function ConfirmModal({ confirm, onClose }) {
   return (
     <Modal open={!!confirm} title="Confirmar eliminación" onClose={onClose}
@@ -186,7 +188,6 @@ function ClientesPage({ notify }) {
         </div>
         <BtnPrimary onClick={openNew}><Icons.plus /> Nuevo Cliente</BtnPrimary>
       </div>
-
       <div className="flex gap-3 mb-5">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><Icons.search /></span>
@@ -194,7 +195,6 @@ function ClientesPage({ notify }) {
         </div>
         <BtnSecondary onClick={load}>{loading ? <Icons.spin /> : <Icons.refresh />} Recargar</BtnSecondary>
       </div>
-
       <div className="bg-neutral-900 border border-neutral-800 rounded overflow-hidden">
         <table className="w-full border-collapse">
           <thead className="bg-neutral-800/60">
@@ -203,7 +203,7 @@ function ClientesPage({ notify }) {
             )}</tr>
           </thead>
           <tbody>
-            {loading        ? <Empty Icon={Icons.spin}  text="Cargando…" /> :
+            {loading          ? <Empty Icon={Icons.spin}  text="Cargando…" /> :
              !filtered.length ? <Empty Icon={Icons.users} text="No hay clientes registrados" /> :
              filtered.map((c, i) => (
               <tr key={c.id} className="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/40 transition-colors">
@@ -223,7 +223,6 @@ function ClientesPage({ notify }) {
           </tbody>
         </table>
       </div>
-
       <Modal open={modal} title={form.id ? 'Editar Cliente' : 'Nuevo Cliente'} onClose={() => setModal(false)}
         footer={<><BtnSecondary onClick={() => setModal(false)}>Cancelar</BtnSecondary><BtnPrimary onClick={save}>Guardar</BtnPrimary></>}>
         <Field label="Nombre completo *">
@@ -238,7 +237,6 @@ function ClientesPage({ notify }) {
           </Field>
         </div>
       </Modal>
-
       <ConfirmModal confirm={confirm} onClose={() => setConfirm(null)} />
     </>
   )
@@ -314,7 +312,6 @@ function ProyectosPage({ notify }) {
         </div>
         <BtnPrimary onClick={openNew}><Icons.plus /> Nuevo Proyecto</BtnPrimary>
       </div>
-
       <div className="flex gap-3 mb-5">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><Icons.search /></span>
@@ -326,7 +323,6 @@ function ProyectosPage({ notify }) {
         </select>
         <BtnSecondary onClick={load}>{loading ? <Icons.spin /> : <Icons.refresh />} Recargar</BtnSecondary>
       </div>
-
       <div className="bg-neutral-900 border border-neutral-800 rounded overflow-hidden">
         <table className="w-full border-collapse">
           <thead className="bg-neutral-800/60">
@@ -335,7 +331,7 @@ function ProyectosPage({ notify }) {
             )}</tr>
           </thead>
           <tbody>
-            {loading         ? <Empty Icon={Icons.spin} text="Cargando…" /> :
+            {loading          ? <Empty Icon={Icons.spin} text="Cargando…" /> :
              !filtered.length ? <Empty Icon={Icons.clip} text="No hay proyectos registrados" /> :
              filtered.map((p, i) => (
               <tr key={p.id} className="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/40 transition-colors">
@@ -360,7 +356,6 @@ function ProyectosPage({ notify }) {
           </tbody>
         </table>
       </div>
-
       <Modal open={modal} title={form.id ? 'Editar Proyecto' : 'Nuevo Proyecto'} onClose={() => setModal(false)}
         footer={<><BtnSecondary onClick={() => setModal(false)}>Cancelar</BtnSecondary><BtnPrimary onClick={save}>Guardar</BtnPrimary></>}>
         <Field label="Título del proyecto *">
@@ -386,7 +381,6 @@ function ProyectosPage({ notify }) {
           <textarea className={inputCls} rows={3} placeholder="Descripción del servicio o diagnóstico inicial…" value={form.descripcion} onChange={e => setF('descripcion', e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
       </Modal>
-
       <ConfirmModal confirm={confirm} onClose={() => setConfirm(null)} />
     </>
   )
@@ -402,7 +396,7 @@ function ConfigPage() {
       </div>
       <div className="bg-neutral-900 border border-neutral-800 border-l-2 border-l-amber-500 rounded p-5 mb-6">
         <p className="text-neutral-400 text-sm leading-relaxed mb-4">
-          Configura las variables en tu <code className="text-amber-400 font-mono">.env</code> (local) y en <strong className="text-neutral-200">Vercel → Settings → Environment Variables</strong>:
+          Variables requeridas en <code className="text-amber-400 font-mono">.env</code> y en <strong className="text-neutral-200">Vercel → Settings → Environment Variables</strong>:
         </p>
         <pre className="bg-neutral-800 border border-neutral-700 rounded p-4 font-mono text-sm text-neutral-300 leading-relaxed overflow-x-auto">{`VITE_SUPABASE_URL=https://xxxx.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiI...`}</pre>
       </div>
@@ -424,16 +418,44 @@ function ConfigPage() {
 
 // ── APP ROOT ──────────────────────────────────────────────
 export default function App() {
-  const [page, setPage]   = useState('clientes')
-  const [notif, setNotif] = useState(null)
+  const [session, setSession] = useState(undefined) // undefined = cargando, null = no autenticado
+  const [page, setPage]       = useState('clientes')
+  const [notif, setNotif]     = useState(null)
+
+  // Escucha cambios de sesión (login / logout / refresh de token)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const notify = useCallback((msg, err = false) => {
     setNotif({ msg, err })
     setTimeout(() => setNotif(null), 3500)
   }, [])
 
-  const connected = !!SUPABASE_URL && !!SUPABASE_KEY
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    // onAuthStateChange se encarga de setSession(null) automáticamente
+  }
 
+  // Pantalla de carga inicial mientras Supabase verifica la sesión
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-neutral-500 font-mono text-sm">
+          <Icons.spin /> Cargando…
+        </div>
+      </div>
+    )
+  }
+
+  // Si no hay sesión, muestra el login
+  if (!session) return <Login />
+
+  // Sesión activa → muestra la app
   const navItems = [
     { id: 'clientes',  label: 'Clientes',  Icon: Icons.users },
     { id: 'proyectos', label: 'Proyectos', Icon: Icons.clip  },
@@ -448,11 +470,12 @@ export default function App() {
         <div className="font-black text-2xl uppercase tracking-widest text-amber-500">
           Stathmos <span className="text-neutral-500 font-normal text-sm tracking-widest">// Gestión de Taller</span>
         </div>
-        <div className="flex items-center gap-2 font-mono text-xs">
-          <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${connected ? 'bg-emerald-400' : 'bg-red-500'}`} />
-          <span className={connected ? 'text-emerald-400' : 'text-red-400'}>
-            {connected ? 'ENV CONFIGURADO' : 'SIN CONFIGURAR'}
-          </span>
+        <div className="flex items-center gap-4">
+          <span className="font-mono text-xs text-neutral-500 hidden sm:block">{session.user.email}</span>
+          <button onClick={handleLogout}
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 border border-neutral-700 text-xs font-bold uppercase tracking-wide rounded transition-colors cursor-pointer">
+            <Icons.logout /> Salir
+          </button>
         </div>
       </header>
 
