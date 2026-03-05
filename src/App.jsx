@@ -36,12 +36,17 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Adaptado a los valores del CHECK(estado) de tu tabla proyectos
 const BADGE = {
-  Activo:     'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
-  Pendiente:  'bg-amber-500/15 text-amber-400 border border-amber-500/30',
-  Finalizado: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
-  Cerrado:    'bg-neutral-500/15 text-neutral-500 border border-neutral-500/30',
+  activo:              'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
+  en_progreso:         'bg-blue-500/15 text-blue-400 border border-blue-500/30',
+  pendiente_refaccion: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+  terminado:           'bg-purple-500/15 text-purple-400 border border-purple-500/30',
+  entregado:           'bg-neutral-500/15 text-neutral-400 border border-neutral-500/30',
+  cancelado:           'bg-red-500/15 text-red-400 border border-red-500/30',
 }
+
+const ESTADOS_PROYECTO = ['activo', 'en_progreso', 'pendiente_refaccion', 'terminado', 'entregado', 'cancelado']
 
 // ── ICONS ─────────────────────────────────────────────────
 const Icons = {
@@ -64,12 +69,12 @@ const Icons = {
 const inputCls = "w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-neutral-100 text-sm focus:outline-none focus:border-amber-500 placeholder-neutral-600 transition-colors"
 
 // ── BUTTONS ───────────────────────────────────────────────
-const BtnPrimary   = ({ children, className = '', ...p }) => <button {...p} className={`inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm uppercase tracking-wide rounded transition-colors cursor-pointer ${className}`}>{children}</button>
+const BtnPrimary   = ({ children, className = '', ...p }) => <button {...p} className={`inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm uppercase tracking-wide rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${className}`}>{children}</button>
 const BtnSecondary = ({ children, className = '', ...p }) => <button {...p} className={`inline-flex items-center justify-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-neutral-100 border border-neutral-700 font-bold text-sm uppercase tracking-wide rounded transition-colors cursor-pointer ${className}`}>{children}</button>
 const BtnDanger    = ({ children, className = '', ...p }) => <button {...p} className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-transparent hover:bg-red-500 text-red-500 hover:text-white border border-red-500 font-bold text-xs uppercase tracking-wide rounded transition-colors cursor-pointer ${className}`}>{children}</button>
 const BtnIcon      = ({ children, className = '', ...p }) => <button {...p} className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 border border-neutral-700 text-xs rounded transition-colors cursor-pointer ${className}`}>{children}</button>
 
-// ── NOTIFICATION ──────────────────────────────────────────
+// ── NOTIFICATION & MODAL ──────────────────────────────────
 function Notification({ notif }) {
   if (!notif) return null
   return (
@@ -80,7 +85,6 @@ function Notification({ notif }) {
   )
 }
 
-// ── MODAL ─────────────────────────────────────────────────
 function Modal({ open, title, onClose, footer, children }) {
   if (!open) return null
   return (
@@ -131,14 +135,13 @@ function ConfirmModal({ confirm, onClose }) {
 //  CLIENTES PAGE
 // ══════════════════════════════════════════════════════════
 function ClientesPage({ notify }) {
-  // ... (El estado y funciones lógicas se mantienen igual)
   const [rows, setRows]         = useState([])
   const [filtered, setFiltered] = useState([])
   const [loading, setLoading]   = useState(false)
   const [search, setSearch]     = useState('')
   const [modal, setModal]       = useState(false)
   const [confirm, setConfirm]   = useState(null)
-  const [form, setForm]         = useState({ id: '', nombre: '', telefono: '', correo: '' })
+  const [form, setForm]         = useState({ id: '', nombre: '', telefono: '', correo: '', direccion: '' })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -161,12 +164,12 @@ function ClientesPage({ notify }) {
   }, [search, rows])
 
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }))
-  function openNew()   { setForm({ id: '', nombre: '', telefono: '', correo: '' }); setModal(true) }
-  function openEdit(c) { setForm({ id: c.id, nombre: c.nombre||'', telefono: c.telefono||'', correo: c.correo||'' }); setModal(true) }
+  function openNew()   { setForm({ id: '', nombre: '', telefono: '', correo: '', direccion: '' }); setModal(true) }
+  function openEdit(c) { setForm({ id: c.id, nombre: c.nombre||'', telefono: c.telefono||'', correo: c.correo||'', direccion: c.direccion||'' }); setModal(true) }
 
   async function save() {
-    if (!form.nombre || !form.telefono || !form.correo) return notify('Completa todos los campos', true)
-    const payload = { nombre: form.nombre, telefono: form.telefono, correo: form.correo }
+    if (!form.nombre || !form.telefono) return notify('Nombre y teléfono son obligatorios', true)
+    const payload = { nombre: form.nombre, telefono: form.telefono, correo: form.correo, direccion: form.direccion }
     try {
       form.id ? await sbFetch(`clientes?id=eq.${form.id}`, 'PATCH', payload)
               : await sbFetch('clientes', 'POST', payload)
@@ -184,7 +187,6 @@ function ClientesPage({ notify }) {
     <>
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7">
         <div>
-          <p className="font-mono text-xs text-neutral-600 tracking-widest mb-1">// RF-001 · RF-004</p>
           <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-neutral-100">Gestión de Clientes</h1>
         </div>
         <BtnPrimary onClick={openNew} className="w-full sm:w-auto"><Icons.plus /> Nuevo Cliente</BtnPrimary>
@@ -199,16 +201,15 @@ function ClientesPage({ notify }) {
       <div className="bg-neutral-900 border border-neutral-800 rounded overflow-x-auto">
         <table className="w-full border-collapse min-w-[600px]">
           <thead className="bg-neutral-800/60">
-            <tr>{['#','Nombre','Teléfono','Correo','Registrado','Acciones'].map(h =>
+            <tr>{['Nombre','Teléfono','Correo','Registrado','Acciones'].map(h =>
               <th key={h} className="px-4 py-3 text-left font-mono text-[0.65rem] text-neutral-500 uppercase tracking-widest border-b border-neutral-800 whitespace-nowrap">{h}</th>
             )}</tr>
           </thead>
           <tbody>
             {loading          ? <Empty Icon={Icons.spin}  text="Cargando…" /> :
              !filtered.length ? <Empty Icon={Icons.users} text="No hay clientes registrados" /> :
-             filtered.map((c, i) => (
+             filtered.map((c) => (
               <tr key={c.id} className="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/40 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-neutral-600">{i + 1}</td>
                 <td className="px-4 py-3 font-medium text-neutral-100 whitespace-nowrap">{c.nombre}</td>
                 <td className="px-4 py-3 text-sm text-neutral-400 whitespace-nowrap">{c.telefono || '—'}</td>
                 <td className="px-4 py-3 text-sm text-neutral-400">{c.correo || '—'}</td>
@@ -233,10 +234,13 @@ function ClientesPage({ notify }) {
           <Field label="Teléfono *">
             <input className={inputCls} placeholder="Ej. 3111234567" value={form.telefono} onChange={e => setF('telefono', e.target.value)} />
           </Field>
-          <Field label="Correo electrónico *">
+          <Field label="Correo electrónico">
             <input className={inputCls} type="email" placeholder="correo@ejemplo.com" value={form.correo} onChange={e => setF('correo', e.target.value)} />
           </Field>
         </div>
+        <Field label="Dirección">
+          <input className={inputCls} placeholder="Calle, Número, Colonia..." value={form.direccion} onChange={e => setF('direccion', e.target.value)} />
+        </Field>
       </Modal>
       <ConfirmModal confirm={confirm} onClose={() => setConfirm(null)} />
     </>
@@ -244,29 +248,36 @@ function ClientesPage({ notify }) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  PROYECTOS PAGE
+//  PROYECTOS PAGE (ACTUALIZADO AL ESQUEMA REAL)
 // ══════════════════════════════════════════════════════════
 function ProyectosPage({ notify }) {
-  // ... (El estado y funciones lógicas se mantienen igual)
   const [rows, setRows]           = useState([])
   const [clientes, setClientes]   = useState([])
+  const [vehiculos, setVehiculos] = useState([])
+  const [empleados, setEmpleados] = useState([])
+  
   const [filtered, setFiltered]   = useState([])
   const [loading, setLoading]     = useState(false)
   const [search, setSearch]       = useState('')
   const [estFilter, setEstFilter] = useState('')
   const [modal, setModal]         = useState(false)
   const [confirm, setConfirm]     = useState(null)
-  const [form, setForm]           = useState({ id: '', titulo: '', cliente_id: '', mecanico: '', estado: 'Activo', descripcion: '' })
+  
+  // Ahora incluye vehiculo_id y mecanico_id (llaves foráneas)
+  const [form, setForm]           = useState({ id: '', titulo: '', cliente_id: '', vehiculo_id: '', mecanico_id: '', estado: 'activo', descripcion: '' })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [p, c] = await Promise.all([
+      // Cargamos todas las relaciones necesarias
+      const [p, c, v, e] = await Promise.all([
         sbFetch('proyectos?order=created_at.desc'),
         sbFetch('clientes?select=id,nombre&order=nombre'),
+        sbFetch('vehiculos?select=id,marca,modelo,placas,cliente_id'),
+        sbFetch('empleados?select=id,nombre&order=nombre')
       ])
-      setRows(p || []); setClientes(c || []); setFiltered(p || [])
-    } catch (e) { notify(e.message, true) }
+      setRows(p || []); setClientes(c || []); setVehiculos(v || []); setEmpleados(e || []); setFiltered(p || [])
+    } catch (err) { notify(err.message, true) }
     finally { setLoading(false) }
   }, [notify])
 
@@ -275,23 +286,51 @@ function ProyectosPage({ notify }) {
   useEffect(() => {
     const q = search.toLowerCase()
     const getN = id => (clientes.find(c => String(c.id) === String(id))?.nombre || '').toLowerCase()
+    const getV = id => {
+        const v = vehiculos.find(v => String(v.id) === String(id))
+        return v ? `${v.marca} ${v.modelo} ${v.placas}`.toLowerCase() : ''
+    }
+    
     let f = rows.filter(p =>
       (p.titulo || '').toLowerCase().includes(q) ||
       getN(p.cliente_id).includes(q) ||
-      (p.mecanico || '').toLowerCase().includes(q)
+      getV(p.vehiculo_id).includes(q)
     )
     if (estFilter) f = f.filter(p => p.estado === estFilter)
     setFiltered(f)
-  }, [search, estFilter, rows, clientes])
+  }, [search, estFilter, rows, clientes, vehiculos])
 
   const clienteNombre = id => clientes.find(c => String(c.id) === String(id))?.nombre || '—'
-  const setF = (k, v) => setForm(p => ({ ...p, [k]: v }))
-  function openNew()   { setForm({ id: '', titulo: '', cliente_id: '', mecanico: '', estado: 'Activo', descripcion: '' }); setModal(true) }
-  function openEdit(p) { setForm({ id: p.id, titulo: p.titulo||'', cliente_id: p.cliente_id||'', mecanico: p.mecanico||'', estado: p.estado||'Activo', descripcion: p.descripcion||'' }); setModal(true) }
+  const empleadoNombre = id => empleados.find(e => String(e.id) === String(id))?.nombre || '—'
+  const vehiculoInfo = id => {
+      const v = vehiculos.find(v => String(v.id) === String(id))
+      return v ? `${v.marca} ${v.modelo} (${v.placas})` : '—'
+  }
+
+  const setF = (k, v) => {
+    setForm(p => {
+      const next = { ...p, [k]: v }
+      // Si cambian de cliente, resetear el vehículo seleccionado porque ya no le pertenece
+      if (k === 'cliente_id') next.vehiculo_id = ''
+      return next
+    })
+  }
+
+  function openNew()   { setForm({ id: '', titulo: '', cliente_id: '', vehiculo_id: '', mecanico_id: '', estado: 'activo', descripcion: '' }); setModal(true) }
+  function openEdit(p) { setForm({ id: p.id, titulo: p.titulo||'', cliente_id: p.cliente_id||'', vehiculo_id: p.vehiculo_id||'', mecanico_id: p.mecanico_id||'', estado: p.estado||'activo', descripcion: p.descripcion||'' }); setModal(true) }
 
   async function save() {
-    if (!form.titulo || !form.cliente_id || !form.mecanico) return notify('Completa todos los campos obligatorios', true)
-    const payload = { titulo: form.titulo, cliente_id: form.cliente_id, mecanico: form.mecanico, estado: form.estado, descripcion: form.descripcion }
+    if (!form.titulo || !form.cliente_id || !form.vehiculo_id) return notify('Título, cliente y vehículo son obligatorios', true)
+    
+    const payload = { 
+        titulo: form.titulo, 
+        cliente_id: form.cliente_id, 
+        vehiculo_id: form.vehiculo_id,
+        mecanico_id: form.mecanico_id || null, // Puede ser null
+        estado: form.estado, 
+        descripcion: form.descripcion 
+    }
+    
     try {
       form.id ? await sbFetch(`proyectos?id=eq.${form.id}`, 'PATCH', payload)
               : await sbFetch('proyectos', 'POST', payload)
@@ -305,11 +344,13 @@ function ProyectosPage({ notify }) {
     catch (e) { notify(e.message, true) }
   }
 
+  // Filtrar vehículos disponibles para el cliente seleccionado
+  const vehiculosDelCliente = vehiculos.filter(v => String(v.cliente_id) === String(form.cliente_id))
+
   return (
     <>
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7">
         <div>
-          <p className="font-mono text-xs text-neutral-600 tracking-widest mb-1">// RF-027 · RF-007</p>
           <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-neutral-100">Gestión de Proyectos</h1>
         </div>
         <BtnPrimary onClick={openNew} className="w-full sm:w-auto"><Icons.plus /> Nuevo Proyecto</BtnPrimary>
@@ -317,33 +358,33 @@ function ProyectosPage({ notify }) {
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"><Icons.search /></span>
-          <input className={`${inputCls} pl-9`} placeholder="Buscar por título, cliente o mecánico…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className={`${inputCls} pl-9`} placeholder="Buscar por título, cliente o vehículo…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className={`${inputCls} w-full sm:w-44`} value={estFilter} onChange={e => setEstFilter(e.target.value)}>
+        <select className={`${inputCls} w-full sm:w-48`} value={estFilter} onChange={e => setEstFilter(e.target.value)}>
           <option value="">Todos los estados</option>
-          {['Activo','Pendiente','Finalizado','Cerrado'].map(e => <option key={e} value={e}>{e}</option>)}
+          {ESTADOS_PROYECTO.map(e => <option key={e} value={e}>{e.replace('_', ' ')}</option>)}
         </select>
         <BtnSecondary onClick={load} className="w-full sm:w-auto">{loading ? <Icons.spin /> : <Icons.refresh />} Recargar</BtnSecondary>
       </div>
       <div className="bg-neutral-900 border border-neutral-800 rounded overflow-x-auto">
-        <table className="w-full border-collapse min-w-[700px]">
+        <table className="w-full border-collapse min-w-[900px]">
           <thead className="bg-neutral-800/60">
-            <tr>{['#','Título','Cliente','Mecánico','Estado','Fecha','Acciones'].map(h =>
+            <tr>{['Título','Cliente','Vehículo', 'Mecánico', 'Estado','Fecha','Acciones'].map(h =>
               <th key={h} className="px-4 py-3 text-left font-mono text-[0.65rem] text-neutral-500 uppercase tracking-widest border-b border-neutral-800 whitespace-nowrap">{h}</th>
             )}</tr>
           </thead>
           <tbody>
             {loading          ? <Empty Icon={Icons.spin} text="Cargando…" /> :
              !filtered.length ? <Empty Icon={Icons.clip} text="No hay proyectos registrados" /> :
-             filtered.map((p, i) => (
+             filtered.map((p) => (
               <tr key={p.id} className="border-b border-neutral-800 last:border-0 hover:bg-neutral-800/40 transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-neutral-600">{i + 1}</td>
                 <td className="px-4 py-3 font-medium text-neutral-100 whitespace-nowrap">{p.titulo}</td>
                 <td className="px-4 py-3 text-sm text-neutral-400 whitespace-nowrap">{clienteNombre(p.cliente_id)}</td>
-                <td className="px-4 py-3 text-sm text-neutral-400 whitespace-nowrap">{p.mecanico || '—'}</td>
+                <td className="px-4 py-3 text-sm text-neutral-400 whitespace-nowrap">{vehiculoInfo(p.vehiculo_id)}</td>
+                <td className="px-4 py-3 text-sm text-neutral-400 whitespace-nowrap">{empleadoNombre(p.mecanico_id)}</td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-mono font-medium uppercase tracking-wide ${BADGE[p.estado] || BADGE.Cerrado}`}>
-                    {p.estado || '—'}
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-mono font-medium uppercase tracking-wide ${BADGE[p.estado] || BADGE.cancelado}`}>
+                    {(p.estado || '—').replace('_', ' ')}
                   </span>
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-neutral-600 whitespace-nowrap">{fmtDate(p.created_at)}</td>
@@ -358,27 +399,47 @@ function ProyectosPage({ notify }) {
           </tbody>
         </table>
       </div>
+      
       <Modal open={modal} title={form.id ? 'Editar Proyecto' : 'Nuevo Proyecto'} onClose={() => setModal(false)}
         footer={<><BtnSecondary onClick={() => setModal(false)} className="w-full sm:w-auto">Cancelar</BtnSecondary><BtnPrimary onClick={save} className="w-full sm:w-auto">Guardar</BtnPrimary></>}>
         <Field label="Título del proyecto *">
-          <input className={inputCls} placeholder="Ej. Reparación motor Honda Civic 2020" value={form.titulo} onChange={e => setF('titulo', e.target.value)} />
+          <input className={inputCls} placeholder="Ej. Reparación de frenos" value={form.titulo} onChange={e => setF('titulo', e.target.value)} />
         </Field>
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Cliente *">
             <select className={inputCls} value={form.cliente_id} onChange={e => setF('cliente_id', e.target.value)}>
-              <option value="">— Seleccionar —</option>
+              <option value="">— Seleccionar Cliente —</option>
               {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </Field>
-          <Field label="Mecánico asignado *">
-            <input className={inputCls} placeholder="Nombre del mecánico" value={form.mecanico} onChange={e => setF('mecanico', e.target.value)} />
+          
+          <Field label="Vehículo *">
+            <select className={inputCls} value={form.vehiculo_id} onChange={e => setF('vehiculo_id', e.target.value)} disabled={!form.cliente_id}>
+              <option value="">— Seleccionar Vehículo —</option>
+              {vehiculosDelCliente.map(v => <option key={v.id} value={v.id}>{v.marca} {v.modelo} ({v.placas})</option>)}
+            </select>
+            {form.cliente_id && vehiculosDelCliente.length === 0 && (
+                <p className="text-red-400 text-xs mt-1">Este cliente no tiene vehículos registrados.</p>
+            )}
           </Field>
         </div>
-        <Field label="Estado">
-          <select className={inputCls} value={form.estado} onChange={e => setF('estado', e.target.value)}>
-            {['Activo','Pendiente','Finalizado','Cerrado'].map(e => <option key={e} value={e}>{e}</option>)}
-          </select>
-        </Field>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Mecánico asignado">
+                <select className={inputCls} value={form.mecanico_id} onChange={e => setF('mecanico_id', e.target.value)}>
+                <option value="">— Sin Asignar —</option>
+                {empleados.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                </select>
+            </Field>
+
+            <Field label="Estado del proyecto">
+            <select className={inputCls} value={form.estado} onChange={e => setF('estado', e.target.value)}>
+                {ESTADOS_PROYECTO.map(e => <option key={e} value={e}>{e.replace('_', ' ').toUpperCase()}</option>)}
+            </select>
+            </Field>
+        </div>
+
         <Field label="Descripción / Diagnóstico">
           <textarea className={inputCls} rows={3} placeholder="Descripción del servicio o diagnóstico inicial…" value={form.descripcion} onChange={e => setF('descripcion', e.target.value)} style={{ resize: 'vertical' }} />
         </Field>
@@ -388,48 +449,32 @@ function ProyectosPage({ notify }) {
   )
 }
 
-// ── CONFIG PAGE ───────────────────────────────────────────
+// ── APP ROOT & MENU (Mismo que el anterior pero con ConfigPage simplificada) ──
 function ConfigPage() {
-  return (
-    <>
-      <div className="mb-7">
-        <p className="font-mono text-xs text-neutral-600 tracking-widest mb-1">// sistema</p>
-        <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-neutral-100">Conexión Supabase</h1>
-      </div>
-      <div className="bg-neutral-900 border border-neutral-800 border-l-2 border-l-amber-500 rounded p-5 mb-6">
-        <p className="text-neutral-400 text-sm leading-relaxed mb-4">
-          Variables requeridas en <code className="text-amber-400 font-mono break-all">.env</code> y en <strong className="text-neutral-200">Vercel → Settings → Environment Variables</strong>:
-        </p>
-        <pre className="bg-neutral-800 border border-neutral-700 rounded p-4 font-mono text-xs sm:text-sm text-neutral-300 leading-relaxed overflow-x-auto">{`VITE_SUPABASE_URL=https://xxxx.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiI...`}</pre>
-      </div>
-      <p className="text-neutral-500 text-sm font-medium mb-3">Estructura esperada en Supabase:</p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[
-          { name: 'clientes',  fields: ['id (uuid / serial)', 'nombre (text)', 'telefono (text)', 'correo (text, unique)', 'created_at (timestamp)'] },
-          { name: 'proyectos', fields: ['id (uuid / serial)', 'titulo (text)', 'cliente_id (fk → clientes)', 'mecanico (text)', 'estado (text)', 'descripcion (text)', 'created_at (timestamp)'] },
-        ].map(t => (
-          <div key={t.name} className="bg-neutral-900 border border-neutral-800 rounded p-4 overflow-x-auto">
-            <p className="font-mono text-xs text-amber-500 tracking-widest mb-3">TABLE: {t.name}</p>
-            <div className="font-mono text-xs text-neutral-400 leading-7 whitespace-nowrap">{t.fields.map(f => <div key={f}>{f}</div>)}</div>
-          </div>
-        ))}
-      </div>
-    </>
-  )
-}
+    return (
+      <>
+        <div className="mb-7">
+          <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-neutral-100">Conexión Supabase</h1>
+        </div>
+        <div className="bg-neutral-900 border border-neutral-800 border-l-2 border-l-amber-500 rounded p-5 mb-6">
+          <p className="text-neutral-400 text-sm leading-relaxed mb-4">
+            Asegúrate de tener tus políticas de RLS (Row Level Security) configuradas o desactivadas para desarrollo.
+          </p>
+          <pre className="bg-neutral-800 border border-neutral-700 rounded p-4 font-mono text-xs sm:text-sm text-neutral-300 leading-relaxed overflow-x-auto">{`VITE_SUPABASE_URL=https://xxxx.supabase.co\nVITE_SUPABASE_ANON_KEY=eyJhbGci...`}</pre>
+        </div>
+      </>
+    )
+  }
 
-// ── APP ROOT ──────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [page, setPage]       = useState('clientes')
   const [notif, setNotif]     = useState(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false) // Nuevo estado para menú móvil
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
 
@@ -438,16 +483,12 @@ export default function App() {
     setTimeout(() => setNotif(null), 3500)
   }, [])
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-  }
+  async function handleLogout() { await supabase.auth.signOut() }
 
   if (session === undefined) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-neutral-500 font-mono text-sm">
-          <Icons.spin /> Cargando…
-        </div>
+        <div className="flex items-center gap-3 text-neutral-500 font-mono text-sm"><Icons.spin /> Cargando…</div>
       </div>
     )
   }
@@ -461,83 +502,47 @@ export default function App() {
 
   const changePage = (id) => {
     setPage(id);
-    setMobileMenuOpen(false); // Cierra el menú al navegar en celular
+    setMobileMenuOpen(false);
   }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-neutral-950 text-neutral-100 overflow-hidden">
       <Notification notif={notif} />
-
-      {/* HEADER */}
       <header className="flex items-center justify-between px-4 sm:px-6 h-14 bg-neutral-900 border-b-2 border-amber-500 shrink-0 relative z-20">
         <div className="flex items-center gap-3">
-          {/* Botón de Hamburguesa solo en móvil */}
-          <button 
-            className="md:hidden text-neutral-400 hover:text-white transition-colors"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
+          <button className="md:hidden text-neutral-400 hover:text-white transition-colors" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
             {mobileMenuOpen ? <Icons.x /> : <Icons.menu />}
           </button>
-          
           <div className="font-black text-xl sm:text-2xl uppercase tracking-widest text-amber-500 truncate">
             Stathmos <span className="hidden sm:inline text-neutral-500 font-normal text-sm tracking-widest">// Gestión de Taller</span>
           </div>
         </div>
-        
         <div className="flex items-center gap-4">
           <span className="font-mono text-xs text-neutral-500 hidden md:block">{session.user.email}</span>
-          <button onClick={handleLogout}
-            className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 border border-neutral-700 text-xs font-bold uppercase tracking-wide rounded transition-colors cursor-pointer">
+          <button onClick={handleLogout} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 border border-neutral-700 text-xs font-bold uppercase rounded transition-colors">
             <Icons.logout /> <span className="hidden sm:inline">Salir</span>
           </button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* SIDEBAR (Responsive) */}
-        {/* En móvil: Panel absoluto que se desliza. En desktop: Panel lateral fijo */}
-        <nav className={`
-          absolute md:static inset-y-0 left-0 z-10 
-          w-64 md:w-52 bg-neutral-900 border-r border-neutral-800 py-5 shrink-0 
-          transform transition-transform duration-300 ease-in-out
-          ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
-        `}>
-          <div className="md:hidden px-5 mb-4 font-mono text-xs text-neutral-400 break-all">
-            {session.user.email}
-          </div>
-          
+        <nav className={`absolute md:static inset-y-0 left-0 z-10 w-64 md:w-52 bg-neutral-900 border-r border-neutral-800 py-5 shrink-0 transform transition-transform duration-300 ease-in-out ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+          <div className="md:hidden px-5 mb-4 font-mono text-xs text-neutral-400 break-all">{session.user.email}</div>
           <p className="px-4 mb-1 font-mono text-[0.6rem] text-neutral-600 uppercase tracking-widest">Módulos</p>
           {navItems.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => changePage(id)}
-              className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer border-l-[3px] ${
-                page === id
-                  ? 'bg-neutral-800 text-amber-500 border-l-amber-500'
-                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border-l-transparent'
-              }`}>
+            <button key={id} onClick={() => changePage(id)} className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors border-l-[3px] ${page === id ? 'bg-neutral-800 text-amber-500 border-l-amber-500' : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border-l-transparent'}`}>
               <Icon /> {label}
             </button>
           ))}
           <div className="mx-4 my-3 h-px bg-neutral-800" />
           <p className="px-4 mb-1 font-mono text-[0.6rem] text-neutral-600 uppercase tracking-widest">Config</p>
-          <button onClick={() => changePage('config')}
-            className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer border-l-[3px] ${
-              page === 'config'
-                ? 'bg-neutral-800 text-amber-500 border-l-amber-500'
-                : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border-l-transparent'
-            }`}>
+          <button onClick={() => changePage('config')} className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors border-l-[3px] ${page === 'config' ? 'bg-neutral-800 text-amber-500 border-l-amber-500' : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border-l-transparent'}`}>
             <Icons.plug /> Conexión BD
           </button>
         </nav>
 
-        {/* Overlay oscuro para cerrar el menú en móvil */}
-        {mobileMenuOpen && (
-          <div 
-            className="absolute inset-0 bg-black/50 z-0 md:hidden"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-        )}
+        {mobileMenuOpen && <div className="absolute inset-0 bg-black/50 z-0 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
 
-        {/* MAIN */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 bg-neutral-950 w-full">
           {page === 'clientes'  && <ClientesPage  notify={notify} />}
           {page === 'proyectos' && <ProyectosPage notify={notify} />}
