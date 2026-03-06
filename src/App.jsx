@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabase';
+import { supabase } from './supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Moon, Sun, Users, Wrench, LogOut, Plus, X } from 'lucide-react';
 
