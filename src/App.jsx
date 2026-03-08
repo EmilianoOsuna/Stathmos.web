@@ -892,7 +892,7 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 };
 
 // ─── Dashboard shell ──────────────────────────────────────────────────────────
-const Dashboard = ({ session, darkMode, setDarkMode }) => {
+const Dashboard = ({ session, darkMode }) => {
   const navigate = useNavigate();
   const [activeModule, setActiveModule] = useState("clientes");
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
@@ -931,12 +931,12 @@ const Dashboard = ({ session, darkMode, setDarkMode }) => {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? "bg-[#16161e] text-white" : "bg-gray-50 text-gray-800"}`}>
+    <div className={`h-screen overflow-hidden flex flex-col ${darkMode ? "bg-[#16161e] text-white" : "bg-gray-50 text-gray-800"}`}>
       <GlobalStyles />
 
       {/* Top bar */}
       <header
-        className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between px-4 border-b ${topbar}`}
+        className={`flex-shrink-0 flex items-center justify-between px-4 border-b ${topbar}`}
         style={{ height: "52px", boxShadow: darkMode ? "0 1px 0 rgba(255,255,255,0.03), 0 4px 12px rgba(0,0,0,0.3)" : "0 1px 0 rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04)" }}
       >
         <div className="flex items-center gap-3">
@@ -950,39 +950,29 @@ const Dashboard = ({ session, darkMode, setDarkMode }) => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Dark/light toggle */}
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            title={darkMode ? "Modo claro" : "Modo oscuro"}
-            className={`relative w-10 h-5 rounded-full transition-colors ${darkMode ? "bg-zinc-700" : "bg-gray-300"}`}
-          >
-            <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-transform ${darkMode ? "translate-x-5 bg-zinc-300" : "translate-x-0.5 bg-white shadow"}`} />
-          </button>
-
-          {/* User menu */}
           <UserMenuWithRef session={session} onLogout={handleLogout} darkMode={darkMode} />
         </div>
       </header>
 
-      <div className="flex flex-1 pt-[52px]">
+      <div className="flex flex-1 min-h-0">
         {sidebarOpen && <div className="fixed inset-0 z-20 bg-black/50 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
         {/* Sidebar */}
         <aside
-          className={`fixed md:sticky top-[52px] left-0 h-[calc(100vh-52px)] w-52 border-r flex flex-col z-20 transition-transform duration-200 ${sidebar} ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+          className={`fixed md:relative top-0 left-0 h-full w-52 border-r flex flex-col z-20 transition-transform duration-200 ${sidebar} ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
           style={{ boxShadow: darkMode ? "1px 0 0 rgba(255,255,255,0.02)" : "1px 0 0 rgba(0,0,0,0.04)" }}
         >
-          <nav className="flex-1 p-3 flex flex-col gap-1">
+          <nav className="flex-1 p-3 flex flex-col gap-1 overflow-y-auto">
             <p className={`text-[10px] font-semibold uppercase tracking-widest px-3 py-2 ${st}`}>Módulos</p>
             {navItems.map((item) => <NavItem key={item.id} item={item} />)}
           </nav>
-          <div className={`px-4 py-3 border-t ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
-            <p className={`text-[10px] ${st}`}>v2.0 · Taller Don Elías</p>
+
+          <div className={`px-3 py-3 border-t ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
+            <p className={`text-[10px] px-3 ${st}`}>Taller Don Elías</p>
           </div>
         </aside>
 
-        {/* Main content */}
-        <main className="flex-1 min-w-0 overflow-auto">
+        <main className="flex-1 min-w-0 overflow-y-auto">
           {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} />}
           {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
           {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} />}
@@ -996,7 +986,16 @@ const Dashboard = ({ session, darkMode, setDarkMode }) => {
 export default function App() {
   const [session,     setSession]     = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [darkMode,    setDarkMode]    = useState(true);
+  const [darkMode, setDarkMode] = useState(
+    () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e) => setDarkMode(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
@@ -1016,7 +1015,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
-        <Route path="/dashboard" element={<ProtectedRoute session={session}><Dashboard session={session} darkMode={darkMode} setDarkMode={setDarkMode} /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute session={session}><Dashboard session={session} darkMode={darkMode} /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
 
@@ -23,8 +23,18 @@ export default function Login() {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
+  //const [googleLoading, setGoogleLoading] = useState(false);
   const [error,    setError]    = useState("");
   const [phase,    setPhase]    = useState("idle");
+
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  const [darkMode, setDarkMode] = useState(prefersDark);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e) => setDarkMode(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) { setError("Ingresa tu correo y contraseña."); return; }
@@ -35,11 +45,32 @@ export default function Login() {
     setTimeout(() => navigate("/dashboard", { replace: true }), 420);
   };
 
+  /* Fix 4: Google OAuth
+  const handleGoogle = async () => {
+    setGoogleLoading(true); setError("");
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (authError) { setError("No se pudo iniciar sesión con Google."); setGoogleLoading(false); }
+    // Si no hay error, Supabase redirige automáticamente al proveedor
+  };*/
+
   const handleKey = (e) => { if (e.key === "Enter") handleLogin(); };
+
+  const bg    = darkMode ? "bg-[#18181f]"   : "bg-gray-100";
+  const card  = darkMode ? "bg-[#1e1e27] border-zinc-800" : "bg-white border-gray-200";
+  const label = darkMode ? "text-zinc-500"  : "text-gray-400";
+  const input = darkMode
+    ? "border-zinc-700 text-zinc-200 placeholder-zinc-600 focus:border-[#60aebb]"
+    : "border-gray-300 text-gray-800 placeholder-gray-400 focus:border-[#60aebb]";
+  const dividerLine = darkMode ? "bg-zinc-700" : "bg-gray-200";
+  const dividerText = darkMode ? "text-zinc-600" : "text-gray-400";
+  const footer      = darkMode ? "text-zinc-600" : "text-gray-400";
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center bg-[#18181f]"
+      className={`min-h-screen flex flex-col items-center justify-center ${bg} transition-colors duration-300`}
       style={{ opacity: phase === "leaving" ? 0 : 1, transition: "opacity 0.4s ease" }}
     >
       <style>{`
@@ -48,44 +79,57 @@ export default function Login() {
           to   { opacity: 1; transform: translateY(0); }
         }
         .login-card { animation: cardIn 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-        .login-input-line {
-          border-bottom: 1px solid #3f3f46;
+        .login-input {
+          width: 100%;
+          background: transparent;
+          border-bottom-width: 1px;
+          border-bottom-style: solid;
+          padding: 8px 0;
+          font-size: 0.875rem;
+          outline: none;
           transition: border-color 0.2s;
         }
-        .login-input-line:focus { border-bottom-color: #60aebb; outline: none; }
       `}</style>
 
       <div
-        className="login-card w-full max-w-sm mx-4 rounded-xl border border-zinc-800 bg-[#1e1e27] p-8 flex flex-col items-center gap-7"
-        style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset" }}
+        className={`login-card w-full max-w-sm mx-4 rounded-xl border ${card} p-8 flex flex-col items-center gap-6`}
+        style={{ boxShadow: darkMode ? "0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset" : "0 4px 24px rgba(0,0,0,0.10)" }}
       >
+        {/* Logo */}
         <div className="flex flex-col items-center gap-1">
           <Logo className="w-44 h-auto" />
-          <p className="text-[10px] tracking-[0.3em] uppercase font-medium text-zinc-600 mt-1">
-            Kentro Software
-          </p>
           <h1 className="text-xl font-semibold tracking-tight" style={{ color: "#60aebb" }}>
             Stathmos
           </h1>
+          <p className={`text-[10px] tracking-[0.3em] uppercase font-medium mt-1 ${label}`}>
+            Kentro Software
+          </p>     
         </div>
 
+        {/* Email / password */}
         <div className="w-full flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Correo</label>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Correo</label>
             <input
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)} onKeyDown={handleKey}
               placeholder="admin@taller.com"
-              className="login-input-line w-full bg-transparent py-2 text-sm text-zinc-200 placeholder-zinc-600"
+              className={`login-input ${input}`}
+              style={{ borderBottomColor: darkMode ? "#3f3f46" : "#d1d5db", color: darkMode ? "#e4e4e7" : "#1f2937" }}
+              onFocus={(e) => (e.target.style.borderBottomColor = "#60aebb")}
+              onBlur={(e)  => (e.target.style.borderBottomColor = darkMode ? "#3f3f46" : "#d1d5db")}
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Contraseña</label>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Contraseña</label>
             <input
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey}
               placeholder="••••••••"
-              className="login-input-line w-full bg-transparent py-2 text-sm text-zinc-200 placeholder-zinc-600"
+              className={`login-input ${input}`}
+              style={{ borderBottomColor: darkMode ? "#3f3f46" : "#d1d5db", color: darkMode ? "#e4e4e7" : "#1f2937" }}
+              onFocus={(e) => (e.target.style.borderBottomColor = "#60aebb")}
+              onBlur={(e)  => (e.target.style.borderBottomColor = darkMode ? "#3f3f46" : "#d1d5db")}
             />
           </div>
 
@@ -102,7 +146,34 @@ export default function Login() {
           </button>
         </div>
 
-        <p className="text-xs text-zinc-600 -mt-1">Taller Mecánico Don Elías © 2025</p>
+        {/* Google OAuth 
+        <div className="w-full flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`flex-1 h-px ${dividerLine}`} />
+            <span className={`text-[10px] uppercase tracking-widest ${dividerText}`}>o continúa con</span>
+            <div className={`flex-1 h-px ${dividerLine}`} />
+          </div>
+
+          <button
+            onClick={handleGoogle} disabled={googleLoading}
+            className={`w-full flex items-center justify-center gap-3 py-2.5 rounded-lg border text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+              darkMode
+                ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.1)" }}
+          >
+            <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.17 2.85l6.09-6.09C34.46 3.09 29.5 1 24 1 14.82 1 7.07 6.48 3.64 14.22l7.08 5.5C12.4 13.62 17.73 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.08-5.5C1.23 17.14 0 20.41 0 24c0 3.59 1.23 6.86 3.44 9.58l7.09-5.49z"/>
+              <path fill="#34A853" d="M24 47c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.09 5.49C7.07 41.52 14.82 47 24 47z"/>
+            </svg>
+            {googleLoading ? "Redirigiendo..." : "Iniciar sesión con Google"}
+          </button>
+        </div> */}
+
+        <p className={`text-xs -mt-1 ${footer}`}>Taller Mecánico Don Elías © 2026</p>
       </div>
     </div>
   );
