@@ -7,7 +7,7 @@ import Login from "./Login";
 const C_BLUE = "#60aebb";
 const C_RED  = "#db3c1c";
 
-// ─── Logo (SVG incrustado — sin imports externos) ─────────────────────────────
+// ─── Logo ─────────────────────────────
 const LogoMark = ({ className = "h-6 w-auto" }) => (
   <svg className={className} viewBox="0 0 6000 3375" xmlns="http://www.w3.org/2000/svg"
     style={{ fillRule:"evenodd", clipRule:"evenodd", strokeLinecap:"round", strokeLinejoin:"round", strokeMiterlimit:"22.926" }}
@@ -202,7 +202,7 @@ const ClientesModule = ({ darkMode }) => {
   const [modalOpen,    setModalOpen]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [toggleTarget, setToggleTarget] = useState(null);
-  const [form,  setForm]  = useState({ nombre: "", telefono: "", correo: "", direccion: "", activo: true });
+  const [form,  setForm]  = useState({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -213,8 +213,8 @@ const ClientesModule = ({ darkMode }) => {
   }, []);
   useEffect(() => { fetchClientes(); }, [fetchClientes]);
 
-  const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", activo: true }); setFormError(""); setModalOpen(true); };
-  const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
+  const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true }); setFormError(""); setModalOpen(true); };
+  const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
   const handleSave = async () => {
     if (!form.nombre.trim() || !form.telefono.trim()) { setFormError("Nombre y teléfono son obligatorios."); return; }
@@ -337,6 +337,7 @@ const ClientesModule = ({ darkMode }) => {
           <Field label="Teléfono" required darkMode={darkMode}><Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} placeholder="311 123 4567" /></Field>
           <Field label="Correo" darkMode={darkMode}><Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({...form, correo: e.target.value})} placeholder="juan@correo.com" /></Field>
           <Field label="Dirección" darkMode={darkMode}><Textarea darkMode={darkMode} rows={2} value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} placeholder="Calle, Colonia, Ciudad" /></Field>
+          <Field label="RFC" darkMode={darkMode}><Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({...form, rfc: e.target.value.toUpperCase()})} placeholder="GARC800101ABC" className="font-mono" /></Field>
           <Field label="Estado" darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.activo ? "true" : "false"} onChange={(e) => setForm({...form, activo: e.target.value === "true"})}>
               <option value="true">Activo</option><option value="false">Inactivo</option>
