@@ -1,14 +1,11 @@
 -- ============================================================
--- BD_Stathmos_v2_Final.sql
+-- BD_Stathmos.sql
 -- Sistema de Gestión Integral para Taller Mecánico
 -- Proyecto: Stathmos — Taller Mecánico Don Elías
 -- Equipo: Kentro Software
--- Versión: v2.1 Final — Marzo 2026
---
--- INSTRUCCIONES:
--- Pegar completo en el SQL Editor de Supabase y ejecutar.
--- El bloque DROP inicial limpia cualquier estado previo
--- sin tocar el esquema auth de Supabase.
+-- Versión: Primer Sprint
+-- DETALLES:
+-- Script completo para generar la BD dentro del SQL editor de Supabase
 -- ============================================================
 
 
@@ -31,8 +28,10 @@ DROP TABLE IF EXISTS
   public.cotizaciones,
   public.fotografias,
   public.diagnosticos,
+  public.proyecto_mecanicos,
   public.proyectos,
   public.citas,
+  public.refaccion_proveedores,
   public.refacciones,
   public.proveedores,
   public.empleados,
@@ -71,15 +70,8 @@ DROP FUNCTION IF EXISTS public.fn_liberar_bloqueo_al_pagar() CASCADE;
 
 CREATE TYPE public.tipo_operacion       AS ENUM ('INSERT', 'UPDATE', 'DELETE');
 CREATE TYPE public.estado_cita          AS ENUM ('pendiente', 'confirmada', 'cancelada', 'completada');
-CREATE TYPE public.estado_proyecto      AS ENUM (
-  'activo',
-  'pendiente_cotizacion',
-  'en_progreso',
-  'pendiente_refaccion',
-  'terminado',
-  'entregado',
-  'cancelado'
-);
+CREATE TYPE public.estado_proyecto      AS ENUM ('activo', 'pendiente_cotizacion', 'en_progreso', 'pendiente_refaccion',
+  'terminado','entregado', 'cancelado');
 CREATE TYPE public.estado_cotizacion    AS ENUM ('pendiente', 'aprobada', 'rechazada', 'modificada');
 CREATE TYPE public.estado_factura       AS ENUM ('emitida', 'pagada', 'cancelada');
 CREATE TYPE public.estado_pago          AS ENUM ('completado', 'pendiente', 'cancelado');
@@ -103,7 +95,7 @@ CREATE TABLE public.roles (
   CONSTRAINT roles_pkey PRIMARY KEY (id)
 );
 
-COMMENT ON TABLE  public.roles        IS 'Roles del sistema (Administrador, Mecánico, Cliente). RF-025, CU-13.';
+COMMENT ON TABLE public.roles IS 'Roles del sistema (Administrador, Mecánico, Cliente).';
 COMMENT ON COLUMN public.roles.nombre IS 'Nombre único del rol.';
 
 
@@ -121,13 +113,13 @@ CREATE TABLE public.usuarios (
   created_at timestamptz          DEFAULT now(),
   updated_at timestamptz          DEFAULT now(),
 
-  CONSTRAINT usuarios_pkey      PRIMARY KEY (id),
+  CONSTRAINT usuarios_pkey PRIMARY KEY (id),
   CONSTRAINT usuarios_auth_fkey FOREIGN KEY (id)     REFERENCES auth.users(id) ON DELETE CASCADE,
   CONSTRAINT usuarios_rol_fkey  FOREIGN KEY (rol_id) REFERENCES public.roles(id)
 );
 
-COMMENT ON TABLE  public.usuarios        IS 'Usuarios del sistema. RF-025, CU-01.';
-COMMENT ON COLUMN public.usuarios.activo IS 'Soft-delete: desactiva acceso sin borrar el registro.';
+COMMENT ON TABLE public.usuarios IS 'Usuarios del sistema.';
+COMMENT ON COLUMN public.usuarios.activo IS 'Desactiva acceso sin borrar el registro. (Soft-delete)';
 
 
 -- ============================================================
@@ -135,22 +127,26 @@ COMMENT ON COLUMN public.usuarios.activo IS 'Soft-delete: desactiva acceso sin b
 -- ============================================================
 
 CREATE TABLE public.clientes (
-  id         uuid        NOT NULL DEFAULT gen_random_uuid(),
-  usuario_id uuid,
-  nombre     text        NOT NULL,
-  telefono   text        NOT NULL,
-  correo     text,
-  direccion  text,
-  activo     boolean              DEFAULT true,
-  created_at timestamptz          DEFAULT now(),
-  updated_at timestamptz          DEFAULT now(),
+  id                uuid        NOT NULL DEFAULT gen_random_uuid(),
+  usuario_id        uuid,
+  nombre            text        NOT NULL,
+  telefono          text,
+  correo            text,
+  direccion         text,
+  rfc               text,
+  activo            boolean              DEFAULT true,
+  invite_enviado    boolean     NOT NULL DEFAULT false,
+  invite_enviado_at timestamptz,
+  created_at        timestamptz          DEFAULT now(),
+  updated_at        timestamptz          DEFAULT now(),
 
-  CONSTRAINT clientes_pkey         PRIMARY KEY (id),
+  CONSTRAINT clientes_pkey PRIMARY KEY (id),
   CONSTRAINT clientes_usuario_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id)
 );
 
-COMMENT ON TABLE  public.clientes            IS 'Clientes del taller. RF-001, CU-02.';
-COMMENT ON COLUMN public.clientes.usuario_id IS 'NULL si el cliente no usa el portal web.';
+COMMENT ON TABLE  public.clientes IS 'Clientes del taller.';
+COMMENT ON COLUMN public.clientes.invite_enviado IS 'Indica si se envió la invitación al portal del cliente.';
+COMMENT ON COLUMN public.clientes.invite_enviado_at IS 'Fecha en que se envió la invitación.';
 
 
 -- ============================================================
@@ -170,19 +166,16 @@ CREATE TABLE public.vehiculos (
   created_at timestamptz          DEFAULT now(),
   updated_at timestamptz          DEFAULT now(),
 
-  CONSTRAINT vehiculos_pkey         PRIMARY KEY (id),
+  CONSTRAINT vehiculos_pkey PRIMARY KEY (id),
   CONSTRAINT vehiculos_cliente_fkey FOREIGN KEY (cliente_id) REFERENCES public.clientes(id),
-  CONSTRAINT vehiculos_anio_check   CHECK (anio IS NULL OR (anio >= 1900 AND anio <= EXTRACT(YEAR FROM now())::integer + 1))
+  CONSTRAINT vehiculos_anio_check CHECK (anio IS NULL OR (anio >= 1950 AND anio <= EXTRACT(YEAR FROM now())::integer + 1))
 );
 
-COMMENT ON TABLE  public.vehiculos        IS 'Vehículos por cliente. RF-002, CU-03.';
-COMMENT ON COLUMN public.vehiculos.placas IS 'Placa única obligatoria.';
-COMMENT ON COLUMN public.vehiculos.vin    IS 'Vehicle Identification Number — único si se registra.';
+COMMENT ON TABLE public.vehiculos IS 'Vehículos por cliente.';
 
 
 -- ============================================================
 -- BLOQUE 6: empleados
--- C-02: campo disponible para tablero admin (RF-007)
 -- ============================================================
 
 CREATE TABLE public.empleados (
@@ -191,18 +184,18 @@ CREATE TABLE public.empleados (
   nombre        text        NOT NULL,
   telefono      text,
   correo        text        NOT NULL,
+  rfc           text,
   fecha_ingreso date                 DEFAULT CURRENT_DATE,
   disponible    boolean              DEFAULT true,
   activo        boolean              DEFAULT true,
   created_at    timestamptz          DEFAULT now(),
   updated_at    timestamptz          DEFAULT now(),
 
-  CONSTRAINT empleados_pkey         PRIMARY KEY (id),
+  CONSTRAINT empleados_pkey PRIMARY KEY (id),
   CONSTRAINT empleados_usuario_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id)
 );
 
-COMMENT ON TABLE  public.empleados            IS 'Empleados/mecánicos del taller. RF-003, CU-04.';
-COMMENT ON COLUMN public.empleados.disponible IS 'C-02: true = puede recibir proyectos. Usado en tablero admin (RF-007).';
+COMMENT ON TABLE public.empleados IS 'Empleados/mecánicos del taller.';
 
 
 -- ============================================================
@@ -215,6 +208,7 @@ CREATE TABLE public.proveedores (
   telefono   text,
   correo     text,
   direccion  text,
+  rfc        text,
   activo     boolean              DEFAULT true,
   created_at timestamptz          DEFAULT now(),
   updated_at timestamptz          DEFAULT now(),
@@ -222,17 +216,15 @@ CREATE TABLE public.proveedores (
   CONSTRAINT proveedores_pkey PRIMARY KEY (id)
 );
 
-COMMENT ON TABLE public.proveedores IS 'Proveedores de refacciones. CU-21.';
+COMMENT ON TABLE public.proveedores IS 'Proveedores de refacciones.';
 
 
 -- ============================================================
 -- BLOQUE 8: refacciones
--- RD-07: stock >= 0 siempre
 -- ============================================================
 
 CREATE TABLE public.refacciones (
   id            uuid        NOT NULL DEFAULT gen_random_uuid(),
-  proveedor_id  uuid,
   nombre        text        NOT NULL,
   descripcion   text,
   numero_parte  text,
@@ -244,13 +236,37 @@ CREATE TABLE public.refacciones (
   created_at    timestamptz          DEFAULT now(),
   updated_at    timestamptz          DEFAULT now(),
 
-  CONSTRAINT refacciones_pkey             PRIMARY KEY (id),
-  CONSTRAINT refacciones_proveedor_fkey FOREIGN KEY (proveedor_id) REFERENCES public.proveedores(id)
+  CONSTRAINT refacciones_pkey PRIMARY KEY (id)
 );
 
-COMMENT ON TABLE  public.refacciones              IS 'Inventario de refacciones. RF-013, CU-10. RD-07: stock >= 0.';
-COMMENT ON COLUMN public.refacciones.stock        IS 'RD-07: Nunca negativo. Mantenido por triggers C-07.';
-COMMENT ON COLUMN public.refacciones.stock_minimo IS 'Umbral de alerta de stock bajo. RD-07.';
+COMMENT ON TABLE public.refacciones IS 'Inventario de refacciones. Proveedores gestionados en refaccion_proveedores (N:M).';
+
+
+-- ============================================================
+-- BLOQUE 8b: refaccion_proveedores  [N:M]
+-- Una refacción puede tener múltiples proveedores y un proveedor
+-- puede surtir múltiples refacciones, con precio pactado propio.
+-- ============================================================
+
+CREATE TABLE public.refaccion_proveedores (
+  id           uuid        NOT NULL DEFAULT gen_random_uuid(),
+  refaccion_id uuid        NOT NULL,
+  proveedor_id uuid        NOT NULL,
+  precio       numeric     NOT NULL DEFAULT 0 CHECK (precio >= 0),
+  es_principal boolean              DEFAULT false,
+  activo       boolean              DEFAULT true,
+  created_at   timestamptz          DEFAULT now(),
+  updated_at   timestamptz          DEFAULT now(),
+
+  CONSTRAINT refaccion_proveedores_pkey         PRIMARY KEY (id),
+  CONSTRAINT refaccion_proveedores_refaccion_fk FOREIGN KEY (refaccion_id) REFERENCES public.refacciones(id),
+  CONSTRAINT refaccion_proveedores_proveedor_fk FOREIGN KEY (proveedor_id) REFERENCES public.proveedores(id),
+  CONSTRAINT refaccion_proveedores_unique       UNIQUE (refaccion_id, proveedor_id)
+);
+
+COMMENT ON TABLE  public.refaccion_proveedores IS 'Tabla intermedia N:M entre refacciones y proveedores.';
+COMMENT ON COLUMN public.refaccion_proveedores.precio IS 'Precio pactado con este proveedor para esta refacción.';
+COMMENT ON COLUMN public.refaccion_proveedores.es_principal IS 'Indica el proveedor preferido para reorden de esta refacción.';
 
 
 -- ============================================================
@@ -258,28 +274,26 @@ COMMENT ON COLUMN public.refacciones.stock_minimo IS 'Umbral de alerta de stock 
 -- ============================================================
 
 CREATE TABLE public.citas (
-  id          uuid                    NOT NULL DEFAULT gen_random_uuid(),
-  cliente_id  uuid                    NOT NULL,
-  vehiculo_id uuid                    NOT NULL,
-  fecha_hora  timestamptz             NOT NULL,
+  id          uuid               NOT NULL DEFAULT gen_random_uuid(),
+  cliente_id  uuid               NOT NULL,
+  vehiculo_id uuid               NOT NULL,
+  fecha_hora  timestamptz        NOT NULL,
   motivo      text,
-  estado      public.estado_cita      NOT NULL DEFAULT 'pendiente',
+  estado      public.estado_cita NOT NULL DEFAULT 'pendiente',
   notas       text,
-  created_at  timestamptz                      DEFAULT now(),
-  updated_at  timestamptz                      DEFAULT now(),
+  created_at  timestamptz                 DEFAULT now(),
+  updated_at  timestamptz                 DEFAULT now(),
 
-  CONSTRAINT citas_pkey          PRIMARY KEY (id),
+  CONSTRAINT citas_pkey PRIMARY KEY (id),
   CONSTRAINT citas_cliente_fkey  FOREIGN KEY (cliente_id)  REFERENCES public.clientes(id),
   CONSTRAINT citas_vehiculo_fkey FOREIGN KEY (vehiculo_id) REFERENCES public.vehiculos(id)
 );
 
-COMMENT ON TABLE public.citas IS 'Citas agendadas. RF-008, CU-15.';
+COMMENT ON TABLE public.citas IS 'Citas agendadas.';
 
 
 -- ============================================================
 -- BLOQUE 10: proyectos
--- C-01: estado incluye pendiente_cotizacion (RD-02, RF-017)
--- RD-01: cliente_id y vehiculo_id NOT NULL
 -- ============================================================
 
 CREATE TABLE public.proyectos (
@@ -299,23 +313,47 @@ CREATE TABLE public.proyectos (
   created_at       timestamptz                     DEFAULT now(),
   updated_at       timestamptz                     DEFAULT now(),
 
-  CONSTRAINT proyectos_pkey          PRIMARY KEY (id),
+  CONSTRAINT proyectos_pkey PRIMARY KEY (id),
   CONSTRAINT proyectos_cliente_fkey  FOREIGN KEY (cliente_id)  REFERENCES public.clientes(id),
   CONSTRAINT proyectos_vehiculo_fkey FOREIGN KEY (vehiculo_id) REFERENCES public.vehiculos(id),
   CONSTRAINT proyectos_mecanico_fkey FOREIGN KEY (mecanico_id) REFERENCES public.empleados(id),
-  CONSTRAINT proyectos_cita_fkey     FOREIGN KEY (cita_id)     REFERENCES public.citas(id),
+  CONSTRAINT proyectos_cita_fkey FOREIGN KEY (cita_id)     REFERENCES public.citas(id),
   CONSTRAINT proyectos_entrega_check CHECK (fecha_entrega IS NULL OR fecha_cierre IS NOT NULL)
 );
 
-COMMENT ON TABLE  public.proyectos                  IS 'Expediente digital del servicio. RF-027, CU-25. RD-01, RD-02, RD-05.';
-COMMENT ON COLUMN public.proyectos.estado           IS 'C-01: activo→pendiente_cotizacion→en_progreso→pendiente_refaccion→terminado→entregado. RD-02.';
-COMMENT ON COLUMN public.proyectos.bloqueado        IS 'true cuando hay factura sin pago. RF-019, CU-30, RD-05.';
-COMMENT ON COLUMN public.proyectos.fecha_aprobacion IS 'Fecha en que el cliente aprueba la cotización. RF-017.';
+COMMENT ON TABLE  public.proyectos IS 'Expediente digital del servicio.';
+COMMENT ON COLUMN public.proyectos.mecanico_id IS 'Mecánico principal del proyecto. El equipo completo se gestiona en proyecto_mecanicos (N:M).';
+
+
+-- ============================================================
+-- BLOQUE 10b: proyecto_mecanicos  [N:M]
+-- Un proyecto puede involucrar varios mecánicos y un mecánico
+-- puede estar asignado a varios proyectos simultáneamente.
+-- mecanico_id en proyectos conserva al responsable principal.
+-- ============================================================
+
+CREATE TABLE public.proyecto_mecanicos (
+  id               uuid        NOT NULL DEFAULT gen_random_uuid(),
+  proyecto_id      uuid        NOT NULL,
+  mecanico_id      uuid        NOT NULL,
+  rol              text,
+  fecha_asignacion timestamptz          DEFAULT now(),
+  activo           boolean              DEFAULT true,
+  created_at       timestamptz          DEFAULT now(),
+
+  CONSTRAINT proyecto_mecanicos_pkey        PRIMARY KEY (id),
+  CONSTRAINT proyecto_mecanicos_proyecto_fk FOREIGN KEY (proyecto_id) REFERENCES public.proyectos(id),
+  CONSTRAINT proyecto_mecanicos_mecanico_fk FOREIGN KEY (mecanico_id) REFERENCES public.empleados(id),
+  CONSTRAINT proyecto_mecanicos_unique      UNIQUE (proyecto_id, mecanico_id)
+);
+
+COMMENT ON TABLE  public.proyecto_mecanicos IS 'Tabla intermedia N:M entre proyectos y mecánicos.';
+COMMENT ON COLUMN public.proyecto_mecanicos.rol IS 'Rol del mecánico en este proyecto (ej. principal, apoyo, especialista).';
+COMMENT ON COLUMN public.proyecto_mecanicos.activo IS 'Permite desasignar un mecánico sin borrar el registro.';
 
 
 -- ============================================================
 -- BLOQUE 11: diagnosticos
--- RD-03: un solo diagnóstico por tipo por proyecto
 -- ============================================================
 
 CREATE TABLE public.diagnosticos (
@@ -328,19 +366,17 @@ CREATE TABLE public.diagnosticos (
   causa_raiz  text,
   created_at  timestamptz                      DEFAULT now(),
 
-  CONSTRAINT diagnosticos_pkey        PRIMARY KEY (id),
+  CONSTRAINT diagnosticos_pkey PRIMARY KEY (id),
   CONSTRAINT diagnosticos_proyecto_fk FOREIGN KEY (proyecto_id) REFERENCES public.proyectos(id),
   CONSTRAINT diagnosticos_mecanico_fk FOREIGN KEY (mecanico_id) REFERENCES public.empleados(id),
   CONSTRAINT diagnosticos_unico_tipo  UNIQUE (proyecto_id, tipo)
 );
 
-COMMENT ON TABLE  public.diagnosticos      IS 'Diagnóstico inicial y final. RF-012, CU-19. RD-03.';
-COMMENT ON COLUMN public.diagnosticos.tipo IS 'RD-03: UNIQUE(proyecto_id, tipo) garantiza uno por tipo por proyecto.';
+COMMENT ON TABLE public.diagnosticos IS 'Diagnóstico inicial y final.';
 
 
 -- ============================================================
 -- BLOQUE 12: fotografias
--- C-05: diagnostico_id opcional (RF-009, RF-012)
 -- ============================================================
 
 CREATE TABLE public.fotografias (
@@ -353,19 +389,17 @@ CREATE TABLE public.fotografias (
   descripcion    text,
   created_at     timestamptz                        DEFAULT now(),
 
-  CONSTRAINT fotografias_pkey           PRIMARY KEY (id),
-  CONSTRAINT fotografias_proyecto_fk    FOREIGN KEY (proyecto_id)    REFERENCES public.proyectos(id),
-  CONSTRAINT fotografias_mecanico_fk    FOREIGN KEY (mecanico_id)    REFERENCES public.empleados(id),
+  CONSTRAINT fotografias_pkey PRIMARY KEY (id),
+  CONSTRAINT fotografias_proyecto_fk FOREIGN KEY (proyecto_id)    REFERENCES public.proyectos(id),
+  CONSTRAINT fotografias_mecanico_fk FOREIGN KEY (mecanico_id)    REFERENCES public.empleados(id),
   CONSTRAINT fotografias_diagnostico_fk FOREIGN KEY (diagnostico_id) REFERENCES public.diagnosticos(id)
 );
 
-COMMENT ON TABLE  public.fotografias                IS 'Fotos antes/después. RF-009, CU-20.';
-COMMENT ON COLUMN public.fotografias.diagnostico_id IS 'C-05: Vincula la foto al diagnóstico que la originó.';
+COMMENT ON TABLE public.fotografias IS 'Fotos antes/después.';
 
 
 -- ============================================================
 -- BLOQUE 13: cotizaciones
--- C-03: aprobada_por y rechazada_por → FK a clientes (RD-04, RD-06)
 -- ============================================================
 
 CREATE TABLE public.cotizaciones (
@@ -383,11 +417,11 @@ CREATE TABLE public.cotizaciones (
   created_at      timestamptz                       DEFAULT now(),
   updated_at      timestamptz                       DEFAULT now(),
 
-  CONSTRAINT cotizaciones_pkey              PRIMARY KEY (id),
-  CONSTRAINT cotizaciones_proyecto_fk       FOREIGN KEY (proyecto_id)   REFERENCES public.proyectos(id),
-  CONSTRAINT cotizaciones_aprobada_fk       FOREIGN KEY (aprobada_por)  REFERENCES public.clientes(id),
-  CONSTRAINT cotizaciones_rechazada_fk      FOREIGN KEY (rechazada_por) REFERENCES public.clientes(id),
-  CONSTRAINT cotizaciones_aprobacion_check  CHECK (
+  CONSTRAINT cotizaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT cotizaciones_proyecto_fk FOREIGN KEY (proyecto_id)   REFERENCES public.proyectos(id),
+  CONSTRAINT cotizaciones_aprobada_fk FOREIGN KEY (aprobada_por)  REFERENCES public.clientes(id),
+  CONSTRAINT cotizaciones_rechazada_fk FOREIGN KEY (rechazada_por) REFERENCES public.clientes(id),
+  CONSTRAINT cotizaciones_aprobacion_check CHECK (
     (estado = 'aprobada'  AND aprobada_por  IS NOT NULL AND rechazada_por IS NULL) OR
     (estado = 'rechazada' AND rechazada_por IS NOT NULL AND aprobada_por  IS NULL) OR
     (estado IN ('pendiente', 'modificada'))
@@ -398,10 +432,7 @@ CREATE TABLE public.cotizaciones (
   )
 );
 
-COMMENT ON TABLE  public.cotizaciones               IS 'Cotizaciones del proyecto. RF-016, CU-12. RD-04, RD-06.';
-COMMENT ON COLUMN public.cotizaciones.aprobada_por  IS 'C-03: FK a clientes. RD-04.';
-COMMENT ON COLUMN public.cotizaciones.rechazada_por IS 'C-03: FK a clientes. RD-06.';
-COMMENT ON COLUMN public.cotizaciones.monto_total   IS 'Columna generada: monto_mano_obra + monto_refacc.';
+COMMENT ON TABLE public.cotizaciones IS 'Cotizaciones del proyecto.';
 
 
 -- ============================================================
@@ -418,12 +449,12 @@ CREATE TABLE public.cotizacion_items (
   precio_unit   numeric                     NOT NULL           CHECK (precio_unit >= 0),
   subtotal      numeric                     GENERATED ALWAYS AS (cantidad::numeric * precio_unit) STORED,
 
-  CONSTRAINT cotizacion_items_pkey         PRIMARY KEY (id),
+  CONSTRAINT cotizacion_items_pkey PRIMARY KEY (id),
   CONSTRAINT cotizacion_items_cotizacion_fk FOREIGN KEY (cotizacion_id) REFERENCES public.cotizaciones(id),
   CONSTRAINT cotizacion_items_refaccion_fk  FOREIGN KEY (refaccion_id)  REFERENCES public.refacciones(id)
 );
 
-COMMENT ON TABLE public.cotizacion_items IS 'Líneas de detalle de cada cotización. CU-12.';
+COMMENT ON TABLE public.cotizacion_items IS 'Líneas de detalle de cada cotización.';
 
 
 -- ============================================================
@@ -441,12 +472,12 @@ CREATE TABLE public.ventas_refacciones (
   fecha_venta  timestamptz                  DEFAULT now(),
   created_at   timestamptz                  DEFAULT now(),
 
-  CONSTRAINT ventas_refacciones_pkey         PRIMARY KEY (id),
-  CONSTRAINT ventas_refacciones_cliente_fk   FOREIGN KEY (cliente_id)   REFERENCES public.clientes(id),
+  CONSTRAINT ventas_refacciones_pkey PRIMARY KEY (id),
+  CONSTRAINT ventas_refacciones_cliente_fk FOREIGN KEY (cliente_id)   REFERENCES public.clientes(id),
   CONSTRAINT ventas_refacciones_refaccion_fk FOREIGN KEY (refaccion_id) REFERENCES public.refacciones(id)
 );
 
-COMMENT ON TABLE public.ventas_refacciones IS 'Ventas directas de refacciones. RF-028, CU-26. Trigger C-07a descuenta stock.';
+COMMENT ON TABLE public.ventas_refacciones IS 'Ventas directas de refacciones.';
 
 
 -- ============================================================
@@ -467,19 +498,19 @@ CREATE TABLE public.compras_refacciones (
   notas        text,
   created_at   timestamptz          DEFAULT now(),
 
-  CONSTRAINT compras_refacciones_pkey         PRIMARY KEY (id),
+  CONSTRAINT compras_refacciones_pkey PRIMARY KEY (id),
   CONSTRAINT compras_refacciones_refaccion_fk FOREIGN KEY (refaccion_id) REFERENCES public.refacciones(id),
   CONSTRAINT compras_refacciones_proveedor_fk FOREIGN KEY (proveedor_id) REFERENCES public.proveedores(id),
   CONSTRAINT compras_refacciones_proyecto_fk  FOREIGN KEY (proyecto_id)  REFERENCES public.proyectos(id),
-  CONSTRAINT compras_refacciones_venta_fk     FOREIGN KEY (venta_id)     REFERENCES public.ventas_refacciones(id),
+  CONSTRAINT compras_refacciones_venta_fk FOREIGN KEY (venta_id)     REFERENCES public.ventas_refacciones(id),
   CONSTRAINT compras_refacciones_mecanico_fk  FOREIGN KEY (mecanico_id)  REFERENCES public.empleados(id)
 );
 
-COMMENT ON TABLE public.compras_refacciones IS 'Compras de refacciones (suma stock). RF-014, CU-21. Trigger C-07b suma stock.';
+COMMENT ON TABLE public.compras_refacciones IS 'Compras de refacciones (suma stock).';
 
 
 -- ============================================================
--- BLOQUE 17: facturas (CORREGIDO)
+-- BLOQUE 17: facturas
 -- ============================================================
 
 CREATE TABLE public.facturas (
@@ -496,11 +527,11 @@ CREATE TABLE public.facturas (
   fecha_emision timestamptz                    DEFAULT now(),
   created_at    timestamptz                    DEFAULT now(),
 
-  CONSTRAINT facturas_pkey          PRIMARY KEY (id),
-  CONSTRAINT facturas_proyecto_fk   FOREIGN KEY (proyecto_id)   REFERENCES public.proyectos(id),
-  CONSTRAINT facturas_venta_fk      FOREIGN KEY (venta_id)      REFERENCES public.ventas_refacciones(id),
+  CONSTRAINT facturas_pkey PRIMARY KEY (id),
+  CONSTRAINT facturas_proyecto_fk FOREIGN KEY (proyecto_id)   REFERENCES public.proyectos(id),
+  CONSTRAINT facturas_venta_fk FOREIGN KEY (venta_id)      REFERENCES public.ventas_refacciones(id),
   CONSTRAINT facturas_cotizacion_fk FOREIGN KEY (cotizacion_id) REFERENCES public.cotizaciones(id),
-  CONSTRAINT facturas_cliente_fk    FOREIGN KEY (cliente_id)    REFERENCES public.clientes(id),
+  CONSTRAINT facturas_cliente_fk FOREIGN KEY (cliente_id)    REFERENCES public.clientes(id),
   CONSTRAINT facturas_calculo_check CHECK (total = subtotal + iva),
   CONSTRAINT facturas_origen_check  CHECK (
     (proyecto_id IS NOT NULL AND venta_id IS NULL) OR
@@ -509,37 +540,34 @@ CREATE TABLE public.facturas (
   )
 );
 
-COMMENT ON TABLE  public.facturas                IS 'Facturas emitidas. RF-018, CU-11. RD-04.';
-COMMENT ON COLUMN public.facturas.cotizacion_id IS 'RD-04: requerida cuando la factura proviene de un proyecto.';
+COMMENT ON TABLE public.facturas IS 'Facturas emitidas.';
 
 
 -- ============================================================
 -- BLOQUE 18: pagos
--- C-04: venta_id opcional para trazabilidad directa
 -- ============================================================
 
 CREATE TABLE public.pagos (
-  id             uuid               NOT NULL DEFAULT gen_random_uuid(),
-  factura_id     uuid               NOT NULL,
+  id             uuid                NOT NULL DEFAULT gen_random_uuid(),
+  factura_id     uuid                NOT NULL,
   proyecto_id    uuid,
   venta_id       uuid,
-  monto          numeric            NOT NULL CHECK (monto > 0),
+  monto          numeric             NOT NULL CHECK (monto > 0),
   metodo_cobro   public.metodo_cobro NOT NULL,
   estado         public.estado_pago  NOT NULL DEFAULT 'completado',
-  fecha_pago     timestamptz                 DEFAULT now(),
+  fecha_pago     timestamptz                  DEFAULT now(),
   referencia     text,
   registrado_por uuid,
-  created_at     timestamptz                 DEFAULT now(),
+  created_at     timestamptz                  DEFAULT now(),
 
-  CONSTRAINT pagos_pkey            PRIMARY KEY (id),
-  CONSTRAINT pagos_factura_fk      FOREIGN KEY (factura_id)     REFERENCES public.facturas(id),
-  CONSTRAINT pagos_proyecto_fk     FOREIGN KEY (proyecto_id)    REFERENCES public.proyectos(id),
-  CONSTRAINT pagos_venta_fk        FOREIGN KEY (venta_id)       REFERENCES public.ventas_refacciones(id),
-  CONSTRAINT pagos_registrado_fk   FOREIGN KEY (registrado_por) REFERENCES public.usuarios(id)
+  CONSTRAINT pagos_pkey PRIMARY KEY (id),
+  CONSTRAINT pagos_factura_fk FOREIGN KEY (factura_id)     REFERENCES public.facturas(id),
+  CONSTRAINT pagos_proyecto_fk FOREIGN KEY (proyecto_id)    REFERENCES public.proyectos(id),
+  CONSTRAINT pagos_venta_fk FOREIGN KEY (venta_id)       REFERENCES public.ventas_refacciones(id),
+  CONSTRAINT pagos_registrado_fk FOREIGN KEY (registrado_por) REFERENCES public.usuarios(id)
 );
 
-COMMENT ON TABLE  public.pagos          IS 'Registro de cobros. RF-030, CU-28. RD-05.';
-COMMENT ON COLUMN public.pagos.venta_id IS 'C-04: Trazabilidad directa a venta de refacción sin JOIN a facturas.';
+COMMENT ON TABLE public.pagos IS 'Registro de cobros.';
 
 
 -- ============================================================
@@ -555,14 +583,13 @@ CREATE TABLE public.historial (
   fecha_cierre timestamptz NOT NULL,
   created_at   timestamptz          DEFAULT now(),
 
-  CONSTRAINT historial_pkey        PRIMARY KEY (id),
+  CONSTRAINT historial_pkey PRIMARY KEY (id),
   CONSTRAINT historial_proyecto_fk FOREIGN KEY (proyecto_id) REFERENCES public.proyectos(id),
   CONSTRAINT historial_vehiculo_fk FOREIGN KEY (vehiculo_id) REFERENCES public.vehiculos(id),
   CONSTRAINT historial_cliente_fk  FOREIGN KEY (cliente_id)  REFERENCES public.clientes(id)
 );
 
-COMMENT ON TABLE  public.historial             IS 'Historial cerrado de proyectos. RF-011, CU-22. Generado por trigger C-08.';
-COMMENT ON COLUMN public.historial.proyecto_id IS 'UNIQUE: cada proyecto genera exactamente un registro de historial.';
+COMMENT ON TABLE public.historial IS 'Historial cerrado de proyectos';
 
 
 -- ============================================================
@@ -570,18 +597,18 @@ COMMENT ON COLUMN public.historial.proyecto_id IS 'UNIQUE: cada proyecto genera 
 -- ============================================================
 
 CREATE TABLE public.historial_mecanicos (
-  id              uuid NOT NULL DEFAULT gen_random_uuid(),
-  historial_id    uuid NOT NULL,
-  mecanico_id     uuid NOT NULL,
+  id           uuid NOT NULL DEFAULT gen_random_uuid(),
+  historial_id uuid NOT NULL,
+  mecanico_id  uuid NOT NULL,
   rol_en_proyecto text,
 
-  CONSTRAINT historial_mecanicos_pkey         PRIMARY KEY (id),
+  CONSTRAINT historial_mecanicos_pkey PRIMARY KEY (id),
   CONSTRAINT historial_mecanicos_historial_fk FOREIGN KEY (historial_id) REFERENCES public.historial(id),
   CONSTRAINT historial_mecanicos_mecanico_fk  FOREIGN KEY (mecanico_id)  REFERENCES public.empleados(id),
-  CONSTRAINT historial_mecanicos_unique       UNIQUE (historial_id, mecanico_id)
+  CONSTRAINT historial_mecanicos_unique UNIQUE (historial_id, mecanico_id)
 );
 
-COMMENT ON TABLE public.historial_mecanicos IS 'Mecánicos participantes en el proyecto cerrado. CU-22.';
+COMMENT ON TABLE public.historial_mecanicos IS 'Mecánicos participantes en el proyecto cerrado.';
 
 
 -- ============================================================
@@ -595,17 +622,16 @@ CREATE TABLE public.historial_refacciones (
   cantidad     integer NOT NULL CHECK (cantidad > 0),
   precio_unit  numeric NOT NULL CHECK (precio_unit >= 0),
 
-  CONSTRAINT historial_refacciones_pkey         PRIMARY KEY (id),
+  CONSTRAINT historial_refacciones_pkey PRIMARY KEY (id),
   CONSTRAINT historial_refacciones_historial_fk FOREIGN KEY (historial_id) REFERENCES public.historial(id),
   CONSTRAINT historial_refacciones_refaccion_fk FOREIGN KEY (refaccion_id) REFERENCES public.refacciones(id)
 );
 
-COMMENT ON TABLE public.historial_refacciones IS 'Refacciones usadas en el proyecto cerrado. CU-22.';
+COMMENT ON TABLE public.historial_refacciones IS 'Refacciones usadas en el proyecto cerrado.';
 
 
 -- ============================================================
 -- BLOQUE 22: notificaciones
--- C-06: cita_id opcional (RF-008, RF-020)
 -- ============================================================
 
 CREATE TABLE public.notificaciones (
@@ -618,17 +644,16 @@ CREATE TABLE public.notificaciones (
   leida       boolean              DEFAULT false,
   created_at  timestamptz          DEFAULT now(),
 
-  CONSTRAINT notificaciones_pkey         PRIMARY KEY (id),
-  CONSTRAINT notificaciones_usuario_fk   FOREIGN KEY (usuario_id)  REFERENCES public.usuarios(id),
+  CONSTRAINT notificaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT notificaciones_usuario_fk FOREIGN KEY (usuario_id)  REFERENCES public.usuarios(id),
   CONSTRAINT notificaciones_proyecto_fk  FOREIGN KEY (proyecto_id) REFERENCES public.proyectos(id),
-  CONSTRAINT notificaciones_cita_fk      FOREIGN KEY (cita_id)     REFERENCES public.citas(id),
+  CONSTRAINT notificaciones_cita_fk FOREIGN KEY (cita_id)     REFERENCES public.citas(id),
   CONSTRAINT notificaciones_origen_check CHECK (
     NOT (proyecto_id IS NOT NULL AND cita_id IS NOT NULL)
   )
 );
 
-COMMENT ON TABLE  public.notificaciones         IS 'Notificaciones al usuario. RF-020, CU-23.';
-COMMENT ON COLUMN public.notificaciones.cita_id IS 'C-06: Para notificaciones de citas. RF-008.';
+COMMENT ON TABLE public.notificaciones IS 'Notificaciones al usuario.';
 
 
 -- ============================================================
@@ -646,12 +671,12 @@ CREATE TABLE public.reportes (
   resultado    jsonb,
   created_at   timestamptz                  DEFAULT now(),
 
-  CONSTRAINT reportes_pkey         PRIMARY KEY (id),
-  CONSTRAINT reportes_usuario_fk   FOREIGN KEY (generado_por) REFERENCES public.usuarios(id),
+  CONSTRAINT reportes_pkey PRIMARY KEY (id),
+  CONSTRAINT reportes_usuario_fk FOREIGN KEY (generado_por) REFERENCES public.usuarios(id),
   CONSTRAINT reportes_fechas_check CHECK (fecha_fin >= fecha_inicio)
 );
 
-COMMENT ON TABLE public.reportes IS 'Reportes financieros y operativos. RF-023, RF-024, CU-17, CU-18.';
+COMMENT ON TABLE public.reportes IS 'Reportes financieros y operativos.';
 
 
 -- ============================================================
@@ -669,11 +694,11 @@ CREATE TABLE public.auditoria (
   ip            text,
   created_at    timestamptz           DEFAULT now(),
 
-  CONSTRAINT auditoria_pkey       PRIMARY KEY (id),
+  CONSTRAINT auditoria_pkey PRIMARY KEY (id),
   CONSTRAINT auditoria_usuario_fk FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id)
 );
 
-COMMENT ON TABLE public.auditoria IS 'Log de cambios críticos. RF-026, CU-14.';
+COMMENT ON TABLE public.auditoria IS 'Log de cambios críticos.';
 
 
 -- ============================================================
@@ -695,13 +720,16 @@ CREATE INDEX idx_cotizaciones_proyecto    ON public.cotizaciones  (proyecto_id);
 CREATE INDEX idx_cotizaciones_estado      ON public.cotizaciones  (estado);
 CREATE INDEX idx_pagos_factura            ON public.pagos         (factura_id);
 CREATE INDEX idx_pagos_proyecto           ON public.pagos         (proyecto_id);
-CREATE INDEX idx_refacciones_stock_bajo   ON public.refacciones   (id) WHERE activo = true AND stock <= stock_minimo;
-CREATE INDEX idx_auditoria_tabla          ON public.auditoria     (tabla, created_at DESC);
+CREATE INDEX idx_refacciones_stock_bajo   ON public.refacciones        (id) WHERE activo = true AND stock <= stock_minimo;
+CREATE INDEX idx_auditoria_tabla          ON public.auditoria           (tabla, created_at DESC);
+CREATE INDEX idx_proyecto_mecanicos_proy  ON public.proyecto_mecanicos  (proyecto_id);
+CREATE INDEX idx_proyecto_mecanicos_mec   ON public.proyecto_mecanicos  (mecanico_id);
+CREATE INDEX idx_refaccion_proveedores_r  ON public.refaccion_proveedores (refaccion_id);
+CREATE INDEX idx_refaccion_proveedores_p  ON public.refaccion_proveedores (proveedor_id);
 
 
 -- ============================================================
 -- BLOQUE 26: FUNCIÓN — fn_proyecto_listo_para_entrega
--- Valida RD-03 (diagnóstico final) y RD-05 (pago completado)
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.fn_proyecto_listo_para_entrega(p_proyecto_id uuid)
@@ -727,12 +755,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.fn_proyecto_listo_para_entrega IS
-  'Verifica RD-03 (diagnóstico final) y RD-05 (pago completado) antes de marcar entregado.';
+  'Verifica pago completado antes de marcar entregado.';
 
 
 -- ============================================================
 -- BLOQUE 27: TRIGGER — tr_validar_entrega
--- Impide marcar entregado sin cumplir RD-03 y RD-05
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.fn_validar_entrega()
@@ -741,7 +768,7 @@ BEGIN
   IF NEW.estado = 'entregado' AND OLD.estado <> 'entregado' THEN
     IF NOT public.fn_proyecto_listo_para_entrega(NEW.id) THEN
       RAISE EXCEPTION
-        'RD-03/RD-05: Proyecto % no puede entregarse. Falta diagnóstico final o pago completado.', NEW.id;
+        'Proyecto % no puede entregarse. Falta diagnóstico final o pago completado.', NEW.id;
     END IF;
     NEW.fecha_entrega := COALESCE(NEW.fecha_entrega, now());
     NEW.bloqueado     := false;
@@ -755,12 +782,11 @@ CREATE TRIGGER tr_validar_entrega
   FOR EACH ROW EXECUTE FUNCTION public.fn_validar_entrega();
 
 COMMENT ON TRIGGER tr_validar_entrega ON public.proyectos IS
-  'Valida RD-03 y RD-05 al entregar. Registra fecha_entrega y libera bloqueado.';
+  'Valida al entregar. Registra fecha_entrega y libera bloqueado.';
 
 
 -- ============================================================
 -- BLOQUE 28: TRIGGER C-07a — tr_descontar_stock_venta
--- RD-07: descuenta stock, falla si insuficiente
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.fn_descontar_stock_venta()
@@ -772,7 +798,7 @@ BEGIN
 
   IF v_stock < NEW.cantidad THEN
     RAISE EXCEPTION
-      'RD-07: Stock insuficiente para refacción %. Disponible: %, requerido: %',
+      'Stock insuficiente para refacción %. Disponible: %, requerido: %',
       NEW.refaccion_id, v_stock, NEW.cantidad;
   END IF;
 
@@ -789,11 +815,11 @@ CREATE TRIGGER tr_descontar_stock_venta
   FOR EACH ROW EXECUTE FUNCTION public.fn_descontar_stock_venta();
 
 COMMENT ON TRIGGER tr_descontar_stock_venta ON public.ventas_refacciones IS
-  'C-07a: Descuenta stock al registrar venta. RD-07: falla si stock insuficiente.';
+  'Descuenta stock al registrar venta. RD-07: falla si stock insuficiente.';
 
 
 -- ============================================================
--- BLOQUE 29: TRIGGER C-07b — tr_sumar_stock_compra
+-- BLOQUE 29: TRIGGER tr_sumar_stock_compra
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.fn_sumar_stock_compra()
@@ -811,12 +837,11 @@ CREATE TRIGGER tr_sumar_stock_compra
   FOR EACH ROW EXECUTE FUNCTION public.fn_sumar_stock_compra();
 
 COMMENT ON TRIGGER tr_sumar_stock_compra ON public.compras_refacciones IS
-  'C-07b: Suma stock al registrar compra. RF-014, RD-07.';
+  'Suma stock al registrar compra.';
 
 
 -- ============================================================
--- BLOQUE 30: TRIGGER C-08 — tr_generar_historial_al_entregar
--- Genera historial automáticamente al entregar (RF-011, RD-03)
+-- BLOQUE 30: TRIGGER — tr_generar_historial_al_entregar
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.fn_generar_historial_al_entregar()
@@ -840,6 +865,15 @@ BEGIN
       VALUES (v_historial_id, NEW.mecanico_id, 'principal');
     END IF;
 
+    -- Insertar también los mecánicos secundarios de la tabla N:M,
+    -- evitando duplicar el principal si ya estaba en proyecto_mecanicos.
+    INSERT INTO public.historial_mecanicos (historial_id, mecanico_id, rol_en_proyecto)
+    SELECT v_historial_id, pm.mecanico_id, COALESCE(pm.rol, 'apoyo')
+    FROM public.proyecto_mecanicos pm
+    WHERE pm.proyecto_id = NEW.id
+      AND (NEW.mecanico_id IS NULL OR pm.mecanico_id <> NEW.mecanico_id)
+    ON CONFLICT (historial_id, mecanico_id) DO NOTHING;
+
     INSERT INTO public.historial_refacciones (historial_id, refaccion_id, cantidad, precio_unit)
     SELECT v_historial_id, cr.refaccion_id, cr.cantidad, cr.precio_unit
     FROM public.compras_refacciones cr
@@ -855,7 +889,7 @@ CREATE TRIGGER tr_generar_historial_al_entregar
   FOR EACH ROW EXECUTE FUNCTION public.fn_generar_historial_al_entregar();
 
 COMMENT ON TRIGGER tr_generar_historial_al_entregar ON public.proyectos IS
-  'C-08: Genera historial al entregar proyecto. RF-011, RD-03.';
+  'C-08: Genera historial al entregar proyecto.';
 
 
 -- ============================================================
@@ -880,7 +914,7 @@ CREATE TRIGGER tr_bloquear_entrega_sin_pago
   FOR EACH ROW EXECUTE FUNCTION public.fn_bloquear_entrega_sin_pago();
 
 COMMENT ON TRIGGER tr_bloquear_entrega_sin_pago ON public.facturas IS
-  'Bloquea entrega al emitir factura. RF-019, CU-30, RD-05.';
+  'Bloquea entrega al emitir factura.';
 
 
 -- ============================================================
@@ -905,9 +939,4 @@ CREATE TRIGGER tr_liberar_bloqueo_al_pagar
   FOR EACH ROW EXECUTE FUNCTION public.fn_liberar_bloqueo_al_pagar();
 
 COMMENT ON TRIGGER tr_liberar_bloqueo_al_pagar ON public.pagos IS
-  'Libera bloqueo de entrega al pagar. RF-030, RD-05.';
-
-
--- ============================================================
--- FIN — BD_Stathmos_v2_Final.sql — Kentro Software — v2.1
--- ============================================================
+  'Libera bloqueo de entrega al pagar.';
