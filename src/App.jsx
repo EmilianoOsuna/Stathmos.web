@@ -1212,6 +1212,7 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
 const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
+  const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
@@ -1222,11 +1223,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const fetchFotos = useCallback(async () => {
     if (!proyecto?.id) return;
     setLoadingFotos(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("fotografias")
       .select("id, url, descripcion, momento, created_at")
       .eq("proyecto_id", proyecto.id)
       .order("created_at", { ascending: true });
+    if (error) console.error("[fetchFotos] DB error:", error);
+    console.log("[fetchFotos] rows:", data);
     setFotos(data || []);
     setLoadingFotos(false);
   }, [proyecto?.id]);
@@ -1239,26 +1242,65 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+
     setUploading(true);
     setUploadError("");
+
+    // 1. Buscamos el ID del mecánico autenticado UNA sola vez (fuera del loop)
+    let currentMecanicoId = proyecto.mecanico_id;
+    if (session?.user?.email) {
+      const { data: empData } = await supabase
+        .from("empleados")
+        .select("id")
+        .eq("correo", session.user.email)
+        .maybeSingle();
+        
+      if (empData?.id) {
+        currentMecanicoId = empData.id;
+      }
+    }
+
+    // 2. Procesamos cada archivo
     for (const file of files) {
-      const ext  = file.name.split(".").pop();
+      // Aseguramos que la extensión sea correcta
+      const nombreArchivo = file.name || "foto";
+      const ext = nombreArchivo.includes(".") ? nombreArchivo.split(".").pop() : "jpg";
       const path = `${proyecto.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+      // Paso A: Subir la foto al bucket
       const { error: storageError } = await supabase.storage
         .from("fotografias")
         .upload(path, file, { contentType: file.type, upsert: false });
-      if (storageError) { setUploadError(storageError.message); setUploading(false); return; }
+
+      if (storageError) { 
+        setUploadError(storageError.message); 
+        setUploading(false); 
+        return; 
+      }
+
+      // Paso B: Obtener la URL pública
       const { data: urlData } = supabase.storage.from("fotografias").getPublicUrl(path);
-      const { data: empData } = await supabase
-        .from("empleados").select("id").eq("correo", session?.user?.email).maybeSingle();
-      await supabase.from("fotografias").insert({
+
+      // Paso C: Guardar el registro en la base de datos
+      const { error: insertError } = await supabase.from("fotografias").insert({
         proyecto_id: proyecto.id,
-        mecanico_id: empData?.id ?? proyecto.mecanico_id,
+        mecanico_id: currentMecanicoId, // Usamos la variable que definimos arriba
         url:         urlData.publicUrl,
-        momento:     "durante",
+        momento:     momentoFoto,       // Usamos el "antes", "durante" o "despues" del Dropdown
         descripcion: file.name,
       });
+
+      // Paso D: Si la base de datos falla, borramos la foto del bucket (Limpieza)
+      if (insertError) {
+        console.error("[DB Insert Error]:", insertError);
+        setUploadError("Error al guardar en BD: " + insertError.message);
+        await supabase.storage.from("fotografias").remove([path]); // Borra el archivo huérfano
+        setUploading(false);
+        return; 
+      }
     }
+
+    // 3. Terminamos el proceso con éxito
     setUploading(false);
     fetchFotos();
     if (fileRef.current) fileRef.current.value = "";
@@ -1320,6 +1362,18 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
               {canUpload && (
                 <div className="flex items-center gap-2">
                   {uploading && <span className={`text-xs ${st}`}>Subiendo…</span>}
+                  
+                  <select 
+                    value={momentoFoto} 
+                    onChange={(e) => setMomentoFoto(e.target.value)}
+                    disabled={uploading}
+                    className={`text-xs px-2 py-1.5 rounded-lg border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                  >
+                    <option value="antes">Antes</option>
+                    <option value="durante">Durante</option>
+                    <option value="despues">Después</option>
+                  </select>
+
                   <button
                     onClick={() => fileRef.current?.click()}
                     disabled={uploading}
@@ -1341,7 +1395,12 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {fotos.map((f) => (
                   <div key={f.id} className="relative aspect-square rounded-lg overflow-hidden cursor-pointer group" onClick={() => setLightbox(f.url)}>
-                    <img src={f.url} alt={f.descripcion || "Foto"} className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
+                    <img
+                      src={f.url}
+                      alt={f.descripcion || "Foto"}
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                      onError={(e) => console.error("[img] failed to load:", f.url, e)}
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-end p-2">
                       {f.descripcion && <p className="text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate">{f.descripcion}</p>}
                     </div>
@@ -1583,6 +1642,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
         )}
       </Card>
       <ProyectoDetalleModal
+      
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
         canUpload={false} session={session}
