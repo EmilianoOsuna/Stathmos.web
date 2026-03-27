@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import supabase from "./supabase";
 import Login from "./Login";
+import CompletarRegistro from "./CompletarRegistro";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 const C_BLUE = "#60aebb";
@@ -49,6 +50,21 @@ const estadoBadge = (estado, darkMode) => {
 };
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-MX", { dateStyle: "medium" }) : "—";
+
+const normalizeRole = (value = "") =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const getRoleFromSession = (session) => {
+  const appRole = session?.user?.app_metadata?.rol;
+  const metaRole = session?.user?.user_metadata?.rol;
+  const rol = normalizeRole(appRole || metaRole || "");
+  if (["administrador", "mecanico", "cliente"].includes(rol)) return rol;
+  return "";
+};
 
 // ─── Global CSS animations (injected once) ────────────────────────────────────
 const GlobalStyles = () => (
@@ -365,6 +381,300 @@ const ClientesModule = ({ darkMode }) => {
   );
 };
 
+// ─── EMPLEADOS MODULE ────────────────────────────────────────────────────────
+const EmpleadosModule = ({ darkMode }) => {
+  const [empleados,     setEmpleados]     = useState([]);
+  const [usuarios,      setUsuarios]      = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [search,        setSearch]        = useState("");
+  const [modalOpen,     setModalOpen]     = useState(false);
+  const [editTarget,    setEditTarget]    = useState(null);
+  const [toggleTarget,  setToggleTarget]  = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [formError,     setFormError]     = useState("");
+  const [form, setForm] = useState({
+    usuario_id: "",
+    nombre: "",
+    telefono: "",
+    correo: "",
+    rfc: "",
+    fecha_ingreso: new Date().toISOString().slice(0, 10),
+    disponible: true,
+    activo: true,
+  });
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [e, u] = await Promise.all([
+      supabase.from("empleados").select("*, usuarios(nombre,correo)").order("created_at", { ascending: false }),
+      supabase.from("usuarios").select("id,nombre,correo,activo").eq("activo", true).order("nombre"),
+    ]);
+    setEmpleados(e.data || []);
+    setUsuarios(u.data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const openCreate = () => {
+    setEditTarget(null);
+    setForm({
+      usuario_id: "",
+      nombre: "",
+      telefono: "",
+      correo: "",
+      rfc: "",
+      fecha_ingreso: new Date().toISOString().slice(0, 10),
+      disponible: true,
+      activo: true,
+    });
+    setFormError("");
+    setModalOpen(true);
+  };
+
+  const openEdit = (e) => {
+    setEditTarget(e);
+    setForm({
+      usuario_id: e.usuario_id || "",
+      nombre: e.nombre || "",
+      telefono: e.telefono || "",
+      correo: e.correo || "",
+      rfc: e.rfc || "",
+      fecha_ingreso: e.fecha_ingreso || "",
+      disponible: e.disponible ?? true,
+      activo: e.activo ?? true,
+    });
+    setFormError("");
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.usuario_id || !form.nombre.trim() || !form.correo.trim()) {
+      setFormError("Usuario, nombre y correo son obligatorios.");
+      return;
+    }
+
+    setSaving(true);
+    setFormError("");
+
+    const payload = {
+      usuario_id: form.usuario_id,
+      nombre: form.nombre.trim(),
+      telefono: form.telefono.trim() || null,
+      correo: form.correo.trim().toLowerCase(),
+      rfc: form.rfc.trim().toUpperCase() || null,
+      fecha_ingreso: form.fecha_ingreso || null,
+      disponible: form.disponible,
+      activo: form.activo,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = editTarget
+      ? await supabase.from("empleados").update(payload).eq("id", editTarget.id)
+      : await supabase.from("empleados").insert([payload]);
+
+    setSaving(false);
+    if (error) { setFormError(error.message); return; }
+    setModalOpen(false);
+    fetchAll();
+  };
+
+  const handleToggle = async () => {
+    if (!toggleTarget) return;
+    await supabase
+      .from("empleados")
+      .update({ activo: !toggleTarget.activo, updated_at: new Date().toISOString() })
+      .eq("id", toggleTarget.id);
+    setToggleTarget(null);
+    fetchAll();
+  };
+
+  const filtered = empleados.filter((e) => {
+    const q = search.toLowerCase();
+    return (
+      e.nombre?.toLowerCase().includes(q) ||
+      e.correo?.toLowerCase().includes(q) ||
+      e.telefono?.toLowerCase().includes(q) ||
+      e.rfc?.toLowerCase().includes(q)
+    );
+  });
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+  const rowH    = darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50";
+  const headTxt = darkMode ? "text-zinc-500 border-zinc-800" : "text-gray-400 border-gray-100";
+
+  const activeBadge = (active) => active
+    ? darkMode ? "bg-emerald-900/40 text-emerald-400 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : darkMode ? "bg-zinc-800 text-zinc-500 border-zinc-700"             : "bg-gray-100 text-gray-400 border-gray-200";
+
+  const disponibleBadge = (disponible) => disponible
+    ? darkMode ? "bg-sky-900/40 text-sky-300 border-sky-800" : "bg-sky-50 text-sky-700 border-sky-200"
+    : darkMode ? "bg-zinc-800 text-zinc-500 border-zinc-700" : "bg-gray-100 text-gray-500 border-gray-200";
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div>
+          <h2 className={`text-lg font-semibold ${t}`}>Empleados</h2>
+          <p className={`text-xs ${st} mt-0.5`}>{empleados.length} registros</p>
+        </div>
+        <BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Empleado</BtnAccent>
+      </div>
+
+      <div className="mb-4">
+        <Input darkMode={darkMode} placeholder="Buscar por nombre, correo, teléfono o RFC…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : filtered.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Sin resultados</div>
+        ) : (
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={`border-b text-xs uppercase tracking-wider ${headTxt}`}>
+                    {[
+                      "Nombre", "Correo", "Teléfono", "RFC", "Usuario", "Ingreso", "Disponible", "Estado", ""
+                    ].map((h, i) => (
+                      <th key={i} className={`px-4 py-3 font-medium ${i === 8 ? "text-right" : "text-left"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${divider}`}>
+                  {filtered.map((e) => (
+                    <tr key={e.id} className={`transition-colors ${rowH}`}>
+                      <td className={`px-4 py-3 font-medium ${t}`}>{e.nombre}</td>
+                      <td className={`px-4 py-3 ${st}`}>{e.correo}</td>
+                      <td className={`px-4 py-3 ${st}`}>{e.telefono || "—"}</td>
+                      <td className={`px-4 py-3 font-mono text-xs ${st}`}>{e.rfc || "—"}</td>
+                      <td className={`px-4 py-3 ${st}`} title={e.usuario_id}>{e.usuarios?.nombre || e.usuario_id?.slice(0, 8) || "—"}</td>
+                      <td className={`px-4 py-3 ${st} text-xs`}>{e.fecha_ingreso ? fmtDate(e.fecha_ingreso) : "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${disponibleBadge(e.disponible)}`}>
+                          {e.disponible ? "Sí" : "No"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${activeBadge(e.activo)}`}>
+                          {e.activo ? "Activo" : "Inactivo"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <BtnEdit onClick={() => openEdit(e)} darkMode={darkMode} />
+                          <BtnToggleActive onClick={() => setToggleTarget(e)} isActive={e.activo} darkMode={darkMode} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className={`md:hidden divide-y ${divider}`}>
+              {filtered.map((e) => (
+                <div key={e.id} className="px-4 py-4 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className={`font-medium ${t}`}>{e.nombre}</p>
+                      <p className={`text-xs ${st}`}>{e.correo}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 ${activeBadge(e.activo)}`}>
+                      {e.activo ? "Activo" : "Inactivo"}
+                    </span>
+                  </div>
+                  {e.telefono && <p className={`text-xs ${st}`}>Tel: {e.telefono}</p>}
+                  {e.rfc && <p className={`text-xs font-mono ${st}`}>RFC: {e.rfc}</p>}
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${disponibleBadge(e.disponible)}`}>
+                      Disponible: {e.disponible ? "Sí" : "No"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <BtnEdit onClick={() => openEdit(e)} darkMode={darkMode} />
+                    <BtnToggleActive onClick={() => setToggleTarget(e)} isActive={e.activo} darkMode={darkMode} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? "Editar Empleado" : "Nuevo Empleado"} darkMode={darkMode}>
+        <div className="flex flex-col gap-4">
+          <Field label="Usuario (usuario_id)" required darkMode={darkMode}>
+            <Select darkMode={darkMode} value={form.usuario_id} onChange={(e) => setForm({ ...form, usuario_id: e.target.value })}>
+              <option value="">Seleccionar usuario…</option>
+              {usuarios.map((u) => (
+                <option key={u.id} value={u.id}>{u.nombre} · {u.correo}</option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="Nombre" required darkMode={darkMode}>
+            <Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Nombre del empleado" />
+          </Field>
+
+          <Field label="Teléfono" darkMode={darkMode}>
+            <Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="311 123 4567" />
+          </Field>
+
+          <Field label="Correo" required darkMode={darkMode}>
+            <Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} placeholder="empleado@stathmos.mx" />
+          </Field>
+
+          <Field label="RFC" darkMode={darkMode}>
+            <Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} placeholder="GARC800101ABC" className="font-mono" />
+          </Field>
+
+          <Field label="Fecha de ingreso" darkMode={darkMode}>
+            <Input darkMode={darkMode} type="date" value={form.fecha_ingreso || ""} onChange={(e) => setForm({ ...form, fecha_ingreso: e.target.value })} />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Disponible" darkMode={darkMode}>
+              <Select darkMode={darkMode} value={form.disponible ? "true" : "false"} onChange={(e) => setForm({ ...form, disponible: e.target.value === "true" })}>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </Select>
+            </Field>
+            <Field label="Activo" darkMode={darkMode}>
+              <Select darkMode={darkMode} value={form.activo ? "true" : "false"} onChange={(e) => setForm({ ...form, activo: e.target.value === "true" })}>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </Select>
+            </Field>
+          </div>
+
+          {formError && <p className="text-xs" style={{ color: C_RED }}>{formError}</p>}
+
+          <div className="flex gap-3 mt-1">
+            <button onClick={() => setModalOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+            <BtnAccent onClick={handleSave} disabled={saving} color={C_BLUE} className="flex-1 justify-center">{saving ? "Guardando…" : editTarget ? "Actualizar" : "Crear"}</BtnAccent>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        open={!!toggleTarget}
+        onClose={() => setToggleTarget(null)}
+        title={toggleTarget?.activo ? "Desactivar Empleado" : "Activar Empleado"}
+        message={`¿${toggleTarget?.activo ? "Desactivar" : "Activar"} a <strong>${toggleTarget?.nombre}</strong>?`}
+        onConfirm={handleToggle}
+        confirmLabel={toggleTarget?.activo ? "Desactivar" : "Activar"}
+        confirmColor={toggleTarget?.activo ? C_RED : C_BLUE}
+        darkMode={darkMode}
+      />
+    </div>
+  );
+};
+
 // ─── VEHÍCULOS MODULE ─────────────────────────────────────────────────────────
 const VehiculosModule = ({ darkMode }) => {
   const [vehiculos,    setVehiculos]    = useState([]);
@@ -565,7 +875,7 @@ const VehiculosModule = ({ darkMode }) => {
 };
 
 // ─── PROYECTOS MODULE ─────────────────────────────────────────────────────────
-const ProyectosModule = ({ darkMode }) => {
+const ProyectosModule = ({ darkMode, session }) => {
   const [proyectos,  setProyectos]  = useState([]);
   const [clientes,   setClientes]   = useState([]);
   const [vehiculos,  setVehiculos]  = useState([]);
@@ -580,6 +890,7 @@ const ProyectosModule = ({ darkMode }) => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
+  const [detalle, setDetalle] = useState(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -693,7 +1004,7 @@ const ProyectosModule = ({ darkMode }) => {
                 <tbody className={`divide-y ${divider}`}>
                   {filtered.map((p) => (
                     <tr key={p.id} className={`transition-colors ${rowH}`}>
-                      <td className={`px-5 py-3 font-medium ${t} max-w-[160px] truncate`}>{p.bloqueado && <span className="mr-1 text-amber-500 text-xs">🔒</span>}{p.titulo}</td>
+                      <td className={`px-5 py-3 font-medium ${t} max-w-[160px] truncate cursor-pointer`} onClick={() => setDetalle(p)}>{p.bloqueado && <span className="mr-1 text-amber-500 text-xs">🔒</span>}{p.titulo}</td>
                       <td className={`px-5 py-3 ${st}`}>{p.clientes?.nombre || "—"}</td>
                       <td className={`px-5 py-3 ${st} text-xs`}>{p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo} · ${p.vehiculos.placas}` : "—"}</td>
                       <td className={`px-5 py-3 ${st}`}>{p.empleados?.nombre || "—"}</td>
@@ -778,6 +1089,11 @@ const ProyectosModule = ({ darkMode }) => {
         title="Cancelar Proyecto"
         message={`¿Cancelar el proyecto <strong>${deleteTarget?.titulo}</strong>? El estado cambiará a "cancelado".`}
         onConfirm={handleDelete} confirmLabel="Cancelar Proyecto" confirmColor={C_RED} darkMode={darkMode}
+      />
+      <ProyectoDetalleModal
+        open={!!detalle} onClose={() => setDetalle(null)}
+        proyecto={detalle} darkMode={darkMode}
+        canUpload={true} session={session}
       />
     </div>
   );
@@ -892,26 +1208,173 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
   );
 };
 
-// ─── Dashboard shell ──────────────────────────────────────────────────────────
-const Dashboard = ({ session, darkMode }) => {
+// ─── Shell compartido (topbar + sidebar) ─────────────────────────────────────
+
+// ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
+  const [fotos,        setFotos]        = useState([]);
+  const [loadingFotos, setLoadingFotos] = useState(false);
+  const [uploading,    setUploading]    = useState(false);
+  const [uploadError,  setUploadError]  = useState("");
+  const [lightbox,     setLightbox]     = useState(null);
+  const fileRef = useRef(null);
+
+  const fetchFotos = useCallback(async () => {
+    if (!proyecto?.id) return;
+    setLoadingFotos(true);
+    const { data } = await supabase
+      .from("fotografias")
+      .select("id, url, descripcion, momento, created_at")
+      .eq("proyecto_id", proyecto.id)
+      .order("created_at", { ascending: true });
+    setFotos(data || []);
+    setLoadingFotos(false);
+  }, [proyecto?.id]);
+
+  useEffect(() => {
+    if (open) fetchFotos();
+    else { setFotos([]); setUploadError(""); setLightbox(null); }
+  }, [open, fetchFotos]);
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    setUploadError("");
+    for (const file of files) {
+      const ext  = file.name.split(".").pop();
+      const path = `${proyecto.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: storageError } = await supabase.storage
+        .from("fotografias")
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (storageError) { setUploadError(storageError.message); setUploading(false); return; }
+      const { data: urlData } = supabase.storage.from("fotografias").getPublicUrl(path);
+      const { data: empData } = await supabase
+        .from("empleados").select("id").eq("correo", session?.user?.email).maybeSingle();
+      await supabase.from("fotografias").insert({
+        proyecto_id: proyecto.id,
+        mecanico_id: empData?.id ?? proyecto.mecanico_id,
+        url:         urlData.publicUrl,
+        momento:     "durante",
+        descripcion: file.name,
+      });
+    }
+    setUploading(false);
+    fetchFotos();
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  if (!open || !proyecto) return null;
+
+  const t       = darkMode ? "text-zinc-100"  : "text-gray-800";
+  const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
+  const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
+  const divider = darkMode ? "border-zinc-800" : "border-gray-100";
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/60 overflow-y-auto anim-fadeIn" onClick={onClose}>
+        <div
+          className={`relative w-full max-w-2xl rounded-xl border ${card} mb-8`}
+          style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.7)" : "0 16px 48px rgba(0,0,0,0.18)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className={`flex items-start justify-between px-6 py-4 border-b ${divider}`}>
+            <div className="flex-1 min-w-0 pr-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                {proyecto.bloqueado && <span className="text-amber-500 text-sm">🔒</span>}
+                <h2 className={`font-semibold text-base ${t}`}>{proyecto.titulo}</h2>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(proyecto.estado, darkMode)}`}>
+                  {proyecto.estado?.replace(/_/g, " ")}
+                </span>
+              </div>
+              {proyecto.descripcion && <p className={`text-xs mt-1 ${st}`}>{proyecto.descripcion}</p>}
+            </div>
+            <button onClick={onClose} className={`text-xl leading-none flex-shrink-0 ${st} hover:text-current transition-colors`}>×</button>
+          </div>
+
+          {/* Info grid */}
+          <div className={`px-6 py-4 grid grid-cols-2 gap-x-8 gap-y-3 border-b ${divider}`}>
+            {[
+              ["Cliente",    proyecto.clientes?.nombre],
+              ["Vehículo",   proyecto.vehiculos ? `${proyecto.vehiculos.marca} ${proyecto.vehiculos.modelo} · ${proyecto.vehiculos.placas}` : null],
+              ["Mecánico",   proyecto.empleados?.nombre],
+              ["Ingreso",    fmtDate(proyecto.fecha_ingreso)],
+              ["Aprobación", fmtDate(proyecto.fecha_aprobacion)],
+              ["Cierre",     fmtDate(proyecto.fecha_cierre)],
+            ].map(([label, val]) => val ? (
+              <div key={label}>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>{label}</p>
+                <p className={`text-sm mt-0.5 ${t}`}>{val}</p>
+              </div>
+            ) : null)}
+          </div>
+
+          {/* Fotografías */}
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className={`text-xs font-semibold uppercase tracking-widest ${st}`}>
+                Fotografías {fotos.length > 0 && `(${fotos.length})`}
+              </p>
+              {canUpload && (
+                <div className="flex items-center gap-2">
+                  {uploading && <span className={`text-xs ${st}`}>Subiendo…</span>}
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity disabled:opacity-50"
+                    style={{ backgroundColor: C_BLUE, color: "white" }}
+                  >+ Agregar fotos</button>
+                  <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handleUpload} />
+                </div>
+              )}
+            </div>
+            {uploadError && <p className="text-xs mb-2" style={{ color: C_RED }}>{uploadError}</p>}
+            {loadingFotos ? (
+              <div className={`text-center py-6 text-xs ${st}`}>Cargando fotos…</div>
+            ) : fotos.length === 0 ? (
+              <div className={`text-center py-6 text-xs ${st} border rounded-lg ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
+                {canUpload ? "Aún no hay fotos. Agrega la primera." : "Aún no hay fotos del proyecto."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {fotos.map((f) => (
+                  <div key={f.id} className="relative aspect-square rounded-lg overflow-hidden cursor-pointer group" onClick={() => setLightbox(f.url)}>
+                    <img src={f.url} alt={f.descripcion || "Foto"} className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-end p-2">
+                      {f.descripcion && <p className="text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate">{f.descripcion}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {lightbox && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="Foto" className="max-w-full max-h-full rounded-lg object-contain" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white text-2xl leading-none opacity-70 hover:opacity-100">×</button>
+        </div>
+      )}
+    </>
+  );
+};
+
+const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveModule, children, rolLabel }) => {
   const navigate = useNavigate();
-  const [activeModule, setActiveModule] = useState("clientes");
-  const [sidebarOpen,  setSidebarOpen]  = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/login", { replace: true });
   };
 
-  const navItems = [
-    { id: "clientes",   label: "Clientes",   icon: "👥" },
-    { id: "vehiculos",  label: "Vehículos",  icon: "🚗" },
-    { id: "proyectos",  label: "Proyectos",  icon: "🔧" },
-  ];
-
-  const topbar = darkMode ? "bg-[#12121a] border-zinc-800" : "bg-white border-gray-200";
+  const topbar  = darkMode ? "bg-[#12121a] border-zinc-800" : "bg-white border-gray-200";
   const sidebar = darkMode ? "bg-[#12121a] border-zinc-800" : "bg-white border-gray-200";
-  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const st      = darkMode ? "text-zinc-500" : "text-gray-400";
 
   const NavItem = ({ item }) => {
     const active = activeModule === item.id;
@@ -934,8 +1397,6 @@ const Dashboard = ({ session, darkMode }) => {
   return (
     <div className={`h-screen overflow-hidden flex flex-col ${darkMode ? "bg-[#16161e] text-white" : "bg-gray-50 text-gray-800"}`}>
       <GlobalStyles />
-
-      {/* Top bar */}
       <header
         className={`flex-shrink-0 flex items-center justify-between px-4 border-b ${topbar}`}
         style={{ height: "52px", boxShadow: darkMode ? "0 1px 0 rgba(255,255,255,0.03), 0 4px 12px rgba(0,0,0,0.3)" : "0 1px 0 rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04)" }}
@@ -947,18 +1408,18 @@ const Dashboard = ({ session, darkMode }) => {
           <div className="flex items-center gap-2">
             <LogoMark className="h-6 w-auto" />
             <span className="font-semibold text-sm hidden sm:block" style={{ color: C_BLUE }}>Stathmos</span>
+            {rolLabel && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${darkMode ? "border-zinc-700 text-zinc-500" : "border-gray-200 text-gray-400"}`}>
+                {rolLabel}
+              </span>
+            )}
           </div>
         </div>
-
-        <div className="flex items-center gap-3">
-          <UserMenuWithRef session={session} onLogout={handleLogout} darkMode={darkMode} />
-        </div>
+        <UserMenuWithRef session={session} onLogout={handleLogout} darkMode={darkMode} rolLabel={rolLabel} />
       </header>
 
       <div className="flex flex-1 min-h-0">
         {sidebarOpen && <div className="fixed inset-0 z-20 bg-black/50 md:hidden" onClick={() => setSidebarOpen(false)} />}
-
-        {/* Sidebar */}
         <aside
           className={`fixed md:relative top-0 left-0 h-full w-52 border-r flex flex-col z-20 transition-transform duration-200 ${sidebar} ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
           style={{ boxShadow: darkMode ? "1px 0 0 rgba(255,255,255,0.02)" : "1px 0 0 rgba(0,0,0,0.04)" }}
@@ -967,19 +1428,440 @@ const Dashboard = ({ session, darkMode }) => {
             <p className={`text-[10px] font-semibold uppercase tracking-widest px-3 py-2 ${st}`}>Módulos</p>
             {navItems.map((item) => <NavItem key={item.id} item={item} />)}
           </nav>
-
           <div className={`px-3 py-3 border-t ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
             <p className={`text-[10px] px-3 ${st}`}>Taller Don Elías</p>
           </div>
         </aside>
-
-        <main className="flex-1 min-w-0 overflow-y-auto">
-          {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} />}
-          {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
-          {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} />}
-        </main>
+        <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
       </div>
     </div>
+  );
+};
+
+// ─── Dashboard Admin ──────────────────────────────────────────────────────────
+const Dashboard = ({ session, darkMode }) => {
+  const [activeModule, setActiveModule] = useState("clientes");
+  const navItems = [
+    { id: "clientes",  label: "Clientes",  icon: "👥" },
+    { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
+    { id: "vehiculos", label: "Vehículos", icon: "🚗" },
+    { id: "proyectos", label: "Proyectos", icon: "🔧" },
+  ];
+  return (
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador">
+      {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} />}
+      {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
+      {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
+      {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
+    </DashboardShell>
+  );
+};
+
+// ─── Módulo Vehículos Cliente (solo lectura, filtrado por cliente autenticado) ─
+const MisVehiculosModule = ({ darkMode, clienteId }) => {
+  const [vehiculos, setVehiculos] = useState([]);
+  const [loading,   setLoading]   = useState(true);
+
+  useEffect(() => {
+    if (!clienteId) return;
+    const fetch = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("vehiculos")
+        .select("*")
+        .eq("cliente_id", clienteId)
+        .eq("activo", true)
+        .order("created_at", { ascending: false });
+      setVehiculos(data || []);
+      setLoading(false);
+    };
+    fetch();
+  }, [clienteId]);
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="mb-6">
+        <h2 className={`text-lg font-semibold ${t}`}>Mis Vehículos</h2>
+        <p className={`text-xs ${st} mt-0.5`}>{vehiculos.length} registrados</p>
+      </div>
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : vehiculos.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>No tienes vehículos registrados aún.</div>
+        ) : (
+          <div className={`divide-y ${divider}`}>
+            {vehiculos.map((v) => (
+              <div key={v.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1">
+                  <p className={`font-semibold ${t}`}>{v.marca} {v.modelo} {v.anio ? `(${v.anio})` : ""}</p>
+                  <p className={`text-xs font-mono mt-0.5 ${st}`}>Placas: {v.placas}{v.vin ? ` · VIN: ${v.vin}` : ""}</p>
+                  {v.color && <p className={`text-xs ${st}`}>Color: {v.color}</p>}
+                </div>
+                <span className={`self-start sm:self-center px-2 py-0.5 rounded text-xs font-medium border ${darkMode ? "bg-emerald-900/40 text-emerald-400 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                  Activo
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
+// ─── Módulo Proyectos Cliente (solo lectura, filtrado por cliente autenticado) ─
+const MisProyectosModule = ({ darkMode, clienteId, session }) => {
+  const [proyectos,   setProyectos]   = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [detalle,     setDetalle]     = useState(null);
+
+  useEffect(() => {
+    if (!clienteId) return;
+    const fetch = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("proyectos")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre)")
+        .eq("cliente_id", clienteId)
+        .order("created_at", { ascending: false });
+      setProyectos(data || []);
+      setLoading(false);
+    };
+    fetch();
+  }, [clienteId]);
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+  const rowH    = darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50";
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="mb-6">
+        <h2 className={`text-lg font-semibold ${t}`}>Mis Proyectos</h2>
+        <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
+      </div>
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : proyectos.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>No tienes proyectos registrados aún.</div>
+        ) : (
+          <div className={`divide-y ${divider}`}>
+            {proyectos.map((p) => (
+              <div
+                key={p.id}
+                className={`px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-3 cursor-pointer transition-colors ${rowH}`}
+                onClick={() => setDetalle(p)}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
+                    <p className={`font-semibold ${t}`}>{p.titulo}</p>
+                  </div>
+                  {p.descripcion && <p className={`text-xs ${st} mb-1`}>{p.descripcion}</p>}
+                  <p className={`text-xs ${st}`}>
+                    {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo} · ${p.vehiculos.placas}` : "—"}
+                    {p.empleados?.nombre ? ` · Mecánico: ${p.empleados.nombre}` : ""}
+                  </p>
+                  <p className={`text-xs ${st} mt-0.5`}>Ingreso: {fmtDate(p.fecha_ingreso)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`self-start px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(p.estado, darkMode)}`}>
+                    {p.estado.replace(/_/g, " ")}
+                  </span>
+                  <span className={`text-xs ${st}`}>Ver →</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <ProyectoDetalleModal
+        open={!!detalle} onClose={() => setDetalle(null)}
+        proyecto={detalle} darkMode={darkMode}
+        canUpload={false} session={session}
+      />
+    </div>
+  );
+};
+
+// ─── Dashboard Cliente ────────────────────────────────────────────────────────
+const DashboardCliente = ({ session, darkMode }) => {
+  const [activeModule, setActiveModule] = useState("mis-proyectos");
+  const [clienteId,    setClienteId]    = useState(null);
+
+  useEffect(() => {
+    const loadCliente = async () => {
+      const { data } = await supabase
+        .from("clientes")
+        .select("id")
+        .eq("correo", session.user.email)
+        .maybeSingle();
+      if (data?.id) setClienteId(data.id);
+    };
+    loadCliente();
+  }, [session]);
+
+  const navItems = [
+    { id: "mis-proyectos", label: "Mis Proyectos", icon: "🔧" },
+    { id: "mis-vehiculos", label: "Mis Vehículos",  icon: "🚗" },
+  ];
+
+  return (
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Cliente">
+      {activeModule === "mis-proyectos" && <MisProyectosModule darkMode={darkMode} clienteId={clienteId} session={session} />}
+      {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
+    </DashboardShell>
+  );
+};
+
+// ─── Módulo Proyectos Mecánico (proyectos asignados a él) ──────────────────────
+const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
+  const [proyectos,    setProyectos]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [filterEstado, setFilterEstado] = useState("todos");
+
+  useEffect(() => {
+    if (!empleadoId) return;
+    const fetch = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("proyectos")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas)")
+        .eq("mecanico_id", empleadoId)
+        .order("created_at", { ascending: false });
+      setProyectos(data || []);
+      setLoading(false);
+    };
+    fetch();
+  }, [empleadoId]);
+
+  const filtered = proyectos.filter((p) =>
+    filterEstado === "todos" || p.estado === filterEstado
+  );
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+
+  const filterBtnCls = (active) => active
+    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-600 text-zinc-200 bg-zinc-700"
+    : darkMode
+    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+    : "border text-xs font-medium px-3 py-1.5 rounded-md border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600";
+
+  const handleEstadoChange = async (proyecto, nuevoEstado) => {
+    await supabase
+      .from("proyectos")
+      .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
+      .eq("id", proyecto.id);
+    setProyectos((prev) =>
+      prev.map((p) => p.id === proyecto.id ? { ...p, estado: nuevoEstado } : p)
+    );
+  };
+
+  const [detalle, setDetalle] = useState(null);
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <div>
+          <h2 className={`text-lg font-semibold ${t}`}>Mis Proyectos Asignados</h2>
+          <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
+        </div>
+      </div>
+
+      {/* Stats strip */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+        {ESTADOS_PROYECTO.map((e) => {
+          const count = proyectos.filter((p) => p.estado === e).length;
+          return (
+            <Card key={e} darkMode={darkMode}
+              className="px-3 py-2.5 text-center cursor-pointer transition-opacity hover:opacity-80"
+              onClick={() => setFilterEstado(e === filterEstado ? "todos" : e)}
+            >
+              <p className={`text-base font-semibold ${estadoBadge(e, darkMode).split(" ")[1]}`}>{count}</p>
+              <p className={`text-[9px] uppercase tracking-wider ${st} mt-0.5`}>{e.replace(/_/g, " ")}</p>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Filtros */}
+      <div className="flex gap-1.5 flex-wrap mb-4">
+        {["todos", ...ESTADOS_PROYECTO].map((e) => (
+          <button key={e} onClick={() => setFilterEstado(e)} className={`capitalize ${filterBtnCls(filterEstado === e)}`}>
+            {e === "todos" ? "Todos" : e.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : filtered.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Sin proyectos asignados.</div>
+        ) : (
+          <div className={`divide-y ${divider}`}>
+            {filtered.map((p) => (
+              <div key={p.id} className={`px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-4 transition-colors ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
+                <div className="flex-1 cursor-pointer" onClick={() => setDetalle(p)}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
+                    <p className={`font-semibold ${t}`}>{p.titulo}</p>
+                  </div>
+                  {p.descripcion && <p className={`text-xs ${st} mb-1`}>{p.descripcion}</p>}
+                  <p className={`text-xs ${st}`}>
+                    Cliente: {p.clientes?.nombre || "—"} ·{" "}
+                    {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo} · ${p.vehiculos.placas}` : "—"}
+                  </p>
+                  <p className={`text-xs ${st} mt-0.5`}>Ingreso: {fmtDate(p.fecha_ingreso)} · <span className="underline">Ver fotos →</span></p>
+                </div>
+                <div className="flex flex-col gap-2 items-start sm:items-end">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(p.estado, darkMode)}`}>
+                    {p.estado.replace(/_/g, " ")}
+                  </span>
+                  {!["entregado","cancelado"].includes(p.estado) && (
+                    <select
+                      className={`text-xs rounded px-2 py-1 border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                      value={p.estado}
+                      onChange={(e) => handleEstadoChange(p, e.target.value)}
+                    >
+                      {ESTADOS_PROYECTO.filter((s) => s !== "entregado" && s !== "cancelado").map((s) => (
+                        <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      <ProyectoDetalleModal
+        open={!!detalle} onClose={() => setDetalle(null)}
+        proyecto={detalle} darkMode={darkMode}
+        canUpload={true} session={session}
+      />
+    </div>
+  );
+};
+
+// ─── Módulo Refacciones Mecánico (solo lectura + consulta de stock) ────────────
+const RefaccionesMecanicoModule = ({ darkMode }) => {
+  const [refacciones, setRefacciones] = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState("");
+
+  useEffect(() => {
+    const fetch = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("refacciones")
+        .select("id,nombre,numero_parte,precio_venta,stock,stock_minimo,activo")
+        .eq("activo", true)
+        .order("nombre");
+      setRefacciones(data || []);
+      setLoading(false);
+    };
+    fetch();
+  }, []);
+
+  const filtered = refacciones.filter((r) =>
+    r.nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    r.numero_parte?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+
+  const stockBadge = (r) => {
+    if (r.stock === 0)              return darkMode ? "bg-red-900/40 text-red-400 border-red-800"     : "bg-red-50 text-red-700 border-red-200";
+    if (r.stock <= r.stock_minimo)  return darkMode ? "bg-amber-900/40 text-amber-400 border-amber-800" : "bg-amber-50 text-amber-700 border-amber-200";
+    return darkMode ? "bg-emerald-900/40 text-emerald-400 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200";
+  };
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="mb-6">
+        <h2 className={`text-lg font-semibold ${t}`}>Inventario de Refacciones</h2>
+        <p className={`text-xs ${st} mt-0.5`}>{refacciones.length} refacciones</p>
+      </div>
+      <div className="mb-4">
+        <Input darkMode={darkMode} placeholder="Buscar por nombre o número de parte…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : filtered.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Sin resultados</div>
+        ) : (
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={`border-b text-xs uppercase tracking-wider ${darkMode ? "text-zinc-500 border-zinc-800" : "text-gray-400 border-gray-100"}`}>
+                  {["Nombre","N° Parte","Precio Venta","Stock","Estado"].map((h, i) => (
+                    <th key={i} className="px-5 py-3 font-medium text-left">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className={`divide-y ${divider}`}>
+                {filtered.map((r) => (
+                  <tr key={r.id} className={darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}>
+                    <td className={`px-5 py-3 font-medium ${t}`}>{r.nombre}</td>
+                    <td className={`px-5 py-3 font-mono text-xs ${st}`}>{r.numero_parte || "—"}</td>
+                    <td className={`px-5 py-3 ${st}`}>${r.precio_venta?.toFixed(2)}</td>
+                    <td className={`px-5 py-3 font-semibold ${t}`}>{r.stock}</td>
+                    <td className="px-5 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium border ${stockBadge(r)}`}>
+                        {r.stock === 0 ? "Sin stock" : r.stock <= r.stock_minimo ? "Stock bajo" : "Disponible"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
+// ─── Dashboard Mecánico ───────────────────────────────────────────────────────
+const DashboardMecanico = ({ session, darkMode }) => {
+  const [activeModule, setActiveModule] = useState("proyectos-mecanico");
+  const [empleadoId,   setEmpleadoId]   = useState(null);
+
+  useEffect(() => {
+    const loadEmpleado = async () => {
+      const { data } = await supabase
+        .from("empleados")
+        .select("id")
+        .eq("correo", session.user.email)
+        .maybeSingle();
+      if (data?.id) setEmpleadoId(data.id);
+    };
+    loadEmpleado();
+  }, [session]);
+
+  const navItems = [
+    { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
+    { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
+  ];
+
+  return (
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
+      {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
+      {activeModule === "refacciones"        && <RefaccionesMecanicoModule darkMode={darkMode} />}
+    </DashboardShell>
   );
 };
 
@@ -1012,12 +1894,21 @@ export default function App() {
     );
   }
 
+  const rol = getRoleFromSession(session);
+
+  const renderDashboard = () => {
+    if (rol === "mecanico")       return <DashboardMecanico session={session} darkMode={darkMode} />;
+    if (rol === "cliente")        return <DashboardCliente  session={session} darkMode={darkMode} />;
+    return                               <Dashboard         session={session} darkMode={darkMode} />;
+  };
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
-        <Route path="/dashboard" element={<ProtectedRoute session={session}><Dashboard session={session} darkMode={darkMode} /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
+        <Route path="/login"              element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/completar-registro" element={<CompletarRegistro />} />
+        <Route path="/dashboard"          element={<ProtectedRoute session={session}>{renderDashboard()}</ProtectedRoute>} />
+        <Route path="*"                   element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>
   );

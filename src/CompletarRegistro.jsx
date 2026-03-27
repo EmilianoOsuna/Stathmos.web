@@ -71,7 +71,7 @@ const SuccessScreen = ({ darkMode, nombre }) => (
         ¡Bienvenido{nombre ? `, ${nombre}` : ""}!
       </h2>
       <p className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
-        Tu cuenta está lista. Redirigiendo al portal…
+        Tu cuenta está lista. Redirigiendo al inicio de sesión…
       </p>
     </div>
     <div className="w-5 h-5 rounded-full border-2 border-zinc-800 animate-spin" style={{ borderTopColor: "#60aebb" }} />
@@ -97,27 +97,46 @@ export default function CompletarRegistro() {
   // ── Verificar que existe sesión activa (del magic link) ───────────────────
   useEffect(() => {
     const init = async () => {
-      // Supabase procesa el token del magic link automáticamente desde la URL
-      const { data: { session } } = await supabase.auth.getSession();
+      // 1. Leer el token del hash de la URL antes de cualquier otra cosa
+      const hash = window.location.hash;
+      const params = new URLSearchParams(hash.replace("#", ""));
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      const type = params.get("type"); // "invite" o "recovery"
 
-      if (!session) {
-        // Esperar un momento por si el token aún se está procesando
-        setTimeout(async () => {
-          const { data: { session: s2 } } = await supabase.auth.getSession();
-          if (!s2) {
-            setPhase("error");
-          } else {
-            await loadClienteNombre(s2);
-            setSessionReady(true);
-            setPhase("form");
-          }
-        }, 1200);
+      if (accessToken && (type === "invite" || type === "signup")) {
+        // 2. Cerrar sesión del admin sin tocar la URL
+        await supabase.auth.signOut();
+
+        // 3. Establecer la sesión del cliente con el token del link
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error || !data.session) {
+          setPhase("error");
+          return;
+        }
+
+        await loadClienteNombre(data.session);
+        setSessionReady(true);
+        setPhase("form");
+
+        // 4. Limpiar el hash de la URL para que no se reutilice
+        window.history.replaceState(null, "", window.location.pathname);
         return;
       }
 
-      await loadClienteNombre(session);
-      setSessionReady(true);
-      setPhase("form");
+      // Si no hay token en la URL, verificar si ya hay sesión activa
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadClienteNombre(session);
+        setSessionReady(true);
+        setPhase("form");
+      } else {
+        setPhase("error");
+      }
     };
 
     init();
@@ -161,7 +180,7 @@ export default function CompletarRegistro() {
     }
 
     setPhase("success");
-    setTimeout(() => navigate("/dashboard", { replace: true }), 2200);
+    setTimeout(() => navigate("/login", { replace: true }), 2200);
   };
 
   const handleKey = (e) => { if (e.key === "Enter") handleSubmit(); };
@@ -343,7 +362,7 @@ export default function CompletarRegistro() {
           <SuccessScreen darkMode={darkMode} nombre={clienteNombre} />
         )}
 
-        <p className={`text-xs -mt-1 ${label}`}>Taller Mecánico Don Elías © 2025</p>
+        <p className={`text-xs -mt-1 ${label}`}>Taller Mecánico Don Elías © 2026</p>
       </div>
     </div>
   );
