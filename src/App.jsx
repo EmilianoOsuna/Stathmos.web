@@ -1805,9 +1805,10 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
     } catch (error) {
       console.error("Error al procesar pago:", error);
 
-      // Fallback offline: si la petición falló por CORS/network, guardar el pago en localStorage
+      // Fallback offline: si la petición falló por CORS/network O el servidor rechaza monto=0
       const errMsg = String(error?.message || error || "").toLowerCase();
-      if (errMsg.includes("failed to fetch") || errMsg.includes("network") || errMsg.includes("fetch")) {
+      const shouldOfflineFallback = errMsg.includes("failed to fetch") || errMsg.includes("network") || errMsg.includes("fetch") || errMsg.includes("missing required fields");
+      if (shouldOfflineFallback) {
         try {
           const offlineKey = "stathmos_offline_pagos";
           const existing = JSON.parse(localStorage.getItem(offlineKey) || "[]");
