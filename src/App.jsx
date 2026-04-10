@@ -1757,7 +1757,8 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         .eq("proyecto_id", selectedTicket.id)
         .maybeSingle();
 
-      const montoTotal = selectedTicket.cotizacion?.monto_total || 0;
+      const montoRaw = selectedTicket.cotizacion?.monto_total;
+      const montoTotal = (montoRaw == null || isNaN(Number(montoRaw))) ? 0 : Number(montoRaw);
 
       // Llamar función server-side para crear pago usando service_role (evita RLS)
       const { data: sessData } = await supabase.auth.getSession();
@@ -1765,7 +1766,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
       if (!token) throw new Error("Sesión inválida. Por favor inicia sesión de nuevo.");
 
       const payload = { proyecto_id: selectedTicket.id, monto: montoTotal, metodo_cobro: metodo, factura_id: factura?.id || null, referencia: null };
-      console.log("crear-pago -> token present:", !!token, "payload:", payload);
+      console.log("crear-pago -> token present:", !!token, "payload:", JSON.stringify(payload));
 
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crear-pago`, {
         method: "POST",
@@ -1775,15 +1776,20 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         },
         body: JSON.stringify(payload),
       });
+      console.log("crear-pago response status:", resp.status, "headers content-type:", resp.headers.get("content-type"));
 
       let json;
       try {
         json = await resp.json();
       } catch (e) {
         const txt = await resp.text().catch(() => "");
+        console.error("crear-pago non-json response:", resp.status, txt);
         throw new Error(txt || "No JSON response from crear-pago");
       }
+
+      console.log("crear-pago response json:", JSON.stringify(json));
       if (!resp.ok || !json.success) {
+        console.error("crear-pago failed. status:", resp.status, "json:", JSON.stringify(json), "payload sent:", JSON.stringify(payload));
         const raw = JSON.stringify(json);
         throw new Error(json.error || `Error creando pago (función crear-pago): ${raw}`);
       }
