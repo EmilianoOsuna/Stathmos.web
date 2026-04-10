@@ -1,0 +1,101 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
+    const { factura_id, proyecto_id, venta_id, monto, metodo_cobro, estado, referencia, registrado_por } = await req.json();
+
+    // Validar campos requeridos
+    if (!factura_id || !monto || !metodo_cobro) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Faltan campos requeridos: factura_id, monto, metodo_cobro" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
+    // Validar que el monto sea positivo
+    if (monto <= 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: "El monto debe ser mayor a 0" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
+    // Validar que metodo_cobro sea válido
+    const metodosValidos = ["efectivo", "tarjeta", "transferencia", "otro"];
+    if (!metodosValidos.includes(metodo_cobro)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Método de cobro inválido. Válidos: efectivo, tarjeta, transferencia, otro" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
+    // Validar que estado sea válido (si se proporciona)
+    if (estado) {
+      const estadosValidos = ["completado", "pendiente", "cancelado"];
+      if (!estadosValidos.includes(estado)) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Estado inválido. Válidos: completado, pendiente, cancelado" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+    }
+
+    // Verificar que la factura exista
+    const { data: factura, error: facturaError } = await supabaseAdmin
+      .from("facturas")
+      .select("id")
+      .eq("id", factura_id)
+      .single();
+
+    if (facturaError || !factura) {
+      return new Response(
+        JSON.stringify({ success: false, error: "La factura no existe" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 }
+      );
+    }
+
+    // Insertar el pago
+    const { data: pago, error: dbError } = await supabaseAdmin
+      .from("pagos")
+      .insert({
+        factura_id,
+        proyecto_id: proyecto_id ?? null,
+        venta_id: venta_id ?? null,
+        monto,
+        metodo_cobro,
+        estado: estado ?? "completado",
+        referencia: referencia ?? null,
+        registrado_por: registrado_por ?? null,
+      })
+      .select()
+      .single();
+
+    if (dbError) throw dbError;
+
+    return new Response(
+      JSON.stringify({ success: true, data: pago }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+    );
+
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ success: false, error: error.message }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+    );
+  }
+});
