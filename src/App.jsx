@@ -1761,11 +1761,36 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
       const montoTotal = (montoRaw == null || isNaN(Number(montoRaw))) ? 0 : Number(montoRaw);
 
       // Llamar función server-side para crear pago usando service_role (evita RLS)
+      // Desarrollo: permite forzar fallback offline si VITE_OFFLINE_TEST === 'true'
+      const payload = { proyecto_id: selectedTicket.id, monto: montoTotal, metodo_cobro: metodo, factura_id: factura?.id || null, referencia: null };
+      if (import.meta.env.VITE_OFFLINE_TEST === "true") {
+        console.log("VITE_OFFLINE_TEST active — using offline fallback for crear-pago", JSON.stringify(payload));
+        const offlineKey = "stathmos_offline_pagos";
+        const existing = JSON.parse(localStorage.getItem(offlineKey) || "[]");
+        const pagoRecord = {
+          factura_id: factura?.id || null,
+          proyecto_id: selectedTicket?.id || null,
+          monto: montoTotal,
+          metodo_cobro: metodo,
+          estado: "completado",
+          referencia: `OFFLINE-${String(selectedTicket?.id || "-").slice(0,8).toUpperCase()}-${Date.now()}`,
+          created_at: new Date().toISOString(),
+          offline: true,
+        };
+        existing.push(pagoRecord);
+        localStorage.setItem(offlineKey, JSON.stringify(existing));
+        setPaymentSuccess(true);
+        setPaymentError(null);
+        setShowPaymentForm(false);
+        setTickets((prev) => prev.map((t) => t.id === selectedTicket?.id ? { ...t, estado: "entregado" } : t));
+        setTimeout(() => { setSelectedTicket(null); }, 1200);
+        return;
+      }
+
       const { data: sessData } = await supabase.auth.getSession();
       const token = sessData?.session?.access_token;
       if (!token) throw new Error("Sesión inválida. Por favor inicia sesión de nuevo.");
 
-      const payload = { proyecto_id: selectedTicket.id, monto: montoTotal, metodo_cobro: metodo, factura_id: factura?.id || null, referencia: null };
       console.log("crear-pago -> token present:", !!token, "payload:", JSON.stringify(payload));
 
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crear-pago`, {
