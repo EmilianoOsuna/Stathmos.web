@@ -14,6 +14,7 @@
 -- ============================================================
 
 DROP TABLE IF EXISTS
+  public.dias_inhabiles,
   public.auditoria,
   public.reportes,
   public.notificaciones,
@@ -290,6 +291,24 @@ CREATE TABLE public.citas (
 );
 
 COMMENT ON TABLE public.citas IS 'Citas agendadas.';
+
+
+-- ============================================================
+-- BLOQUE 9b: dias_inhabiles
+-- ============================================================
+
+CREATE TABLE public.dias_inhabiles (
+  id         uuid        NOT NULL DEFAULT gen_random_uuid(),
+  fecha      date        NOT NULL UNIQUE,
+  motivo     text,
+  activo     boolean              DEFAULT true,
+  created_at timestamptz          DEFAULT now(),
+  updated_at timestamptz          DEFAULT now(),
+
+  CONSTRAINT dias_inhabiles_pkey PRIMARY KEY (id)
+);
+
+COMMENT ON TABLE public.dias_inhabiles IS 'Fechas no disponibles para agendar citas.';
 
 
 -- ============================================================
@@ -716,6 +735,7 @@ CREATE INDEX idx_proyectos_bloqueado      ON public.proyectos     (bloqueado) WH
 CREATE INDEX idx_historial_cliente        ON public.historial     (cliente_id);
 CREATE INDEX idx_historial_vehiculo       ON public.historial     (vehiculo_id);
 CREATE INDEX idx_notificaciones_no_leidas ON public.notificaciones(usuario_id, leida) WHERE leida = false;
+CREATE INDEX idx_dias_inhabiles_fecha     ON public.dias_inhabiles(fecha) WHERE activo = true;
 CREATE INDEX idx_cotizaciones_proyecto    ON public.cotizaciones  (proyecto_id);
 CREATE INDEX idx_cotizaciones_estado      ON public.cotizaciones  (estado);
 CREATE INDEX idx_pagos_factura            ON public.pagos         (factura_id);

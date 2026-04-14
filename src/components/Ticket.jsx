@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import supabase from "../supabase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { formatDateWorkshop } from "../utils/datetime";
 
 export default function Ticket({ proyectoId, darkMode = false, onClose = null }) {
   const ticketRef = useRef(null);
@@ -172,35 +173,30 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
         }
       }
 
-      // Crear registro de pago
-      const { data: factura } = await supabase
-        .from("facturas")
-        .select("id")
-        .eq("proyecto_id", ticket.id)
-        .single();
-
       const montoTotal = ticket.cotizacion?.monto_total || 0;
+      if (montoTotal <= 0) {
+        throw new Error("No se puede cobrar un ticket sin cotización válida.");
+      }
 
-      const { error: errorPago } = await supabase.from("pagos").insert([
-        {
-          factura_id: factura?.id || null,
+      const metodoCobro = metodo === "stripe" ? "tarjeta" : metodo;
+
+      const { data: json, error: invokeError } = await supabase.functions.invoke("crear-pago", {
+        body: {
           proyecto_id: ticket.id,
           monto: montoTotal,
-          metodo_cobro: metodo,
-          estado: "completado",
-          referencia: `PAGO-${ticket.id.slice(0, 8).toUpperCase()}-${new Date().getTime()}`,
+          metodo_cobro: metodoCobro,
+          referencia: null,
         },
-      ]);
+      });
 
-      if (errorPago) throw errorPago;
+      if (invokeError) {
+        throw new Error(invokeError.message || "No se pudo invocar la función crear-pago.");
+      }
+      if (!json?.success) {
+        throw new Error(json?.error || "No se pudo registrar el pago.");
+      }
 
-      // Actualizar estado del proyecto
-      const { error: errorProyecto } = await supabase
-        .from("proyectos")
-        .update({ estado: "entregado" })
-        .eq("id", ticket.id);
-
-      if (errorProyecto) throw errorProyecto;
+      setTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
@@ -300,14 +296,12 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
                   darkMode ? "text-zinc-400" : "text-gray-500"
                 }`}
               >
-                {ticket.fechaIngreso
-                  ? new Date(ticket.fechaIngreso).toLocaleDateString("es-MX", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })
-                  : "—"}
+                {formatDateWorkshop(ticket.fechaIngreso, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
               </p>
             </div>
             <div

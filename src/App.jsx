@@ -5,7 +5,9 @@ import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
+import CitasModule from "./components/CitasModule";
 import { loadStripe } from '@stripe/stripe-js';
+import { formatDateWorkshop, todayWorkshopYmd } from "./utils/datetime";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 const C_BLUE = "#60aebb";
@@ -52,7 +54,7 @@ const estadoBadge = (estado, darkMode) => {
   return m[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-500 border-gray-200");
 };
 
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-MX", { dateStyle: "medium" }) : "—";
+const fmtDate = (d) => formatDateWorkshop(d, { dateStyle: "medium" });
 
 const ESTADO_LABELS = {
   activo: "Activo",
@@ -464,7 +466,7 @@ const EmpleadosModule = ({ darkMode }) => {
     telefono: "",
     correo: "",
     rfc: "",
-    fecha_ingreso: new Date().toISOString().slice(0, 10),
+    fecha_ingreso: todayWorkshopYmd(),
     disponible: true,
     activo: true,
   });
@@ -490,7 +492,7 @@ const EmpleadosModule = ({ darkMode }) => {
       telefono: "",
       correo: "",
       rfc: "",
-      fecha_ingreso: new Date().toISOString().slice(0, 10),
+      fecha_ingreso: todayWorkshopYmd(),
       disponible: true,
       activo: true,
     });
@@ -1571,6 +1573,7 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
     { id: "vehiculos", label: "Vehículos", icon: "🚗" },
     { id: "proyectos", label: "Proyectos", icon: "🔧" },
+    { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
   ];
   return (
@@ -1579,6 +1582,7 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
+      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
     </DashboardShell>
   );
@@ -1642,6 +1646,7 @@ const MisVehiculosModule = ({ darkMode, clienteId }) => {
 };
 //Modulo carrito de cliente
 const MiCarritoModule = ({darkMode, clienteId}) =>{
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -1719,17 +1724,17 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
 
   const handlePayment = async (metodo) => {
     try {
-        if (!selectedTicket?.id) {
-          setPaymentError("Ticket inválido.");
-          setProcessingPayment(false);
-          return;
-        }
-        if (!isPayable(selectedTicket?.estado)) {
-          setPaymentError("No es posible procesar el pago: el ticket no está en estado 'terminado'.");
-          setProcessingPayment(false);
-          return;
-        }
-        setProcessingPayment(true);
+      if (!selectedTicket?.id) {
+        setPaymentError("Ticket inválido.");
+        setProcessingPayment(false);
+        return;
+      }
+      if (!isPayable(selectedTicket?.estado)) {
+        setPaymentError("No es posible procesar el pago: el ticket no está en estado 'terminado'.");
+        setProcessingPayment(false);
+        return;
+      }
+      setProcessingPayment(true);
       setPaymentError(null);
 
       if (metodo === "tarjeta") {
@@ -1751,134 +1756,43 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         }
       }
 
-      const { data: factura } = await supabase
-        .from("facturas")
-        .select("id")
-        .eq("proyecto_id", selectedTicket.id)
-        .maybeSingle();
-
       const montoRaw = selectedTicket.cotizacion?.monto_total;
       const montoTotal = (montoRaw == null || isNaN(Number(montoRaw))) ? 0 : Number(montoRaw);
 
-      // Llamar función server-side para crear pago usando service_role (evita RLS)
-      // Desarrollo: permite forzar fallback offline si VITE_OFFLINE_TEST === 'true'
-      const payload = { proyecto_id: selectedTicket.id, monto: montoTotal, metodo_cobro: metodo, factura_id: factura?.id || null, referencia: null };
-      if (import.meta.env.VITE_OFFLINE_TEST === "true") {
-        console.log("VITE_OFFLINE_TEST active — using offline fallback for crear-pago", JSON.stringify(payload));
-        const offlineKey = "stathmos_offline_pagos";
-        const existing = JSON.parse(localStorage.getItem(offlineKey) || "[]");
-        const pagoRecord = {
-          factura_id: factura?.id || null,
-          proyecto_id: selectedTicket?.id || null,
-          monto: montoTotal,
-          metodo_cobro: metodo,
-          estado: "completado",
-          referencia: `OFFLINE-${String(selectedTicket?.id || "-").slice(0,8).toUpperCase()}-${Date.now()}`,
-          created_at: new Date().toISOString(),
-          offline: true,
-        };
-        existing.push(pagoRecord);
-        localStorage.setItem(offlineKey, JSON.stringify(existing));
-        setPaymentSuccess(true);
-        setPaymentError(null);
-        setShowPaymentForm(false);
-        setTickets((prev) => prev.map((t) => t.id === selectedTicket?.id ? { ...t, estado: "entregado" } : t));
-        setTimeout(() => { setSelectedTicket(null); }, 1200);
-        return;
+      if (montoTotal <= 0) {
+        throw new Error("No se puede cobrar un ticket sin cotización válida.");
       }
 
-      const { data: sessData } = await supabase.auth.getSession();
-      const token = sessData?.session?.access_token;
-      if (!token) throw new Error("Sesión inválida. Por favor inicia sesión de nuevo.");
+      const metodoCobro = metodo === "stripe" ? "tarjeta" : metodo;
+      const payload = {
+        proyecto_id: selectedTicket.id,
+        monto: montoTotal,
+        metodo_cobro: metodoCobro,
+        referencia: null,
+      };
 
-      console.log("crear-pago -> token present:", !!token, "payload:", JSON.stringify(payload));
-
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crear-pago`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+      const { data: json, error: invokeError } = await supabase.functions.invoke("crear-pago", {
+        body: payload,
       });
-      console.log("crear-pago response status:", resp.status, "headers content-type:", resp.headers.get("content-type"));
 
-      let json;
-      try {
-        json = await resp.json();
-      } catch (e) {
-        const txt = await resp.text().catch(() => "");
-        console.error("crear-pago non-json response:", resp.status, txt);
-        throw new Error(txt || "No JSON response from crear-pago");
+      if (invokeError) {
+        throw new Error(invokeError.message || "No se pudo invocar la función crear-pago.");
       }
-
-      console.log("crear-pago response json:", JSON.stringify(json));
-      if (!resp.ok || !json.success) {
-        console.error("crear-pago failed. status:", resp.status, "json:", JSON.stringify(json), "payload sent:", JSON.stringify(payload));
-        const raw = JSON.stringify(json);
-        throw new Error(json.error || `Error creando pago (función crear-pago): ${raw}`);
+      if (!json?.success) {
+        throw new Error(json?.error || "No se pudo registrar el pago.");
       }
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
-      
-      // Refrescar tickets
-      setTimeout(() => {
-        fetchTickets();
-        setSelectedTicket(null);
-      }, 2000);
+
+      // Refresca estado local para permitir imprimir el ticket de cobro.
+      setTickets((prev) => prev.map((t) =>
+        t.id === selectedTicket.id ? { ...t, estado: "entregado" } : t
+      ));
+      setSelectedTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
     } catch (error) {
       console.error("Error al procesar pago:", error);
-
-      // Fallback offline: si la petición falló por CORS/network O el servidor rechaza monto=0
-      const errMsg = String(error?.message || error || "").toLowerCase();
-      const shouldOfflineFallback = errMsg.includes("failed to fetch") || errMsg.includes("network") || errMsg.includes("fetch") || errMsg.includes("missing required fields");
-      if (shouldOfflineFallback) {
-        try {
-          const offlineKey = "stathmos_offline_pagos";
-          const existing = JSON.parse(localStorage.getItem(offlineKey) || "[]");
-          const montoTotal = selectedTicket?.cotizacion?.monto_total || 0;
-          const pagoRecord = {
-            factura_id: null,
-            proyecto_id: selectedTicket?.id || null,
-            monto: montoTotal,
-            metodo_cobro: metodo,
-            estado: "completado",
-            referencia: `OFFLINE-${String(selectedTicket?.id || "-").slice(0,8).toUpperCase()}-${Date.now()}`,
-            created_at: new Date().toISOString(),
-            offline: true,
-          };
-          existing.push(pagoRecord);
-          localStorage.setItem(offlineKey, JSON.stringify(existing));
-
-          // Update UI locally so user can continue testing
-          setPaymentSuccess(true);
-          setPaymentError(null);
-          setShowPaymentForm(false);
-          setTickets((prev) => prev.map((t) => t.id === selectedTicket?.id ? { ...t, estado: "entregado" } : t));
-          setTimeout(() => { setSelectedTicket(null); }, 1200);
-          return;
-        } catch (e2) {
-          console.error("Offline fallback failed:", e2);
-          setPaymentError("Error al procesar el pago");
-        }
-      }
-
-      // Detect row-level security error from Supabase/Postgres
-      if (error?.code === "42501" || String(error?.message).toLowerCase().includes("row-level security")) {
-        setPaymentError(
-          "Permisos insuficientes para crear pagos en la base de datos (RLS).\n" +
-          "Solución rápida: añade una policy en Supabase que permita insertar filas en `pagos` para proyectos que pertenezcan al usuario autenticado.\n\n" +
-          "Ejemplo SQL que puedes ejecutar en SQL editor de Supabase:\n" +
-          "CREATE POLICY \"Allow insert pagos for owner\" ON pagos\n" +
-          "  FOR INSERT\n" +
-          "  TO authenticated\n" +
-          "  WITH CHECK (EXISTS (SELECT 1 FROM proyectos p WHERE p.id = new.proyecto_id AND p.cliente_id = auth.uid()));\n\n" +
-          "Alternativa: crear una función/endpoint server-side (Edge Function) que inserte el pago usando la service_role key."
-        );
-      } else {
-        setPaymentError("Error al procesar el pago: " + (error?.message || String(error)));
-      }
+      setPaymentError("Error al procesar el pago: " + (error?.message || String(error)));
     } finally {
       setProcessingPayment(false);
     }
@@ -2023,6 +1937,12 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
                 {paymentSuccess && (
                   <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-4 mb-4">
                     <p className="text-emerald-300 font-semibold">✓ Pago completado. El auto está listo para recoger!</p>
+                    <button
+                      onClick={() => navigate(`/ticket/${selectedTicket.id}`)}
+                      className="mt-3 px-3 py-1.5 rounded text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      Imprimir ticket de cobro
+                    </button>
                   </div>
                 )}
 
@@ -2419,6 +2339,7 @@ const DashboardCliente = ({ session, darkMode }) => {
   const navItems = [
     { id: "mis-proyectos", label: "Mis Proyectos", icon: "🔧" },
     { id: "mis-vehiculos", label: "Mis Vehículos",  icon: "🚗" },
+    { id: "citas",         label: "Citas",          icon: "📅" },
     { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"}
   ];
 
@@ -2426,6 +2347,7 @@ const DashboardCliente = ({ session, darkMode }) => {
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Cliente">
       {activeModule === "mis-proyectos" && <MisProyectosModule darkMode={darkMode} clienteId={clienteId} session={session} />}
       {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
+      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} />}
       {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
     </DashboardShell>
   );
@@ -2664,12 +2586,14 @@ const DashboardMecanico = ({ session, darkMode }) => {
 
   const navItems = [
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
+    { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
   ];
 
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
+      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "refacciones"        && <RefaccionesMecanicoModule darkMode={darkMode} />}
     </DashboardShell>
   );

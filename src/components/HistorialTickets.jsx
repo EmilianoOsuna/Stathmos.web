@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import Ticket from "./Ticket";
+import { formatDateWorkshop } from "../utils/datetime";
 
 export default function HistorialTickets({ darkMode = false }) {
   const [tickets, setTickets] = useState([]);
@@ -244,7 +245,7 @@ export default function HistorialTickets({ darkMode = false }) {
                 {/* Fecha */}
                 <div className="flex items-end">
                   <p className={`text-xs ${st}`}>
-                    {new Date(ticket.fechaCierre).toLocaleDateString("es-MX")}
+                    {formatDateWorkshop(ticket.fechaCierre)}
                   </p>
                 </div>
               </div>

@@ -20,3 +20,33 @@ entrypoint = "./functions/crear-cliente/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/crear-cliente/*.html" ]
+
+[functions.crear-pago]
+enabled = true
+verify_jwt = true
+import_map = "./functions/crear-pago/deno.json"
+entrypoint = "./functions/crear-pago/index.ts"
+
+[functions.agendar-cita]
+enabled = true
+verify_jwt = false
+import_map = "./functions/agendar-cita/deno.json"
+entrypoint = "./functions/agendar-cita/index.ts"
+
+[functions.resolver-cita]
+enabled = true
+verify_jwt = false
+import_map = "./functions/resolver-cita/deno.json"
+entrypoint = "./functions/resolver-cita/index.ts"
+
+[functions.listar-dias-inhabiles]
+enabled = true
+verify_jwt = false
+import_map = "./functions/listar-dias-inhabiles/deno.json"
+entrypoint = "./functions/listar-dias-inhabiles/index.ts"
+
+[functions.crear-dia-inhabil]
+enabled = true
+verify_jwt = false
+import_map = "./functions/crear-dia-inhabil/deno.json"
+entrypoint = "./functions/crear-dia-inhabil/index.ts"
