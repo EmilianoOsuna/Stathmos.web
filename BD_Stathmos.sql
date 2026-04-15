@@ -455,6 +455,40 @@ COMMENT ON TABLE public.cotizaciones IS 'Cotizaciones del proyecto.';
 
 
 -- ============================================================
+-- BLOQUE 13b: TRIGGER — sincronizar estado del proyecto desde cotizaciones
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.fn_sincronizar_proyecto_desde_cotizacion()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.estado = OLD.estado THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.estado = 'aprobada' THEN
+    UPDATE public.proyectos
+    SET estado = 'en_progreso', updated_at = now()
+    WHERE id = NEW.proyecto_id;
+  ELSIF NEW.estado = 'rechazada' THEN
+    UPDATE public.proyectos
+    SET estado = 'cancelado', updated_at = now()
+    WHERE id = NEW.proyecto_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tr_sincronizar_proyecto_desde_cotizacion
+  AFTER UPDATE OF estado ON public.cotizaciones
+  FOR EACH ROW
+  EXECUTE FUNCTION public.fn_sincronizar_proyecto_desde_cotizacion();
+
+COMMENT ON TRIGGER tr_sincronizar_proyecto_desde_cotizacion ON public.cotizaciones IS
+  'Sincroniza el estado del proyecto cuando cambia la cotización.';
+
+
+-- ============================================================
 -- BLOQUE 14: cotizacion_items
 -- ============================================================
 

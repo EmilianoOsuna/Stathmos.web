@@ -68,6 +68,19 @@ const ESTADO_LABELS = {
 
 const estadoLabel = (estado) => ESTADO_LABELS[estado] || (estado ? String(estado).replace(/_/g, " ") : "—");
 
+const getLatestCotizacion = (proyecto) => {
+  const cotizaciones = Array.isArray(proyecto?.cotizaciones) ? proyecto.cotizaciones : [];
+  if (!cotizaciones.length) return null;
+
+  return [...cotizaciones].sort((a, b) => {
+    const ad = new Date(a?.created_at || a?.fecha_emision || 0).getTime();
+    const bd = new Date(b?.created_at || b?.fecha_emision || 0).getTime();
+    return bd - ad;
+  })[0];
+};
+
+const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
+
 /*
   CHANGES ADDED (compared to initial project state):
   - `isPayable` helper: determines whether a proyecto/ticket is eligible for payment (added to centralize logic).
@@ -954,7 +967,7 @@ const ProyectosModule = ({ darkMode, session }) => {
   const [modalOpen,    setModalOpen]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
@@ -963,7 +976,7 @@ const ProyectosModule = ({ darkMode, session }) => {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [p, c, v, e] = await Promise.all([
-      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre)").order("created_at", { ascending: false }),
+      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre").eq("activo", true).order("nombre"),
@@ -971,20 +984,155 @@ const ProyectosModule = ({ darkMode, session }) => {
     setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setLoading(false);
   }, []);
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real (cuando cliente aprueba cotización)
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-admin-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     setFilteredVehiculos(form.cliente_id ? vehiculos.filter((v) => v.cliente_id === form.cliente_id) : []);
   }, [form.cliente_id, vehiculos]);
 
-  const openCreate = () => { setEditTarget(null); setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false }); setFormError(""); setModalOpen(true); };
-  const openEdit   = (p) => { setEditTarget(p); setForm({ titulo: p.titulo||"", descripcion: p.descripcion||"", cliente_id: p.cliente_id||"", vehiculo_id: p.vehiculo_id||"", mecanico_id: p.mecanico_id||"", estado: p.estado||"activo", bloqueado: p.bloqueado??false }); setFormError(""); setModalOpen(true); };
+  const openCreate = () => {
+    setEditTarget(null);
+    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
+    setFormError("");
+    setModalOpen(true);
+  };
+  const openEdit   = (p) => {
+    const cotizacion = getLatestCotizacion(p);
+    setEditTarget(p);
+    setForm({
+      titulo: p.titulo || "",
+      descripcion: p.descripcion || "",
+      cliente_id: p.cliente_id || "",
+      vehiculo_id: p.vehiculo_id || "",
+      mecanico_id: p.mecanico_id || "",
+      estado: p.estado || "activo",
+      bloqueado: p.bloqueado ?? false,
+      monto_mano_obra: cotizacion?.monto_mano_obra != null ? String(cotizacion.monto_mano_obra) : "",
+      monto_refacc: cotizacion?.monto_refacc != null ? String(cotizacion.monto_refacc) : "",
+    });
+    setFormError("");
+    setModalOpen(true);
+  };
 
   const handleSave = async () => {
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
     setSaving(true); setFormError("");
+    const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
+    const refacc = form.monto_refacc === "" ? 0 : Number(form.monto_refacc);
+
+    if (!Number.isFinite(manoObra) || !Number.isFinite(refacc) || manoObra < 0 || refacc < 0) {
+      setSaving(false);
+      setFormError("La cotización debe contener montos válidos (mayores o iguales a 0).");
+      return;
+    }
+
     const payload = { titulo: form.titulo, descripcion: form.descripcion||null, cliente_id: form.cliente_id, vehiculo_id: form.vehiculo_id, mecanico_id: form.mecanico_id||null, estado: form.estado, bloqueado: form.bloqueado, updated_at: new Date().toISOString() };
-    const { error } = editTarget
-      ? await supabase.from("proyectos").update(payload).eq("id", editTarget.id)
-      : await supabase.from("proyectos").insert([{ ...payload, fecha_ingreso: new Date().toISOString() }]);
+    let error = null;
+
+    if (editTarget) {
+      const latestFromTarget = getLatestCotizacion(editTarget);
+      const quoteChanged = Boolean(latestFromTarget) && (
+        Number(latestFromTarget.monto_mano_obra || 0) !== manoObra ||
+        Number(latestFromTarget.monto_refacc || 0) !== refacc
+      );
+
+      if (form.estado === "en_progreso") {
+        const canStart = Boolean(latestFromTarget && latestFromTarget.estado === "aprobada" && !quoteChanged);
+        if (!canStart) {
+          setSaving(false);
+          setFormError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
+          return;
+        }
+      }
+
+      const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
+      error = projectRes.error;
+      if (!error) {
+        const { data: existingCotizacion, error: quoteFetchError } = await supabase
+          .from("cotizaciones")
+          .select("id,monto_mano_obra,monto_refacc,estado")
+          .eq("proyecto_id", editTarget.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (quoteFetchError) {
+          error = quoteFetchError;
+        } else if (existingCotizacion?.id) {
+          const quoteChangedInDb = Number(existingCotizacion.monto_mano_obra || 0) !== manoObra || Number(existingCotizacion.monto_refacc || 0) !== refacc;
+          const quotePayload = { monto_mano_obra: manoObra, monto_refacc: refacc, updated_at: new Date().toISOString() };
+
+          if (quoteChangedInDb) {
+            quotePayload.estado = existingCotizacion.estado === "pendiente" ? "pendiente" : "modificada";
+            quotePayload.aprobada_por = null;
+            quotePayload.rechazada_por = null;
+            quotePayload.fecha_respuesta = null;
+          }
+
+          const quoteUpdate = await supabase
+            .from("cotizaciones")
+            .update(quotePayload)
+            .eq("id", existingCotizacion.id);
+          error = quoteUpdate.error;
+        } else if (manoObra > 0 || refacc > 0) {
+          const quoteInsert = await supabase
+            .from("cotizaciones")
+            .insert([{ proyecto_id: editTarget.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }]);
+          error = quoteInsert.error;
+        }
+      }
+    } else {
+      if (form.estado === "en_progreso") {
+        setSaving(false);
+        setFormError("No puedes iniciar ejecución en un proyecto nuevo sin aprobación previa del cliente.");
+        return;
+      }
+
+      const { data: createdProject, error: createError } = await supabase
+        .from("proyectos")
+        .insert([{ ...payload, fecha_ingreso: new Date().toISOString() }])
+        .select("id")
+        .single();
+      error = createError;
+
+      if (!error && createdProject?.id && (manoObra > 0 || refacc > 0)) {
+        const quoteInsert = await supabase
+          .from("cotizaciones")
+          .insert([{ proyecto_id: createdProject.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }]);
+        error = quoteInsert.error;
+      }
+    }
+
     setSaving(false);
     if (error) { setFormError(error.message); return; }
     setModalOpen(false); fetchAll();
@@ -1140,6 +1288,38 @@ const ProyectosModule = ({ darkMode, session }) => {
               {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
             </Select>
           </Field>
+          <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+              Cotización Inicial
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Mano de Obra" darkMode={darkMode}>
+                <Input
+                  darkMode={darkMode}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.monto_mano_obra}
+                  onChange={(e) => setForm({ ...form, monto_mano_obra: e.target.value })}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Refacciones" darkMode={darkMode}>
+                <Input
+                  darkMode={darkMode}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.monto_refacc}
+                  onChange={(e) => setForm({ ...form, monto_refacc: e.target.value })}
+                  placeholder="0.00"
+                />
+              </Field>
+            </div>
+            <p className={`mt-2 text-sm ${darkMode ? "text-zinc-300" : "text-gray-700"}`}>
+              Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
+            </p>
+          </div>
           <div className="flex items-center gap-3">
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
             <label htmlFor="bloqueado" className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Bloqueado (entrega pendiente de pago)</label>
@@ -2246,6 +2426,8 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
   const [proyectos,   setProyectos]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [detalle,     setDetalle]     = useState(null);
+  const [decisionLoadingId, setDecisionLoadingId] = useState(null);
+  const [decisionError, setDecisionError] = useState("");
 
   useEffect(() => {
     if (!clienteId) return;
@@ -2253,7 +2435,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
       setLoading(true);
       const { data } = await supabase
         .from("proyectos")
-        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre)")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
         .eq("cliente_id", clienteId)
         .order("created_at", { ascending: false });
       setProyectos(data || []);
@@ -2261,6 +2443,74 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
     };
     fetch();
   }, [clienteId]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-cliente-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto && updatedProyecto.cliente_id === clienteId) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [clienteId]);
+
+  const handleCotizacionDecision = async (proyecto, decision) => {
+    if (!clienteId) return;
+    const cotizacion = getLatestCotizacion(proyecto);
+    if (!cotizacion?.id) return;
+
+    setDecisionLoadingId(proyecto.id);
+    setDecisionError("");
+
+    const nowIso = new Date().toISOString();
+    const payload = decision === "aprobar"
+      ? { estado: "aprobada", aprobada_por: clienteId, rechazada_por: null, fecha_respuesta: nowIso, updated_at: nowIso }
+      : { estado: "rechazada", rechazada_por: clienteId, aprobada_por: null, fecha_respuesta: nowIso, updated_at: nowIso };
+
+    // Update cotización
+    const { error: cotizacionError } = await supabase.from("cotizaciones").update(payload).eq("id", cotizacion.id);
+
+    if (cotizacionError) {
+      setDecisionError(cotizacionError.message || "No se pudo registrar tu respuesta a la cotización.");
+      setDecisionLoadingId(null);
+      return;
+    }
+
+    setProyectos((prev) => prev.map((p) => {
+      if (p.id !== proyecto.id) return p;
+      const cotizaciones = (p.cotizaciones || []).map((c) => (c.id === cotizacion.id ? { ...c, ...payload } : c));
+      const updatedProyecto = { ...p, cotizaciones };
+      if (decision === "aprobar") {
+        updatedProyecto.estado = "en_progreso";
+      } else if (decision === "rechazar") {
+        updatedProyecto.estado = "cancelado";
+      }
+      return updatedProyecto;
+    }));
+
+    setDecisionLoadingId(null);
+  };
 
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
@@ -2273,6 +2523,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
         <h2 className={`text-lg font-semibold ${t}`}>Mis Proyectos</h2>
         <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
       </div>
+      {decisionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{decisionError}</p>}
       <Card darkMode={darkMode} className="overflow-hidden">
         {loading ? (
           <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
@@ -2287,6 +2538,50 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
                 onClick={() => setDetalle(p)}
               >
                 <div className="flex-1">
+                  {(() => {
+                    const cot = getLatestCotizacion(p);
+                    const quotePending = cot && ["pendiente", "modificada"].includes(cot.estado);
+                    return (
+                      <>
+                        <div className="flex items-center gap-2 mb-1">
+                          {cot && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
+                              cot.estado === "aprobada"
+                                ? (darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200")
+                                : cot.estado === "rechazada"
+                                ? (darkMode ? "bg-red-900/40 text-red-300 border-red-800" : "bg-red-50 text-red-700 border-red-200")
+                                : (darkMode ? "bg-amber-900/40 text-amber-300 border-amber-800" : "bg-amber-50 text-amber-700 border-amber-200")
+                            }`}>
+                              Cotización: {cot.estado}
+                            </span>
+                          )}
+                        </div>
+                        {cot && (
+                          <p className={`text-xs mb-1 ${st}`}>
+                            Presupuesto estimado: <span className="font-semibold">${Number(cot.monto_total || (Number(cot.monto_mano_obra || 0) + Number(cot.monto_refacc || 0))).toFixed(2)}</span>
+                          </p>
+                        )}
+                        {quotePending && (
+                          <div className="flex gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              disabled={decisionLoadingId === p.id}
+                              onClick={() => handleCotizacionDecision(p, "aprobar")}
+                              className="px-2.5 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {decisionLoadingId === p.id ? "Procesando..." : "Aprobar"}
+                            </button>
+                            <button
+                              disabled={decisionLoadingId === p.id}
+                              onClick={() => handleCotizacionDecision(p, "rechazar")}
+                              className="px-2.5 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <div className="flex items-center gap-2 mb-1">
                     {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
@@ -2358,6 +2653,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
   const [proyectos,    setProyectos]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [filterEstado, setFilterEstado] = useState("todos");
+  const [actionError,  setActionError]  = useState("");
 
   useEffect(() => {
     if (!empleadoId) return;
@@ -2365,13 +2661,44 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
       setLoading(true);
       const { data } = await supabase
         .from("proyectos")
-        .select("*, clientes(nombre), vehiculos(marca,modelo,placas)")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), cotizaciones(id,estado,created_at,fecha_emision)")
         .eq("mecanico_id", empleadoId)
         .order("created_at", { ascending: false });
       setProyectos(data || []);
       setLoading(false);
     };
     fetch();
+  }, [empleadoId]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real (cuando cliente aprueba cotización)
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-mecanico-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto && updatedProyecto.mecanico_id === empleadoId) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [empleadoId]);
 
   const filtered = proyectos.filter((p) =>
@@ -2389,6 +2716,12 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
     : "border text-xs font-medium px-3 py-1.5 rounded-md border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600";
 
   const handleEstadoChange = async (proyecto, nuevoEstado) => {
+    setActionError("");
+    if (nuevoEstado === "en_progreso" && !hasApprovedQuote(proyecto)) {
+      setActionError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
+      return;
+    }
+
     await supabase
       .from("proyectos")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
@@ -2408,6 +2741,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
           <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
         </div>
       </div>
+      {actionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{actionError}</p>}
 
       {/* Stats strip */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
@@ -2444,6 +2778,15 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
             {filtered.map((p) => (
               <div key={p.id} className={`px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-4 transition-colors ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
                 <div className="flex-1 cursor-pointer" onClick={() => setDetalle(p)}>
+                  {(() => {
+                    const cot = getLatestCotizacion(p);
+                    if (!cot) return null;
+                    return (
+                      <p className={`text-[10px] uppercase tracking-wider mb-1 ${cot.estado === "aprobada" ? "text-emerald-500" : cot.estado === "rechazada" ? "text-red-500" : "text-amber-500"}`}>
+                        Cotización {cot.estado}
+                      </p>
+                    );
+                  })()}
                   <div className="flex items-center gap-2 mb-1">
                     {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
