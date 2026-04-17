@@ -308,7 +308,7 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
   const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
   const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn min-h-[100dvh]" onClick={onClose}>
       <div
         className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-visible`}
         style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
@@ -1464,7 +1464,7 @@ const ProyectosModule = ({ darkMode, session }) => {
             {/* Mobile */}
             <div className={`md:hidden divide-y ${divider}`}>
               {filtered.map((p) => (
-                <div key={p.id} className="px-4 py-4 flex flex-col gap-2">
+                <div key={p.id} className="px-4 py-4 flex flex-col gap-2 cursor-pointer" onClick={() => setDetalle(p)}>
                   <div className="flex items-start justify-between gap-2">
                     <p className={`font-medium ${t}`}>{p.bloqueado && "🔒 "}{p.titulo}</p>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 capitalize ${estadoBadge(p.estado, darkMode)}`}>{p.estado.replace(/_/g, " ")}</span>
@@ -1472,8 +1472,8 @@ const ProyectosModule = ({ darkMode, session }) => {
                   <p className={`text-xs ${st}`}>{p.clientes?.nombre} · {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo}` : "—"}</p>
                   {p.empleados && <p className={`text-xs ${st}`}>Mecánico: {p.empleados.nombre}</p>}
                   <div className="flex gap-2 mt-1">
-                    <BtnEdit onClick={() => openEdit(p)} darkMode={darkMode} />
-                    <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />
+                    <BtnEdit onClick={(e) => { e.stopPropagation(); openEdit(p); }} darkMode={darkMode} />
+                    <BtnCancelProject onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} darkMode={darkMode} />
                   </div>
                 </div>
               ))}
