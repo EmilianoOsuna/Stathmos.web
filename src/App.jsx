@@ -151,6 +151,56 @@ const invokeEdgeFunction = async (name, { body, userToken }) => {
   return json;
 };
 
+const resolveClienteUsuarioId = async ({ clienteId, clienteCorreo }) => {
+  let usuarioId = null;
+  let correo = clienteCorreo || null;
+
+  if (clienteId) {
+    const { data: cliente, error } = await supabase
+      .from("clientes")
+      .select("usuario_id, correo")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    if (!error) {
+      usuarioId = cliente?.usuario_id || null;
+      correo = correo || cliente?.correo || null;
+    }
+  }
+
+  if (!usuarioId && correo) {
+    const { data: usuario } = await supabase
+      .from("usuarios")
+      .select("id")
+      .eq("correo", correo)
+      .maybeSingle();
+    usuarioId = usuario?.id || null;
+  }
+
+  return { usuarioId, correo };
+};
+
+const notifyCliente = async ({ proyectoId, clienteId, clienteCorreo, titulo, mensaje, userToken }) => {
+  if (!userToken) return;
+
+  try {
+    const { usuarioId } = await resolveClienteUsuarioId({ clienteId, clienteCorreo });
+    if (!usuarioId) return;
+
+    await invokeEdgeFunction("enviar-notificacion", {
+      body: {
+        usuario_id: usuarioId,
+        proyecto_id: proyectoId || null,
+        titulo,
+        mensaje,
+      },
+      userToken,
+    });
+  } catch (err) {
+    console.warn("[notifyCliente] error:", err);
+  }
+};
+
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
 /*
@@ -1731,6 +1781,20 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     // 3. Terminamos el proceso con éxito
     setUploading(false);
     fetchFotos();
+    if (files.length > 0) {
+      const momentoTexto = momentoLabel(momentoFoto) || "";
+      const titulo = "Nuevas fotos del proyecto";
+      const mensaje = `Se agregaron ${files.length} foto(s) ${momentoTexto ? `(${momentoTexto.toLowerCase()})` : ""} al proyecto "${proyecto?.titulo || ""}".`;
+
+      await notifyCliente({
+        proyectoId: proyecto?.id || null,
+        clienteId: proyecto?.cliente_id || null,
+        clienteCorreo: proyecto?.clientes?.correo || null,
+        titulo,
+        mensaje,
+        userToken: session?.access_token || "",
+      });
+    }
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -3015,6 +3079,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
       return;
     }
 
+    const prevEstado = proyecto?.estado || "";
     await supabase
       .from("proyectos")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
@@ -3022,6 +3087,19 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
     setProyectos((prev) =>
       prev.map((p) => p.id === proyecto.id ? { ...p, estado: nuevoEstado } : p)
     );
+
+    if (prevEstado !== nuevoEstado) {
+      const titulo = "Estado de proyecto actualizado";
+      const mensaje = `Tu proyecto "${proyecto?.titulo || ""}" cambio de estado: ${estadoLabel(prevEstado)} -> ${estadoLabel(nuevoEstado)}.`;
+      await notifyCliente({
+        proyectoId: proyecto?.id || null,
+        clienteId: proyecto?.cliente_id || null,
+        clienteCorreo: proyecto?.clientes?.correo || null,
+        titulo,
+        mensaje,
+        userToken: session?.access_token || "",
+      });
+    }
   };
 
   const [detalle, setDetalle] = useState(null);
