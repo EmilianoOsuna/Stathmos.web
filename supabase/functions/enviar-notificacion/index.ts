@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-user-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Credentials": "true",
 };
@@ -17,14 +17,13 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";  // ← igual que crear-pago
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    const authHeader = req.headers.get("authorization") || "";
-    const authToken = authHeader.replace("Bearer ", "").trim();
-    const userToken = req.headers.get("x-user-token") || "";
-    const effectiveToken = userToken || authToken;
+    const effectiveToken = (req.headers.get("authorization") || "")
+      .replace("Bearer ", "").trim();
+
     if (!effectiveToken) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized: missing token" }),
@@ -32,7 +31,6 @@ serve(async (req) => {
       );
     }
 
-    // ✅ Verificar el token contra Supabase Auth (firma real, no solo decodificar)
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: `Bearer ${effectiveToken}` } },
     });
@@ -45,18 +43,14 @@ serve(async (req) => {
       );
     }
 
-    const actorId = userData.user.id;  // ✅ ID real y verificado
+    const actorId = userData.user.id;
 
     const body = await req.json();
     const { usuario_id, proyecto_id, titulo, mensaje } = body || {};
 
     if (!usuario_id || !titulo || !mensaje) {
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Missing required fields: usuario_id, titulo, mensaje",
-          received: body,
-        }),
+        JSON.stringify({ success: false, error: "Missing required fields: usuario_id, titulo, mensaje" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
       );
     }

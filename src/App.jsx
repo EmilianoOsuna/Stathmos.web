@@ -125,29 +125,24 @@ const useUserNotifications = (session) => {
 };
 
 const invokeEdgeFunction = async (name, { body, userToken }) => {
+  if (!userToken) throw new Error("No hay sesión activa");
+  
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
-      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-user-token": userToken || "",
+      authorization: `Bearer ${userToken}`, // ✅ JWT del usuario
     },
     body: JSON.stringify(body || {}),
   });
 
   let json = null;
-  try {
-    json = await res.json();
-  } catch {
-    json = null;
-  }
-
+  try { json = await res.json(); } catch { json = null; }
   if (!res.ok) {
     const msg = json?.error || json?.message || `Edge Function error (${res.status})`;
     throw new Error(msg);
   }
-
   return json;
 };
 
