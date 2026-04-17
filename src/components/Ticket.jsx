@@ -5,7 +5,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { formatDateTimeWorkshop, formatDateWorkshop } from "../utils/datetime";
 
-export default function Ticket({ proyectoId, darkMode = false, onClose = null }) {
+export default function Ticket({ proyectoId, darkMode = false, onClose = null, showOmit = true }) {
   const ticketRef = useRef(null);
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
@@ -450,6 +450,19 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
           body {
             background: #ffffff !important;
           }
+          body * {
+            visibility: hidden !important;
+          }
+          .ticket-print-area,
+          .ticket-print-area * {
+            visibility: visible !important;
+          }
+          .ticket-print-area {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
           .ticket-print-hide {
             display: none !important;
           }
@@ -465,19 +478,21 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
           }
         }
       `}</style>
-      <div className="max-w-2xl mx-auto">
+      <div className="ticket-print-area max-w-2xl mx-auto">
         {/* Acciones */}
         <div className="mb-6 flex flex-wrap justify-end gap-3 ticket-print-hide">
-          <button
-            onClick={handleOmit}
-            className={`px-4 py-2 rounded-lg font-medium border transition-colors ${
-              darkMode
-                ? "border-zinc-600 text-zinc-200 hover:border-zinc-400"
-                : "border-gray-300 text-gray-700 hover:border-gray-500"
-            }`}
-          >
-            Omitir
-          </button>
+          {showOmit && (
+            <button
+              onClick={handleOmit}
+              className={`px-4 py-2 rounded-lg font-medium border transition-colors ${
+                darkMode
+                  ? "border-zinc-600 text-zinc-200 hover:border-zinc-400"
+                  : "border-gray-300 text-gray-700 hover:border-gray-500"
+              }`}
+            >
+              Omitir
+            </button>
+          )}
           <button
             onClick={handlePrint}
             className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition ${

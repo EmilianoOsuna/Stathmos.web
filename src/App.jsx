@@ -307,10 +307,10 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
   if (!open) return null;
   const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
   const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
       <div
-        className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-y-auto`}
+        className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-visible`}
         style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -318,9 +318,10 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
           <h2 className="font-semibold text-base">{title}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1695,6 +1696,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const fileRef = useRef(null);
 
   const fetchFotos = useCallback(async () => {
@@ -1806,6 +1808,53 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const removePhoto = async (foto) => {
+    if (!foto?.id) return;
+
+    setUploadError("");
+
+    const url = String(foto.url || "");
+    let storagePath = "";
+    try {
+      const pathname = new URL(url).pathname;
+      const prefix = "/storage/v1/object/public/fotografias/";
+      if (pathname.startsWith(prefix)) {
+        storagePath = pathname.slice(prefix.length);
+      }
+    } catch {
+      const publicPrefix = "/storage/v1/object/public/fotografias/";
+      const idx = url.indexOf(publicPrefix);
+      storagePath = idx >= 0 ? url.slice(idx + publicPrefix.length) : "";
+    }
+
+    const { error: dbError } = await supabase
+      .from("fotografias")
+      .delete()
+      .eq("id", foto.id);
+
+    if (dbError) {
+      console.error("[removePhoto] db error:", dbError);
+      setUploadError("No se pudo borrar la foto: " + (dbError.message || dbError));
+      return;
+    }
+
+    if (storagePath) {
+      const { error: storageError } = await supabase.storage
+        .from("fotografias")
+        .remove([storagePath]);
+      if (storageError) {
+        console.error("[removePhoto] storage error:", storageError);
+      }
+    }
+
+    fetchFotos();
+  };
+
+  const requestRemovePhoto = (foto) => {
+    if (!foto?.id) return;
+    setDeleteTarget(foto);
+  };
+
   if (!open || !proyecto) return null;
 
   const t       = darkMode ? "text-zinc-100"  : "text-gray-800";
@@ -1912,9 +1961,20 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                     <img
                       src={f.url}
                       alt={f.descripcion || "Foto"}
-                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105 z-0"
                       onError={(e) => console.error("[img] failed to load:", f.url, e)}
                     />
+                    {canUpload && (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); requestRemovePhoto(f); }}
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-red-600/90 hover:bg-red-600 z-10"
+                        title="Eliminar"
+                      >
+                        ×
+                      </button>
+                    )}
                     {momentoLabel(f.momento) && (
                       <span
                         className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${momentoBadge(f.momento)}`}
@@ -1946,6 +2006,21 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
         </div>,
         document.body
       )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Eliminar foto"
+        message="¿Deseas borrar esta foto?"
+        onConfirm={() => {
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          removePhoto(target);
+        }}
+        confirmLabel="Eliminar"
+        confirmColor={C_RED}
+        darkMode={darkMode}
+      />
     </>
   );
 };
