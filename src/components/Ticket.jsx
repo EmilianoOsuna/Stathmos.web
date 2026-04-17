@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import supabase from "../supabase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
-import { formatDateWorkshop } from "../utils/datetime";
+import { formatDateTimeWorkshop, formatDateWorkshop } from "../utils/datetime";
 
 export default function Ticket({ proyectoId, darkMode = false, onClose = null }) {
   const ticketRef = useRef(null);
+  const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -14,6 +16,17 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [generatingPDF, setGeneratingPDF] = useState(false);
+
+  const getLatestCotizacion = (cotizaciones = []) => {
+    const sorted = [...cotizaciones].sort((a, b) => {
+      const ad = new Date(a?.created_at || a?.fecha_emision || 0).getTime();
+      const bd = new Date(b?.created_at || b?.fecha_emision || 0).getTime();
+      return bd - ad;
+    });
+
+    const aprobada = sorted.find((c) => c?.estado === "aprobada");
+    return aprobada || sorted[0] || null;
+  };
 
   // Datos formulario de pago
   const [cardData, setCardData] = useState({
@@ -47,6 +60,13 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
           estado,
           fecha_ingreso,
           fecha_cierre,
+          clientes (
+            nombre,
+            telefono,
+            correo,
+            rfc,
+            direccion
+          ),
           vehiculos (
             marca,
             modelo,
@@ -55,6 +75,10 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
             color
           ),
           cotizaciones (
+            id,
+            estado,
+            created_at,
+            fecha_emision,
             monto_mano_obra,
             monto_refacc,
             monto_total,
@@ -72,6 +96,27 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
 
       if (errorProyecto) throw errorProyecto;
 
+      const cotizacion = getLatestCotizacion(Array.isArray(proyecto?.cotizaciones) ? proyecto.cotizaciones : []);
+
+      const { data: pagos, error: pagosError } = await supabase
+        .from("pagos")
+        .select("id, monto, metodo_cobro, fecha_pago, referencia, factura_id, facturas(folio)")
+        .eq("proyecto_id", proyectoId)
+        .order("fecha_pago", { ascending: false })
+        .limit(1);
+
+      if (pagosError) {
+        console.warn("No se pudo cargar el pago:", pagosError.message || pagosError);
+      }
+
+      const pagoRaw = Array.isArray(pagos) ? pagos[0] : null;
+      const pago = pagoRaw
+        ? {
+            ...pagoRaw,
+            factura_folio: pagoRaw.facturas?.folio || null,
+          }
+        : null;
+
       setTicket({
         id: proyecto.id,
         titulo: proyecto.titulo,
@@ -79,9 +124,11 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
         estado: proyecto.estado,
         fechaIngreso: proyecto.fecha_ingreso,
         fechaCierre: proyecto.fecha_cierre,
+        cliente: proyecto.clientes || null,
         vehiculo: proyecto.vehiculos,
-        cotizacion: proyecto.cotizaciones?.[0] || null,
-        items: proyecto.cotizaciones?.[0]?.cotizacion_items || [],
+        cotizacion,
+        items: cotizacion?.cotizacion_items || [],
+        pago,
       });
     } catch (error) {
       console.error("Error al obtener ticket:", error);
@@ -103,7 +150,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
       const canvas = await html2canvas(ticketRef.current, {
         scale: 2,
         useCORS: true,
-        backgroundColor: darkMode ? "#1a1a22" : "#ffffff",
+        backgroundColor: "#ffffff",
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -138,6 +185,18 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
       setPaymentError("Error al generar el PDF");
       setGeneratingPDF(false);
     }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleOmit = () => {
+    if (onClose) {
+      onClose();
+      return;
+    }
+    navigate(-1);
   };
 
 
@@ -178,6 +237,12 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
         throw new Error("No se puede cobrar un ticket sin cotización válida.");
       }
 
+      const cotizacionAprobada = ticket.cotizacion?.estado === "aprobada";
+      const proyectoEnProgreso = String(ticket.estado || "").toLowerCase().trim() === "en_progreso";
+      if (!cotizacionAprobada || !proyectoEnProgreso) {
+        throw new Error("No es posible procesar el pago: la cotización debe estar aprobada y el proyecto en progreso.");
+      }
+
       const metodoCobro = metodo === "stripe" ? "tarjeta" : metodo;
 
       const { data: json, error: invokeError } = await supabase.functions.invoke("crear-pago", {
@@ -196,7 +261,13 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
         throw new Error(json?.error || "No se pudo registrar el pago.");
       }
 
-      setTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
+      setTicket((prev) => {
+        if (!prev) return prev;
+        const pagoResponse = json?.pago
+          ? { ...json.pago, factura_folio: json?.factura_folio || null }
+          : prev.pago;
+        return { ...prev, estado: "entregado", pago: pagoResponse };
+      });
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
@@ -247,6 +318,9 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
   const montoTotal = ticket.cotizacion?.monto_total || 0;
   const montoManoObra = ticket.cotizacion?.monto_mano_obra || 0;
   const montoRefacciones = ticket.cotizacion?.monto_refacc || 0;
+  const cotizacionAprobada = ticket.cotizacion?.estado === "aprobada";
+  const proyectoEnProgreso = String(ticket.estado || "").toLowerCase().trim() === "en_progreso";
+  const pagoHabilitado = cotizacionAprobada && proyectoEnProgreso;
 
   return (
     <div
@@ -256,9 +330,164 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
           : "bg-gradient-to-br from-gray-50 to-gray-100"
       }`}
     >
+      <style>{`
+        .ticket-frame {
+          padding: 18px;
+          border-radius: 18px;
+          background: linear-gradient(160deg, rgba(96,174,187,0.18), rgba(219,60,28,0.08));
+          border: 1px solid rgba(148,163,184,0.35);
+        }
+        .ticket-frame-dark {
+          background: linear-gradient(160deg, rgba(96,174,187,0.12), rgba(219,60,28,0.12));
+          border: 1px solid rgba(63,63,80,0.7);
+        }
+        .ticket-wrap {
+          display: flex;
+          justify-content: center;
+        }
+        .ticket-paper {
+          width: 360px;
+          background: #ffffff;
+          color: #111111;
+          font-family: "Courier New", Courier, monospace;
+          border: 1px dashed #9ca3af;
+          padding: 16px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+          position: relative;
+        }
+        .ticket-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #0f172a;
+          color: #e2e8f0;
+          padding: 10px 12px;
+          border-radius: 10px;
+          margin-bottom: 10px;
+          font-weight: 700;
+          font-size: 12px;
+          letter-spacing: 0.5px;
+        }
+        .ticket-badge {
+          background: #60aebb;
+          color: #0b1324;
+          padding: 4px 8px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 700;
+        }
+        .ticket-brand {
+          text-align: center;
+          font-weight: 700;
+          font-size: 18px;
+          letter-spacing: 2px;
+        }
+        .ticket-title {
+          text-align: center;
+          font-weight: 700;
+          font-size: 18px;
+          letter-spacing: 1px;
+        }
+        .ticket-subtitle {
+          text-align: center;
+          font-size: 11px;
+          margin-top: 4px;
+          color: #4b5563;
+        }
+        .ticket-sep {
+          border-top: 1px dashed #9ca3af;
+          margin: 12px 0;
+        }
+        .ticket-panel {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 8px 10px;
+        }
+        .ticket-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          margin: 2px 0;
+        }
+        .ticket-label {
+          color: #4b5563;
+        }
+        .ticket-value {
+          font-weight: 600;
+          text-align: right;
+          max-width: 200px;
+        }
+        .ticket-table {
+          width: 100%;
+          font-size: 12px;
+        }
+        .ticket-table-header {
+          display: grid;
+          grid-template-columns: 1fr 40px 70px;
+          font-weight: 700;
+          margin-bottom: 6px;
+        }
+        .ticket-table-row {
+          display: grid;
+          grid-template-columns: 1fr 40px 70px;
+          gap: 6px;
+          margin: 4px 0;
+        }
+        .ticket-right {
+          text-align: right;
+        }
+        .ticket-total {
+          font-size: 14px;
+          font-weight: 700;
+        }
+        .ticket-footer {
+          text-align: center;
+          font-size: 11px;
+          color: #4b5563;
+        }
+        @media print {
+          body {
+            background: #ffffff !important;
+          }
+          .ticket-print-hide {
+            display: none !important;
+          }
+          .ticket-frame {
+            padding: 0;
+            border: none;
+            background: transparent;
+          }
+          .ticket-paper {
+            width: 100%;
+            border: none;
+            box-shadow: none;
+          }
+        }
+      `}</style>
       <div className="max-w-2xl mx-auto">
-        {/* Botón Descargar PDF */}
-        <div className="mb-6 flex justify-end">
+        {/* Acciones */}
+        <div className="mb-6 flex flex-wrap justify-end gap-3 ticket-print-hide">
+          <button
+            onClick={handleOmit}
+            className={`px-4 py-2 rounded-lg font-medium border transition-colors ${
+              darkMode
+                ? "border-zinc-600 text-zinc-200 hover:border-zinc-400"
+                : "border-gray-300 text-gray-700 hover:border-gray-500"
+            }`}
+          >
+            Omitir
+          </button>
+          <button
+            onClick={handlePrint}
+            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition ${
+              darkMode
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-emerald-500 text-white hover:bg-emerald-600"
+            }`}
+          >
+            🖨️ Imprimir
+          </button>
           <button
             onClick={generatePDF}
             disabled={generatingPDF || !ticket}
@@ -273,616 +502,133 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null })
         </div>
 
         {/* Contenido del Ticket (Para PDF) */}
-        <div ref={ticketRef} className={darkMode ? "bg-[#1a1a22]" : "bg-white"}>
-          {/* Encabezado Ticket */}
-          <div
-          className={`rounded-lg p-6 mb-6 border ${
-            darkMode
-              ? "bg-[#1e1e28] border-zinc-800"
-              : "bg-white border-gray-200"
-          }`}
-        >
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h1
-                className={`text-3xl font-bold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                Ticket #{ticket.id.slice(0, 8).toUpperCase()}
-              </h1>
-              <p
-                className={`text-sm mt-1 ${
-                  darkMode ? "text-zinc-400" : "text-gray-500"
-                }`}
-              >
-                {formatDateWorkshop(ticket.fechaIngreso, {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-            </div>
-            <div
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                ticket.estado === "entregado"
-                  ? "bg-emerald-900/30 text-emerald-300 border border-emerald-800"
-                  : "bg-blue-900/30 text-blue-300 border border-blue-800"
-              }`}
-            >
-              {ticket.estado === "entregado" ? "Entregado" : "Pendiente"}
-            </div>
-          </div>
-        </div>
+        <div className="ticket-wrap">
+          <div className={`ticket-frame ${darkMode ? "ticket-frame-dark" : ""}`}>
+            <div ref={ticketRef} className="ticket-paper">
+              <div className="ticket-header">
+                <span>STATHMOS</span>
+                <span className="ticket-badge">Pago confirmado</span>
+              </div>
+              <div className="ticket-brand">Taller Mecanico Don Elias</div>
+              <div className="ticket-subtitle">Comprobante de Pago</div>
 
-        {/* Información del Vehículo */}
-        <div
-          className={`rounded-lg p-6 mb-6 border ${
-            darkMode
-              ? "bg-[#1e1e28] border-zinc-800"
-              : "bg-white border-gray-200"
-          } shadow-sm`}
-        >
-          <h2
-            className={`text-xl font-semibold mb-4 ${
-              darkMode ? "text-white" : "text-gray-900"
-            }`}
-          >
-            🚗 Tu Vehículo
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-500"}`}>
-                Marca
-              </p>
-              <p
-                className={`text-lg font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {ticket.vehiculo?.marca || "—"}
-              </p>
-            </div>
-            <div>
-              <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-500"}`}>
-                Modelo
-              </p>
-              <p
-                className={`text-lg font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {ticket.vehiculo?.modelo || "—"}
-              </p>
-            </div>
-            <div>
-              <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-500"}`}>
-                Año
-              </p>
-              <p
-                className={`text-lg font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {ticket.vehiculo?.anio || "—"}
-              </p>
-            </div>
-            <div>
-              <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-500"}`}>
-                Placas
-              </p>
-              <p
-                className={`text-lg font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                {ticket.vehiculo?.placas || "—"}
-              </p>
-            </div>
-          </div>
-        </div>
+            <div className="ticket-sep" />
 
-        {/* Servicio Realizado */}
-        <div
-          className={`rounded-lg p-6 mb-6 border ${
-            darkMode
-              ? "bg-[#1e1e28] border-zinc-800"
-              : "bg-white border-gray-200"
-          } shadow-sm`}
-        >
-          <h2
-            className={`text-xl font-semibold mb-4 ${
-              darkMode ? "text-white" : "text-gray-900"
-            }`}
-          >
-            🔧 Servicio Realizado
-          </h2>
-          <div
-            className={`p-4 rounded-lg mb-4 ${
-              darkMode ? "bg-zinc-900/50" : "bg-gray-50"
-            }`}
-          >
-            <p
-              className={`font-semibold ${
-                darkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {ticket.titulo}
-            </p>
-            <p
-              className={`text-sm mt-2 ${
-                darkMode ? "text-zinc-400" : "text-gray-600"
-              }`}
-            >
-              {ticket.descripcion || "Sin descripción"}
-            </p>
-          </div>
+            <div className="ticket-row">
+              <span className="ticket-label">Ticket</span>
+              <span className="ticket-value">#{ticket.id.slice(0, 8).toUpperCase()}</span>
+            </div>
+            <div className="ticket-row">
+              <span className="ticket-label">Fecha</span>
+              <span className="ticket-value">{formatDateWorkshop(ticket.fechaIngreso)}</span>
+            </div>
+            <div className="ticket-row">
+              <span className="ticket-label">Estado</span>
+              <span className="ticket-value">{ticket.estado || "—"}</span>
+            </div>
 
-          {ticket.items.length > 0 && (
-            <div>
-              <p
-                className={`font-semibold mb-3 ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                Detalles de Servicios:
-              </p>
-              <div className="space-y-2">
-                {ticket.items.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex justify-between p-2 rounded ${
-                      darkMode ? "bg-zinc-900/30" : "bg-gray-100"
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <p
-                        className={`text-sm ${
-                          darkMode ? "text-white" : "text-gray-900"
-                        }`}
-                      >
-                        {item.descripcion}
-                      </p>
-                      <p
-                        className={`text-xs ${
-                          darkMode ? "text-zinc-500" : "text-gray-500"
-                        }`}
-                      >
-                        Cantidad: {item.cantidad}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className={`text-sm font-semibold ${
-                          darkMode ? "text-emerald-400" : "text-emerald-600"
-                        }`}
-                      >
-                        ${item.subtotal.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            <div className="ticket-sep" />
+
+            <div className="ticket-panel">
+              <div className="ticket-row">
+                <span className="ticket-label">Cliente</span>
+                <span className="ticket-value">{ticket.cliente?.nombre || "—"}</span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">Telefono</span>
+                <span className="ticket-value">{ticket.cliente?.telefono || "—"}</span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">RFC</span>
+                <span className="ticket-value">{ticket.cliente?.rfc || "—"}</span>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* Desglose de Precios */}
-        <div
-          className={`rounded-lg p-6 mb-6 border ${
-            darkMode
-              ? "bg-[#1e1e28] border-zinc-800"
-              : "bg-white border-gray-200"
-          } shadow-sm`}
-        >
-          <h2
-            className={`text-xl font-semibold mb-4 ${
-              darkMode ? "text-white" : "text-gray-900"
-            }`}
-          >
-            💰 Desglose de Precios
-          </h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <p className={darkMode ? "text-zinc-400" : "text-gray-600"}>
-                Mano de Obra
-              </p>
-              <p
-                className={`font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                ${montoManoObra.toFixed(2)}
-              </p>
-            </div>
-            <div className="flex justify-between items-center">
-              <p className={darkMode ? "text-zinc-400" : "text-gray-600"}>
-                Refacciones
-              </p>
-              <p
-                className={`font-semibold ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                ${montoRefacciones.toFixed(2)}
-              </p>
-            </div>
-            <div
-              className={`border-t pt-3 flex justify-between items-center ${
-                darkMode ? "border-zinc-700" : "border-gray-200"
-              }`}
-            >
-              <p
-                className={`font-semibold text-lg ${
-                  darkMode ? "text-white" : "text-gray-900"
-                }`}
-              >
-                Total
-              </p>
-              <p className="font-bold text-2xl text-emerald-500">
-                ${montoTotal.toFixed(2)}
-              </p>
-            </div>
-          </div>
-        </div>
+            <div className="ticket-sep" />
 
-        {/* Métodos de Pago */}
-        {ticket.estado !== "entregado" && (
-          <div
-            className={`rounded-lg p-6 border ${
-              darkMode
-                ? "bg-[#1e1e28] border-zinc-800"
-                : "bg-white border-gray-200"
-            } shadow-sm`}
-          >
-            <h2
-              className={`text-xl font-semibold mb-4 ${
-                darkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              💳 Métodos de Pago
-            </h2>
-
-            {paymentSuccess && (
-              <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-4 mb-4">
-                <p className="text-emerald-300 font-semibold">
-                  ✓ Pago procesado correctamente
-                </p>
+            <div className="ticket-panel">
+              <div className="ticket-row">
+                <span className="ticket-label">Vehiculo</span>
+                <span className="ticket-value">
+                  {ticket.vehiculo?.marca || "—"} {ticket.vehiculo?.modelo || ""}
+                </span>
               </div>
-            )}
-
-            {paymentError && (
-              <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 mb-4">
-                <p className="text-red-300">{paymentError}</p>
+              <div className="ticket-row">
+                <span className="ticket-label">Placas</span>
+                <span className="ticket-value">{ticket.vehiculo?.placas || "—"}</span>
               </div>
-            )}
+            </div>
 
-            {!showPaymentForm ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Tarjeta */}
-                <button
-                  onClick={() => {
-                    setSelectedPayment("tarjeta");
-                    setShowPaymentForm(true);
-                  }}
-                  disabled={processingPayment}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    selectedPayment === "tarjeta"
-                      ? "border-blue-500 bg-blue-900/10"
-                      : darkMode
-                      ? "border-zinc-700 bg-zinc-900/50 hover:border-blue-600"
-                      : "border-gray-300 bg-gray-50 hover:border-blue-500"
-                  }`}
-                >
-                  <p className="text-2xl mb-2">💳</p>
-                  <p
-                    className={`font-semibold ${
-                      darkMode ? "text-white" : "text-gray-900"
-                    }`}
-                  >
-                    Tarjeta
-                  </p>
-                  <p
-                    className={`text-xs ${
-                      darkMode ? "text-zinc-400" : "text-gray-600"
-                    }`}
-                  >
-                    Débito o Crédito
-                  </p>
-                </button>
+            <div className="ticket-sep" />
 
-                {/* Efectivo */}
-                <button
-                  onClick={() => {
-                    setSelectedPayment("efectivo");
-                    setShowPaymentForm(true);
-                  }}
-                  disabled={processingPayment}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    selectedPayment === "efectivo"
-                      ? "border-blue-500 bg-blue-900/10"
-                      : darkMode
-                      ? "border-zinc-700 bg-zinc-900/50 hover:border-blue-600"
-                      : "border-gray-300 bg-gray-50 hover:border-blue-500"
-                  }`}
-                >
-                  <p className="text-2xl mb-2">💵</p>
-                  <p
-                    className={`font-semibold ${
-                      darkMode ? "text-white" : "text-gray-900"
-                    }`}
-                  >
-                    Efectivo
-                  </p>
-                  <p
-                    className={`text-xs ${
-                      darkMode ? "text-zinc-400" : "text-gray-600"
-                    }`}
-                  >
-                    En sucursal
-                  </p>
-                </button>
-
-                {/* Stripe */}
-                <button
-                  onClick={() => {
-                    setSelectedPayment("stripe");
-                    setShowPaymentForm(true);
-                  }}
-                  disabled={processingPayment}
-                  className={`p-4 rounded-lg border-2 transition ${
-                    selectedPayment === "stripe"
-                      ? "border-blue-500 bg-blue-900/10"
-                      : darkMode
-                      ? "border-zinc-700 bg-zinc-900/50 hover:border-blue-600"
-                      : "border-gray-300 bg-gray-50 hover:border-blue-500"
-                  }`}
-                >
-                  <p className="text-2xl mb-2">🌐</p>
-                  <p
-                    className={`font-semibold ${
-                      darkMode ? "text-white" : "text-gray-900"
-                    }`}
-                  >
-                    Stripe
-                  </p>
-                  <p
-                    className={`text-xs ${
-                      darkMode ? "text-zinc-400" : "text-gray-600"
-                    }`}
-                  >
-                    Online
-                  </p>
-                </button>
+            <div className="ticket-table">
+              <div className="ticket-table-header">
+                <span>Concepto</span>
+                <span className="ticket-right">Qty</span>
+                <span className="ticket-right">Total</span>
               </div>
-            ) : (
-              /* Formulario de Pago */
-              <div
-                className={`p-4 rounded-lg ${
-                  darkMode ? "bg-zinc-900/50" : "bg-gray-50"
-                }`}
-              >
-                {selectedPayment === "tarjeta" && (
-                  <div className="space-y-4">
-                    <div>
-                      <label
-                        className={`block text-sm font-medium mb-1 ${
-                          darkMode ? "text-zinc-300" : "text-gray-700"
-                        }`}
-                      >
-                        Titular de la Tarjeta
-                      </label>
-                      <input
-                        type="text"
-                        value={cardData.titular}
-                        onChange={(e) =>
-                          setCardData({ ...cardData, titular: e.target.value })
-                        }
-                        placeholder="Juan Pérez"
-                        className={`w-full px-3 py-2 rounded border ${
-                          darkMode
-                            ? "bg-zinc-800 border-zinc-700 text-white"
-                            : "bg-white border-gray-300 text-gray-900"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        className={`block text-sm font-medium mb-1 ${
-                          darkMode ? "text-zinc-300" : "text-gray-700"
-                        }`}
-                      >
-                        Número de Tarjeta
-                      </label>
-                      <input
-                        type="text"
-                        value={cardData.numero}
-                        onChange={(e) =>
-                          setCardData({
-                            ...cardData,
-                            numero: e.target.value.replace(/\D/g, "").slice(0, 16),
-                          })
-                        }
-                        placeholder="1234 5678 9012 3456"
-                        maxLength="19"
-                        className={`w-full px-3 py-2 rounded border ${
-                          darkMode
-                            ? "bg-zinc-800 border-zinc-700 text-white"
-                            : "bg-white border-gray-300 text-gray-900"
-                        }`}
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label
-                          className={`block text-sm font-medium mb-1 ${
-                            darkMode ? "text-zinc-300" : "text-gray-700"
-                          }`}
-                        >
-                          Mes
-                        </label>
-                        <input
-                          type="text"
-                          value={cardData.mes}
-                          onChange={(e) =>
-                            setCardData({
-                              ...cardData,
-                              mes: e.target.value
-                                .replace(/\D/g, "")
-                                .slice(0, 2),
-                            })
-                          }
-                          placeholder="MM"
-                          maxLength="2"
-                          className={`w-full px-3 py-2 rounded border ${
-                            darkMode
-                              ? "bg-zinc-800 border-zinc-700 text-white"
-                              : "bg-white border-gray-300 text-gray-900"
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          className={`block text-sm font-medium mb-1 ${
-                            darkMode ? "text-zinc-300" : "text-gray-700"
-                          }`}
-                        >
-                          Año
-                        </label>
-                        <input
-                          type="text"
-                          value={cardData.ano}
-                          onChange={(e) =>
-                            setCardData({
-                              ...cardData,
-                              ano: e.target.value
-                                .replace(/\D/g, "")
-                                .slice(0, 2),
-                            })
-                          }
-                          placeholder="YY"
-                          maxLength="2"
-                          className={`w-full px-3 py-2 rounded border ${
-                            darkMode
-                              ? "bg-zinc-800 border-zinc-700 text-white"
-                              : "bg-white border-gray-300 text-gray-900"
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          className={`block text-sm font-medium mb-1 ${
-                            darkMode ? "text-zinc-300" : "text-gray-700"
-                          }`}
-                        >
-                          CVV
-                        </label>
-                        <input
-                          type="text"
-                          value={cardData.cvv}
-                          onChange={(e) =>
-                            setCardData({
-                              ...cardData,
-                              cvv: e.target.value
-                                .replace(/\D/g, "")
-                                .slice(0, 3),
-                            })
-                          }
-                          placeholder="CVV"
-                          maxLength="3"
-                          className={`w-full px-3 py-2 rounded border ${
-                            darkMode
-                              ? "bg-zinc-800 border-zinc-700 text-white"
-                              : "bg-white border-gray-300 text-gray-900"
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {selectedPayment === "efectivo" && (
-                  <div className="space-y-4">
-                    <p
-                      className={`text-sm ${
-                        darkMode ? "text-zinc-300" : "text-gray-700"
-                      }`}
-                    >
-                      Deberás pagar la cantidad de <strong>${montoTotal.toFixed(2)}</strong> en nuestra sucursal en efectivo.
-                    </p>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={efectivoData.confirmacion}
-                        onChange={(e) =>
-                          setEfectivoData({
-                            ...efectivoData,
-                            confirmacion: e.target.checked,
-                          })
-                        }
-                        className="w-4 h-4 rounded"
-                      />
-                      <span
-                        className={`text-sm ${
-                          darkMode ? "text-zinc-300" : "text-gray-700"
-                        }`}
-                      >
-                        Confirmo que pagaré en efectivo en la sucursal
-                      </span>
-                    </label>
-                  </div>
-                )}
-
-                {selectedPayment === "stripe" && (
-                  <div className="space-y-4">
-                    <p
-                      className={`text-sm ${
-                        darkMode ? "text-zinc-300" : "text-gray-700"
-                      }`}
-                    >
-                      Serás redirigido a Stripe para completar el pago de forma segura.
-                    </p>
-                    <div className="bg-blue-900/20 border border-blue-700 rounded p-3">
-                      <p className="text-blue-300 text-sm">
-                        We'll integrate Stripe payment gateway for secure online payments.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={() => setShowPaymentForm(false)}
-                    disabled={processingPayment}
-                    className={`flex-1 px-4 py-2 rounded font-medium ${
-                      darkMode
-                        ? "bg-zinc-700 text-white hover:bg-zinc-600"
-                        : "bg-gray-300 text-gray-900 hover:bg-gray-400"
-                    }`}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={() => handlePayment(selectedPayment)}
-                    disabled={processingPayment}
-                    className="flex-1 px-4 py-2 rounded font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {processingPayment ? "Procesando..." : "Pagar"}
-                  </button>
+              {(ticket.items || []).length === 0 && (
+                <div className="ticket-table-row">
+                  <span>Servicio</span>
+                  <span className="ticket-right">1</span>
+                  <span className="ticket-right">${montoTotal.toFixed(2)}</span>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+              {(ticket.items || []).map((item, idx) => (
+                <div key={idx} className="ticket-table-row">
+                  <span>{item.descripcion}</span>
+                  <span className="ticket-right">{item.cantidad}</span>
+                  <span className="ticket-right">${Number(item.subtotal || 0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
 
-        {ticket.estado === "entregado" && (
-          <div className="bg-emerald-900/20 border border-emerald-700 rounded-lg p-4 text-center">
-            <p className="text-emerald-300 font-semibold">
-              ✓ Servicio completado y pagado
-            </p>
+            <div className="ticket-sep" />
+
+            <div className="ticket-row">
+              <span className="ticket-label">Mano de obra</span>
+              <span className="ticket-value">${montoManoObra.toFixed(2)}</span>
+            </div>
+            <div className="ticket-row">
+              <span className="ticket-label">Refacciones</span>
+              <span className="ticket-value">${montoRefacciones.toFixed(2)}</span>
+            </div>
+            <div className="ticket-row ticket-total">
+              <span>Total</span>
+              <span className="ticket-value">${montoTotal.toFixed(2)}</span>
+            </div>
+
+            <div className="ticket-sep" />
+
+            <div className="ticket-panel">
+              <div className="ticket-row">
+                <span className="ticket-label">Metodo</span>
+                <span className="ticket-value">{ticket.pago?.metodo_cobro || "—"}</span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">Fecha pago</span>
+                <span className="ticket-value">
+                  {ticket.pago?.fecha_pago ? formatDateTimeWorkshop(ticket.pago.fecha_pago) : "—"}
+                </span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">Numero de pago</span>
+                <span className="ticket-value">{ticket.pago?.id || "—"}</span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">Factura</span>
+                <span className="ticket-value">{ticket.pago?.factura_folio || ticket.pago?.factura_id || "—"}</span>
+              </div>
+              <div className="ticket-row">
+                <span className="ticket-label">Referencia</span>
+                <span className="ticket-value">{ticket.pago?.referencia || "—"}</span>
+              </div>
+            </div>
+
+            <div className="ticket-sep" />
+            <div className="ticket-footer">Gracias por tu preferencia</div>
+            </div>
           </div>
-        )}
         </div>
       </div>
     </div>

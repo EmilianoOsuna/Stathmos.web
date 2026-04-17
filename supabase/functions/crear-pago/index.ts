@@ -74,7 +74,7 @@ serve(async (req) => {
     // Verificar que el usuario autenticado tenga acceso al proyecto (RLS a través del token del usuario)
     const { data: proyecto, error: proyectoErr } = await supabaseUser
       .from("proyectos")
-      .select("id, cliente_id")
+      .select("id, cliente_id, estado")
       .eq("id", proyecto_id)
       .maybeSingle();
 
@@ -86,12 +86,38 @@ serve(async (req) => {
       );
     }
 
+    const estadoProyecto = String(proyecto.estado || "").toLowerCase().trim();
+    if (estadoProyecto !== "en_progreso") {
+      return new Response(
+        JSON.stringify({ success: false, error: "Proyecto no disponible para pago: estado inválido." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+      );
+    }
+
+    const { data: cotizaciones, error: cotErr } = await supabaseUser
+      .from("cotizaciones")
+      .select("id, estado, created_at, fecha_emision")
+      .eq("proyecto_id", proyecto_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (cotErr) throw cotErr;
+
+    const cotizacion = Array.isArray(cotizaciones) ? cotizaciones[0] : null;
+    if (!cotizacion || cotizacion.estado !== "aprobada") {
+      return new Response(
+        JSON.stringify({ success: false, error: "Cotización no aprobada. No se puede registrar el pago." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+      );
+    }
+
     let facturaId = factura_id ?? null;
+    let facturaFolio = null;
 
     if (!facturaId) {
       const { data: facturaExistente, error: facturaExistenteErr } = await supabaseAdmin
         .from("facturas")
-        .select("id")
+        .select("id, folio")
         .eq("proyecto_id", proyecto_id)
         .order("fecha_emision", { ascending: false })
         .limit(1)
@@ -101,6 +127,7 @@ serve(async (req) => {
 
       if (facturaExistente?.id) {
         facturaId = facturaExistente.id;
+        facturaFolio = facturaExistente.folio || null;
       } else {
         const folio = `FAC-${String(proyecto_id).slice(0, 8).toUpperCase()}-${Date.now()}`;
         const { data: nuevaFactura, error: nuevaFacturaErr } = await supabaseAdmin
@@ -116,12 +143,20 @@ serve(async (req) => {
               estado: "emitida",
             },
           ])
-          .select("id")
+          .select("id, folio")
           .single();
 
         if (nuevaFacturaErr) throw nuevaFacturaErr;
         facturaId = nuevaFactura.id;
+        facturaFolio = nuevaFactura.folio || folio;
       }
+    } else {
+      const { data: facturaInfo } = await supabaseAdmin
+        .from("facturas")
+        .select("folio")
+        .eq("id", facturaId)
+        .maybeSingle();
+      facturaFolio = facturaInfo?.folio || null;
     }
 
     // Insertar pago usando el rol de servicio (elimina RLS)
@@ -142,6 +177,31 @@ serve(async (req) => {
 
     if (pagoErr) throw pagoErr;
 
+    // Registrar auditoria de la transaccion
+    const { data: userData } = await supabaseAdmin.auth.getUser(token);
+    const usuarioId = userData?.user?.id ?? null;
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
+
+    await supabaseAdmin
+      .from("auditoria")
+      .insert([
+        {
+          usuario_id: usuarioId,
+          tabla: "pagos",
+          operacion: "INSERT",
+          registro_id: pago?.id ?? null,
+          datos_antes: null,
+          datos_despues: {
+            pago_id: pago?.id ?? null,
+            proyecto_id,
+            factura_id: facturaId,
+            monto: montoNum,
+            metodo_cobro: metodoNormalizado,
+          },
+          ip,
+        },
+      ]);
+
     // Actualizar el estado del proyecto a entregado
     const { error: proyectoUpdateErr } = await supabaseAdmin
       .from("proyectos")
@@ -155,7 +215,7 @@ serve(async (req) => {
     if (proyectoUpdateErr) throw proyectoUpdateErr;
 
     return new Response(
-      JSON.stringify({ success: true, pago, factura_id: facturaId }),
+      JSON.stringify({ success: true, pago, factura_id: facturaId, factura_folio: facturaFolio }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import supabase from "./supabase";
 import Login from "./Login";
@@ -7,11 +8,13 @@ import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
 import CitasModule from "./components/CitasModule";
 import { loadStripe } from '@stripe/stripe-js';
-import { formatDateWorkshop, todayWorkshopYmd } from "./utils/datetime";
+import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 const C_BLUE = "#60aebb";
 const C_RED  = "#db3c1c";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // ─── Logo ─────────────────────────────
 const LogoMark = ({ className = "h-6 w-auto" }) => (
@@ -79,6 +82,75 @@ const getLatestCotizacion = (proyecto) => {
   })[0];
 };
 
+const useUserNotifications = (session) => {
+  const userId = session?.user?.id || null;
+  const [notificaciones, setNotificaciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("notificaciones")
+      .select("id, titulo, mensaje, leida, proyecto_id, created_at")
+      .eq("usuario_id", userId)
+      .order("created_at", { ascending: false });
+    setNotificaciones(data || []);
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchNotifications();
+
+    const channel = supabase
+      .channel(`notificaciones-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notificaciones", filter: `usuario_id=eq.${userId}` },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchNotifications]);
+
+  const unreadCount = notificaciones.filter((n) => !n.leida).length;
+
+  return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
+};
+
+const invokeEdgeFunction = async (name, { body, userToken }) => {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-user-token": userToken || "",
+    },
+    body: JSON.stringify(body || {}),
+  });
+
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+
+  if (!res.ok) {
+    const msg = json?.error || json?.message || `Edge Function error (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return json;
+};
+
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
 /*
@@ -96,9 +168,16 @@ const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado ===
   Purpose: allow safe server-side creation of `pagos` (bypassing RLS securely) while providing a local offline mode for testing when Supabase access isn't available.
 */
 
-const isPayable = (e) => {
-  const v = String(e || "").toLowerCase().trim();
-  return v === "terminado" || v === "listo" || v === "ready";
+const isPayable = (ticket) => {
+  const estadoRaw = typeof ticket === "string" ? ticket : ticket?.estado;
+  const cotizacion = typeof ticket === "object" && ticket
+    ? (ticket.cotizacion || getLatestCotizacion(ticket))
+    : null;
+
+  const estado = String(estadoRaw || "").toLowerCase().trim();
+  const cotizacionAprobada = cotizacion?.estado === "aprobada";
+
+  return estado === "en_progreso" && cotizacionAprobada;
 };
 
 const normalizeRole = (value = "") =>
@@ -114,6 +193,24 @@ const getRoleFromSession = (session) => {
   const rol = normalizeRole(appRole || metaRole || "");
   if (["administrador", "mecanico", "cliente"].includes(rol)) return rol;
   return "";
+};
+
+const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
+  if (!invokeError) return fallbackMessage;
+
+  const directMessage = invokeError?.message;
+  const response = invokeError?.context;
+
+  if (!response || typeof response.json !== "function") {
+    return directMessage || fallbackMessage;
+  }
+
+  try {
+    const payload = await response.clone().json();
+    return payload?.error || payload?.message || directMessage || fallbackMessage;
+  } catch {
+    return directMessage || fallbackMessage;
+  }
 };
 
 // ─── Global CSS animations (injected once) ────────────────────────────────────
@@ -979,7 +1076,7 @@ const ProyectosModule = ({ darkMode, session }) => {
       supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
-      supabase.from("empleados").select("id,nombre").eq("activo", true).order("nombre"),
+      supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
     ]);
     setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setLoading(false);
   }, []);
@@ -1044,6 +1141,54 @@ const ProyectosModule = ({ darkMode, session }) => {
     setModalOpen(true);
   };
 
+  const notifyMecanicoAsignacion = async ({ proyectoId, mecanicoId, tituloProyecto }) => {
+    if (!mecanicoId) return;
+    try {
+      const cachedEmpleado = (empleados || []).find((e) => e.id === mecanicoId) || null;
+      let usuarioId = cachedEmpleado?.usuario_id || null;
+      let correo = cachedEmpleado?.correo || null;
+
+      if (!usuarioId || !correo) {
+        const { data: empleado, error: empleadoErr } = await supabase
+          .from("empleados")
+          .select("usuario_id, correo")
+          .eq("id", mecanicoId)
+          .maybeSingle();
+
+        if (!empleadoErr) {
+          usuarioId = usuarioId || empleado?.usuario_id || null;
+          correo = correo || empleado?.correo || null;
+        }
+      }
+
+      if (!usuarioId && correo) {
+        const { data: usuario } = await supabase
+          .from("usuarios")
+          .select("id")
+          .eq("correo", correo)
+          .maybeSingle();
+        usuarioId = usuario?.id || null;
+      }
+
+      if (!usuarioId) return;
+
+      const titulo = "Nuevo proyecto asignado";
+      const mensaje = `Se te asigno el proyecto "${tituloProyecto}".`;
+
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: {
+          usuario_id: usuarioId,
+          proyecto_id: proyectoId,
+          titulo,
+          mensaje,
+        },
+        userToken: session?.access_token || "",
+      });
+    } catch (err) {
+      console.warn("[notifyMecanicoAsignacion] error:", err);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
     setSaving(true); setFormError("");
@@ -1060,6 +1205,7 @@ const ProyectosModule = ({ darkMode, session }) => {
     let error = null;
 
     if (editTarget) {
+      const prevMecanicoId = editTarget.mecanico_id || null;
       const latestFromTarget = getLatestCotizacion(editTarget);
       const quoteChanged = Boolean(latestFromTarget) && (
         Number(latestFromTarget.monto_mano_obra || 0) !== manoObra ||
@@ -1077,6 +1223,14 @@ const ProyectosModule = ({ darkMode, session }) => {
 
       const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
       error = projectRes.error;
+      if (!error && form.mecanico_id && form.mecanico_id !== prevMecanicoId) {
+        await notifyMecanicoAsignacion({
+          proyectoId: editTarget.id,
+          mecanicoId: form.mecanico_id,
+          tituloProyecto: form.titulo,
+        });
+      }
+
       if (!error) {
         const { data: existingCotizacion, error: quoteFetchError } = await supabase
           .from("cotizaciones")
@@ -1110,6 +1264,7 @@ const ProyectosModule = ({ darkMode, session }) => {
             .insert([{ proyecto_id: editTarget.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }]);
           error = quoteInsert.error;
         }
+
       }
     } else {
       if (form.estado === "en_progreso") {
@@ -1124,6 +1279,14 @@ const ProyectosModule = ({ darkMode, session }) => {
         .select("id")
         .single();
       error = createError;
+
+      if (!error && createdProject?.id && form.mecanico_id) {
+        await notifyMecanicoAsignacion({
+          proyectoId: createdProject.id,
+          mecanicoId: form.mecanico_id,
+          tituloProyecto: form.titulo,
+        });
+      }
 
       if (!error && createdProject?.id && (manoObra > 0 || refacc > 0)) {
         const quoteInsert = await supabase
@@ -1357,6 +1520,7 @@ const ProtectedRoute = ({ session, children }) => {
 const UserMenu = ({ session, onLogout, darkMode }) => {
   const [open, setOpen] = useClickOutside();
   const email = session?.user?.email || "";
+  const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
@@ -1387,6 +1551,9 @@ const UserMenu = ({ session, onLogout, darkMode }) => {
           {/* User info header */}
           <div className={`px-4 py-2.5 border-b ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
             <p className={`text-xs font-medium truncate ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{email}</p>
+            {displayName && (
+              <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
+            )}
             <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
           </div>
           {/* Actions */}
@@ -1419,6 +1586,7 @@ function useClickOutside() {
 const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
   const [open, setOpen, ref] = useClickOutside();
   const email = session?.user?.email || "";
+  const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
@@ -1444,6 +1612,9 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
         >
           <div className={`px-4 py-2.5 border-b ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
             <p className={`text-xs font-medium truncate ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{email}</p>
+            {displayName && (
+              <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
+            )}
             <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
           </div>
           <button
@@ -1486,6 +1657,15 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     if (open) fetchFotos();
     else { setFotos([]); setUploadError(""); setLightbox(null); }
   }, [open, fetchFotos]);
+
+  useEffect(() => {
+    if (!lightbox) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [lightbox]);
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1560,6 +1740,20 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
   const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
+  const momentoLabel = (value) => {
+    if (value === "antes") return "Antes";
+    if (value === "durante") return "Durante";
+    if (value === "despues") return "Despues";
+    return "";
+  };
+  const momentoBadge = (value) => {
+    const map = {
+      antes: darkMode ? "bg-amber-900/70 text-amber-200 border-amber-700" : "bg-amber-100 text-amber-800 border-amber-200",
+      durante: darkMode ? "bg-sky-900/70 text-sky-200 border-sky-700" : "bg-sky-100 text-sky-800 border-sky-200",
+      despues: darkMode ? "bg-emerald-900/70 text-emerald-200 border-emerald-700" : "bg-emerald-100 text-emerald-800 border-emerald-200",
+    };
+    return map[value] || (darkMode ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
+  };
 
   return (
     <>
@@ -1649,6 +1843,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                       className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                       onError={(e) => console.error("[img] failed to load:", f.url, e)}
                     />
+                    {momentoLabel(f.momento) && (
+                      <span
+                        className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${momentoBadge(f.momento)}`}
+                      >
+                        {momentoLabel(f.momento)}
+                      </span>
+                    )}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-end p-2">
                       {f.descripcion && <p className="text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate">{f.descripcion}</p>}
                     </div>
@@ -1660,11 +1861,18 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
         </div>
       </div>
 
-      {lightbox && (
-        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="Foto" className="max-w-full max-h-full rounded-lg object-contain" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }} />
+      {lightbox && createPortal(
+        <div className="fixed inset-0 z-[999] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
+          <img
+            src={lightbox}
+            alt="Foto"
+            className="max-w-full max-h-full rounded-lg object-contain"
+            style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}
+            onClick={(e) => e.stopPropagation()}
+          />
           <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white text-2xl leading-none opacity-70 hover:opacity-100">×</button>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
@@ -1696,7 +1904,18 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
         style={active ? { boxShadow: "0 1px 4px rgba(0,0,0,0.2)" } : {}}
       >
         <span>{item.icon}</span>
-        <span>{item.label}</span>
+        <span className="flex-1 text-left">{item.label}</span>
+        {Number(item.badge) > 0 && (
+          <span
+            className={`min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-semibold flex items-center justify-center border ${
+              darkMode
+                ? "bg-red-900/60 text-red-200 border-red-800"
+                : "bg-red-100 text-red-700 border-red-200"
+            }`}
+          >
+            {item.badge}
+          </span>
+        )}
       </button>
     );
   };
@@ -1748,6 +1967,21 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 // ─── Dashboard Admin ──────────────────────────────────────────────────────────
 const Dashboard = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("clientes");
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
+
   const navItems = [
     { id: "clientes",  label: "Clientes",  icon: "👥" },
     { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
@@ -1755,6 +1989,7 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "proyectos", label: "Proyectos", icon: "🔧" },
     { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
+    { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador">
@@ -1764,6 +1999,15 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };
@@ -1831,9 +2075,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState(null);
-  useEffect(() => {
-    if (selectedTicket) console.log("MiCarrito - selectedTicket:", selectedTicket);
-  }, [selectedTicket]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -1866,6 +2107,9 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             placas
           ),
           cotizaciones (
+            estado,
+            created_at,
+            fecha_emision,
             monto_total,
             monto_mano_obra,
             monto_refacc,
@@ -1880,20 +2124,24 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         )
         .eq("cliente_id", clienteId)
         .neq("estado", "cancelado")
-        .order("fecha_cierre", { ascending: false });
+        .order("fecha_cierre", { ascending: false })
+        .order("created_at", { ascending: false, foreignTable: "cotizaciones" });
 
       if (proyectos) {
-        setTickets(proyectos.map((p) => ({
-          id: p.id,
-          titulo: p.titulo,
-          descripcion: p.descripcion,
-          estado: p.estado,
-          fechaIngreso: p.fecha_ingreso,
-          fechaCierre: p.fecha_cierre,
-          vehiculo: p.vehiculos,
-          cotizacion: p.cotizaciones?.[0] || null,
-          items: p.cotizaciones?.[0]?.cotizacion_items || [],
-        })));
+        setTickets(proyectos.map((p) => {
+          const cotizacion = getLatestCotizacion(p);
+          return {
+            id: p.id,
+            titulo: p.titulo,
+            descripcion: p.descripcion,
+            estado: p.estado,
+            fechaIngreso: p.fecha_ingreso,
+            fechaCierre: p.fecha_cierre,
+            vehiculo: p.vehiculos,
+            cotizacion,
+            items: cotizacion?.cotizacion_items || [],
+          };
+        }));
       }
     } catch (error) {
       console.error("Error al obtener tickets:", error);
@@ -1909,8 +2157,8 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         setProcessingPayment(false);
         return;
       }
-      if (!isPayable(selectedTicket?.estado)) {
-        setPaymentError("No es posible procesar el pago: el ticket no está en estado 'terminado'.");
+      if (!isPayable(selectedTicket)) {
+        setPaymentError("No es posible procesar el pago: la cotización debe estar aprobada y el proyecto en progreso.");
         setProcessingPayment(false);
         return;
       }
@@ -1956,7 +2204,8 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
       });
 
       if (invokeError) {
-        throw new Error(invokeError.message || "No se pudo invocar la función crear-pago.");
+        const message = await getFunctionErrorMessage(invokeError, "No se pudo invocar la función crear-pago.");
+        throw new Error(message);
       }
       if (!json?.success) {
         throw new Error(json?.error || "No se pudo registrar el pago.");
@@ -1970,6 +2219,10 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         t.id === selectedTicket.id ? { ...t, estado: "entregado" } : t
       ));
       setSelectedTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
+
+      setTimeout(() => {
+        navigate(`/ticket/${selectedTicket.id}`);
+      }, 500);
     } catch (error) {
       console.error("Error al procesar pago:", error);
       setPaymentError("Error al procesar el pago: " + (error?.message || String(error)));
@@ -1985,6 +2238,16 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
     const montoTotal = selectedTicket.cotizacion?.monto_total || 0;
     const montoManoObra = selectedTicket.cotizacion?.monto_mano_obra || 0;
     const montoRefacciones = selectedTicket.cotizacion?.monto_refacc || 0;
+    const cotizacionAprobada = selectedTicket.cotizacion?.estado === "aprobada";
+    const estadoProyecto = String(selectedTicket.estado || "").toLowerCase().trim();
+    const proyectoEnProgreso = estadoProyecto === "en_progreso";
+    const pagoHabilitado = proyectoEnProgreso && cotizacionAprobada;
+    const bloqueoProcesoTecnico = estadoProyecto === "pendiente_cotizacion" || !cotizacionAprobada;
+    const mensajePagoNoDisponible = estadoProyecto === "entregado"
+      ? "Este proyecto ya fue pagado."
+      : bloqueoProcesoTecnico
+        ? "El proceso técnico no ha iniciado. Debes aprobar la cotización antes de pagar."
+        : "El pago se habilitará cuando el proyecto esté en progreso y la cotización aprobada.";
 
     return (
       <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
@@ -2028,12 +2291,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             </div>
           </Card>
 
-          {/* DEBUG: mostrar estado actual y si es pagable */}
-          <div className="mb-4 text-sm text-zinc-400">
-            <p>Estado raw: <span className="font-mono">{String(selectedTicket.estado)}</span></p>
-            <p>isPayable: <span className="font-mono">{String(isPayable(selectedTicket.estado))}</span></p>
-          </div>
-
           {/* Vehículo */}
           <Card darkMode={darkMode} className="mb-6">
             <div className="p-6">
@@ -2066,8 +2323,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
               <p className={`font-semibold ${t} mb-2`}>{selectedTicket.titulo}</p>
               <p className={`text-sm ${st} mb-4`}>{selectedTicket.descripcion}</p>
               
-              // ADDED: guard to avoid render errors when `items` is missing from cotizacion
-              // This was added because some proyectos may not have cotizacion or cotizacion_items yet.
               {(selectedTicket.items || []).length > 0 && (
                 <div>
                   <p className={`font-semibold text-sm mb-2 ${t}`}>Items:</p>
@@ -2109,7 +2364,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
           </Card>
 
           {/* Métodos de Pago */}
-          {isPayable(selectedTicket.estado) && (
+          {pagoHabilitado && (
             <Card darkMode={darkMode}>
               <div className="p-6">
                 <h2 className={`text-lg font-semibold mb-4 ${t}`}>💳 Selecciona Método de Pago</h2>
@@ -2313,16 +2568,18 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             </Card>
           )}
 
-          {selectedTicket.estado !== "terminado" && (
+          {!pagoHabilitado && (
             <Card darkMode={darkMode} className="border-2 border-amber-600">
               <div className="p-6 text-center">
                 <p className={`text-lg font-semibold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>
-                  ⏳ Auto aún no está listo
+                  ⏳ Pago no disponible
                 </p>
                 <p className={`text-sm mt-2 ${darkMode ? "text-amber-200" : "text-amber-600"}`}>
                   Estado actual: <span className="font-bold capitalize">{selectedTicket.estado}</span>
                 </p>
-                <p className={`text-xs mt-3 ${st}`}>Volverá a estar disponible para pagar cuando pase a estado "terminado"</p>
+                <p className={`text-xs mt-3 ${st}`}>
+                  {mensajePagoNoDisponible}
+                </p>
               </div>
             </Card>
           )}
@@ -2370,7 +2627,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
                   </span>
                 </div>
                 {/* Botón Pagar directo en lista si es pagable */}
-                {isPayable(ticket.estado) && (
+                {isPayable(ticket) && (
                   <div className="mt-3">
                     <button
                       onClick={(e) => {
@@ -2384,6 +2641,13 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
                       Pagar
                     </button>
                   </div>
+                )}
+                {!isPayable(ticket) && (
+                  <p className={`mt-3 text-xs ${st}`}>
+                    {String(ticket.estado || "").toLowerCase().trim() === "entregado"
+                      ? "Pago registrado."
+                      : "Proceso técnico no iniciado o cotización sin aprobar."}
+                  </p>
                 )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -2483,29 +2747,34 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
     setDecisionLoadingId(proyecto.id);
     setDecisionError("");
 
-    const nowIso = new Date().toISOString();
-    const payload = decision === "aprobar"
-      ? { estado: "aprobada", aprobada_por: clienteId, rechazada_por: null, fecha_respuesta: nowIso, updated_at: nowIso }
-      : { estado: "rechazada", rechazada_por: clienteId, aprobada_por: null, fecha_respuesta: nowIso, updated_at: nowIso };
+    let json = null;
+    try {
+      json = await invokeEdgeFunction("resolver-cotizacion", {
+        body: { cotizacion_id: cotizacion.id, decision },
+        userToken: session?.access_token || "",
+      });
+    } catch (err) {
+      const msg = err?.message || "No se pudo registrar tu respuesta a la cotizacion.";
+      setDecisionError(msg);
+      setDecisionLoadingId(null);
+      return;
+    }
 
-    // Update cotización
-    const { error: cotizacionError } = await supabase.from("cotizaciones").update(payload).eq("id", cotizacion.id);
-
-    if (cotizacionError) {
-      setDecisionError(cotizacionError.message || "No se pudo registrar tu respuesta a la cotización.");
+    if (!json?.success) {
+      const msg = json?.error || "No se pudo registrar tu respuesta a la cotizacion.";
+      setDecisionError(msg);
       setDecisionLoadingId(null);
       return;
     }
 
     setProyectos((prev) => prev.map((p) => {
       if (p.id !== proyecto.id) return p;
-      const cotizaciones = (p.cotizaciones || []).map((c) => (c.id === cotizacion.id ? { ...c, ...payload } : c));
+      const updatedCot = json?.cotizacion || null;
+      const cotizaciones = (p.cotizaciones || []).map((c) => (
+        c.id === cotizacion.id ? (updatedCot ? { ...c, ...updatedCot } : c) : c
+      ));
       const updatedProyecto = { ...p, cotizaciones };
-      if (decision === "aprobar") {
-        updatedProyecto.estado = "en_progreso";
-      } else if (decision === "rechazar") {
-        updatedProyecto.estado = "cancelado";
-      }
+      if (json?.proyecto_estado) updatedProyecto.estado = json.proyecto_estado;
       return updatedProyecto;
     }));
 
@@ -2618,6 +2887,20 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
 const DashboardCliente = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("mis-proyectos");
   const [clienteId,    setClienteId]    = useState(null);
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
 
   useEffect(() => {
     const loadCliente = async () => {
@@ -2635,7 +2918,8 @@ const DashboardCliente = ({ session, darkMode }) => {
     { id: "mis-proyectos", label: "Mis Proyectos", icon: "🔧" },
     { id: "mis-vehiculos", label: "Mis Vehículos",  icon: "🚗" },
     { id: "citas",         label: "Citas",          icon: "📅" },
-    { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"}
+    { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"},
+    { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
 
   return (
@@ -2644,6 +2928,15 @@ const DashboardCliente = ({ session, darkMode }) => {
       {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} />}
       {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };
@@ -2910,10 +3203,85 @@ const RefaccionesMecanicoModule = ({ darkMode }) => {
   );
 };
 
+// ─── Módulo Notificaciones (comun) ──────────────────────────────────────────
+const NotificacionesModule = ({ darkMode, notificaciones, loading, onMarkRead, onMarkAllRead }) => {
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className={`text-lg font-semibold ${t}`}>Notificaciones</h2>
+          <p className={`text-xs ${st} mt-0.5`}>{notificaciones.length} en total</p>
+        </div>
+        {onMarkAllRead && notificaciones.some((n) => !n.leida) && (
+          <button
+            onClick={onMarkAllRead}
+            className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+          >
+            Marcar todas como leidas
+          </button>
+        )}
+      </div>
+
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : notificaciones.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>No hay notificaciones</div>
+        ) : (
+          <div className={`divide-y ${divider}`}>
+            {notificaciones.map((n) => (
+              <div key={n.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className={`font-semibold ${t}`}>{n.titulo}</p>
+                    {!n.leida && (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${darkMode ? "bg-blue-900/50 text-blue-200 border-blue-800" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                        Nuevo
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs ${st} mt-1`}>{n.mensaje}</p>
+                  <p className={`text-[10px] ${st} mt-2`}>{formatDateTimeWorkshop(n.created_at)}</p>
+                </div>
+                {!n.leida && onMarkRead && (
+                  <button
+                    onClick={() => onMarkRead(n.id)}
+                    className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                  >
+                    Marcar como leida
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
 // ─── Dashboard Mecánico ───────────────────────────────────────────────────────
 const DashboardMecanico = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("proyectos-mecanico");
   const [empleadoId,   setEmpleadoId]   = useState(null);
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
 
   useEffect(() => {
     const loadEmpleado = async () => {
@@ -2931,6 +3299,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
     { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
+    { id: "notificaciones",     label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
 
   return (
@@ -2938,6 +3307,15 @@ const DashboardMecanico = ({ session, darkMode }) => {
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "refacciones"        && <RefaccionesMecanicoModule darkMode={darkMode} />}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };
