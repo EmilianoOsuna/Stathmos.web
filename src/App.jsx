@@ -119,6 +119,19 @@ const useUserNotifications = (session) => {
     };
   }, [userId, fetchNotifications]);
 
+  useEffect(() => {
+    if (!userId) return;
+
+    const handleFocus = () => fetchNotifications();
+    window.addEventListener("focus", handleFocus);
+    const timer = setInterval(fetchNotifications, 15000);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      clearInterval(timer);
+    };
+  }, [userId, fetchNotifications]);
+
   const unreadCount = notificaciones.filter((n) => !n.leida).length;
 
   return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
