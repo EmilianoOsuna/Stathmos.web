@@ -1464,14 +1464,25 @@ const ProyectosModule = ({ darkMode, session }) => {
             {/* Mobile */}
             <div className={`md:hidden divide-y ${divider}`}>
               {filtered.map((p) => (
-                <div key={p.id} className="px-4 py-4 flex flex-col gap-2 cursor-pointer" onClick={() => setDetalle(p)}>
+                <div
+                  key={p.id}
+                  className="px-4 py-4 flex flex-col gap-2 cursor-pointer"
+                  onClick={() => setDetalle(p)}
+                  onTouchEnd={() => setDetalle(p)}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <p className={`font-medium ${t}`}>{p.bloqueado && "🔒 "}{p.titulo}</p>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 capitalize ${estadoBadge(p.estado, darkMode)}`}>{p.estado.replace(/_/g, " ")}</span>
                   </div>
                   <p className={`text-xs ${st}`}>{p.clientes?.nombre} · {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo}` : "—"}</p>
                   {p.empleados && <p className={`text-xs ${st}`}>Mecánico: {p.empleados.nombre}</p>}
-                  <div className="flex gap-2 mt-1">
+                  <div className="flex gap-2 mt-1 flex-wrap">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDetalle(p); }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300" : "border-gray-200 text-gray-600"}`}
+                    >
+                      Ver fotos
+                    </button>
                     <BtnEdit onClick={(e) => { e.stopPropagation(); openEdit(p); }} darkMode={darkMode} />
                     <BtnCancelProject onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} darkMode={darkMode} />
                   </div>
