@@ -151,6 +151,27 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
+        allowTaint: true,
+        logging: false,
+        onclone: (clonedDocument) => {
+          // Strip all classes and problematic styles from cloned element
+          const allElements = clonedDocument.querySelectorAll('*');
+          allElements.forEach((el) => {
+            // Remove all classes to prevent oklch color parsing
+            el.className = '';
+            
+            // Remove inline styles that might contain oklch
+            if (el.style.cssText) {
+              const styles = el.style.cssText.split(';').filter(style => {
+                return style.trim() && !style.includes('oklch');
+              }).join(';');
+              el.style.cssText = styles;
+            }
+            
+            // Reset to basic styles
+            el.setAttribute('style', '');
+          });
+        }
       });
 
       const imgData = canvas.toDataURL("image/png");

@@ -6,6 +6,9 @@ import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
+import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdminWrapper";
+import MecanicoDiagnosticosModule from "./components/MecanicoDiagnosticosModule";
+import ReportesOperativosWrapper from "./components/ReportesOperativosWrapper";
 import CitasModule from "./components/CitasModule";
 import RefaccionesModule from "./components/RefaccionesModule";
 import ProveedoresModule from "./components/ProveedoresModule";
@@ -2290,6 +2293,8 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "ventas-refacciones", label: "Venta Refacciones", icon: "🛒" },
     { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
+    { id: "historial-servicios", label: "Historial de Servicios", icon: "📜" },
+    { id: "reportes", label: "Reportes Operativos", icon: "📊" },
     { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
   return (
@@ -2304,6 +2309,8 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
+      {activeModule === "historial-servicios" && <HistorialServiciosAdminWrapper darkMode={darkMode} />}
+      {activeModule === "reportes" && <ReportesOperativosWrapper darkMode={darkMode} />}
       {activeModule === "notificaciones" && (
         <NotificacionesModule
           darkMode={darkMode}
@@ -3636,6 +3643,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
 
   const navItems = [
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
+    { id: "diagnosticos",       label: "Diagnósticos",   icon: "📋" },
     { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
     { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
@@ -3646,6 +3654,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
+      {activeModule === "diagnosticos" && <MecanicoDiagnosticosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "refacciones"         && <RefaccionesModule darkMode={darkMode} readOnly allowStockEdit={false} />}
       {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}

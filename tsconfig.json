@@ -6,10 +6,12 @@
     "allowJs": true,
     "checkJs": false,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true
   },
   "exclude": [
     "node_modules",
+    "dist",
     "supabase/functions"
   ]
 }
