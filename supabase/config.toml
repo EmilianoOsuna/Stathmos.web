@@ -27,6 +27,12 @@ verify_jwt = true
 import_map = "./functions/crear-pago/deno.json"
 entrypoint = "./functions/crear-pago/index.ts"
 
+[functions.gestionar-inventario]
+enabled = true
+verify_jwt = true
+import_map = "./functions/gestionar-inventario/deno.json"
+entrypoint = "./functions/gestionar-inventario/index.ts"
+
 [functions.agendar-cita]
 enabled = true
 verify_jwt = false

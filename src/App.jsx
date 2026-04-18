@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import supabase from "./supabase";
@@ -7,6 +7,10 @@ import CompletarRegistro from "./CompletarRegistro";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
 import CitasModule from "./components/CitasModule";
+import RefaccionesModule from "./components/RefaccionesModule";
+import ProveedoresModule from "./components/ProveedoresModule";
+import CompraRefacciones from "./components/CompraRefacciones";
+import VentaRefacciones from "./components/VentaRefacciones";
 import { loadStripe } from '@stripe/stripe-js';
 import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
 
@@ -119,94 +123,36 @@ const useUserNotifications = (session) => {
     };
   }, [userId, fetchNotifications]);
 
-  useEffect(() => {
-    if (!userId) return;
-
-    const handleFocus = () => fetchNotifications();
-    window.addEventListener("focus", handleFocus);
-    const timer = setInterval(fetchNotifications, 15000);
-
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-      clearInterval(timer);
-    };
-  }, [userId, fetchNotifications]);
-
   const unreadCount = notificaciones.filter((n) => !n.leida).length;
 
   return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
 };
 
 const invokeEdgeFunction = async (name, { body, userToken }) => {
-  if (!userToken) throw new Error("No hay sesión activa");
-  
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
-      authorization: `Bearer ${userToken}`, // ✅ JWT del usuario
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-user-token": userToken || "",
     },
     body: JSON.stringify(body || {}),
   });
 
   let json = null;
-  try { json = await res.json(); } catch { json = null; }
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+
   if (!res.ok) {
     const msg = json?.error || json?.message || `Edge Function error (${res.status})`;
     throw new Error(msg);
   }
+
   return json;
-};
-
-const resolveClienteUsuarioId = async ({ clienteId, clienteCorreo }) => {
-  let usuarioId = null;
-  let correo = clienteCorreo || null;
-
-  if (clienteId) {
-    const { data: cliente, error } = await supabase
-      .from("clientes")
-      .select("usuario_id, correo")
-      .eq("id", clienteId)
-      .maybeSingle();
-
-    if (!error) {
-      usuarioId = cliente?.usuario_id || null;
-      correo = correo || cliente?.correo || null;
-    }
-  }
-
-  if (!usuarioId && correo) {
-    const { data: usuario } = await supabase
-      .from("usuarios")
-      .select("id")
-      .eq("correo", correo)
-      .maybeSingle();
-    usuarioId = usuario?.id || null;
-  }
-
-  return { usuarioId, correo };
-};
-
-const notifyCliente = async ({ proyectoId, clienteId, clienteCorreo, titulo, mensaje, userToken }) => {
-  if (!userToken) return;
-
-  try {
-    const { usuarioId } = await resolveClienteUsuarioId({ clienteId, clienteCorreo });
-    if (!usuarioId) return;
-
-    await invokeEdgeFunction("enviar-notificacion", {
-      body: {
-        usuario_id: usuarioId,
-        proyecto_id: proyectoId || null,
-        titulo,
-        mensaje,
-      },
-      userToken,
-    });
-  } catch (err) {
-    console.warn("[notifyCliente] error:", err);
-  }
 };
 
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
@@ -307,10 +253,16 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
   if (!open) return null;
   const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
   const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn min-h-[100dvh]" onClick={onClose}>
+  const bodyRef = useRef(null);
+  useEffect(() => {
+    if (open && bodyRef.current) {
+      bodyRef.current.scrollTop = 0;
+    }
+  }, [open, title]);
+  const modalContent = (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
       <div
-        className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-visible`}
+        className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-y-auto`}
         style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -318,11 +270,11 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
           <h2 className="font-semibold text-base">{title}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
         </div>
-        <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">{children}</div>
+        <div ref={bodyRef} className="px-6 py-5 max-h-[70vh] overflow-y-auto">{children}</div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+  return createPortal(modalContent, document.body);
 };
 
 // ─── Error Boundary (captura errores de render en UI) ───────────────────────
@@ -952,7 +904,11 @@ const VehiculosModule = ({ darkMode }) => {
       : await supabase.from("vehiculos").insert([payload]);
     setSaving(false);
     if (error) { setFormError(error.message); return; }
-    setModalOpen(false); fetchAll();
+    setModalOpen(false);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+    setRefCartTouched(false);
+    fetchAll();
   };
 
   const handleToggle = async () => {
@@ -1128,16 +1084,23 @@ const ProyectosModule = ({ darkMode, session }) => {
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const [refCatalog, setRefCatalog] = useState([]);
+  const [refSearch, setRefSearch] = useState("");
+  const [refCart, setRefCart] = useState([]);
+  const [refCartDraft, setRefCartDraft] = useState(null);
+  const [refPickerOpen, setRefPickerOpen] = useState(false);
+  const [refCartTouched, setRefCartTouched] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [p, c, v, e] = await Promise.all([
+    const [p, c, v, e, r] = await Promise.all([
       supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
+      supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
     ]);
-    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setLoading(false);
+    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setLoading(false);
   }, []);
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -1176,13 +1139,89 @@ const ProyectosModule = ({ darkMode, session }) => {
     setFilteredVehiculos(form.cliente_id ? vehiculos.filter((v) => v.cliente_id === form.cliente_id) : []);
   }, [form.cliente_id, vehiculos]);
 
+  const refCartTotal = useMemo(() => (
+    refCart.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0)
+  ), [refCart]);
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      monto_refacc: refCart.length ? refCartTotal.toFixed(2) : "",
+    }));
+  }, [refCartTotal, refCart.length]);
+
+  const openRefPicker = () => {
+    setRefCartDraft(refCart);
+    setRefPickerOpen(true);
+    setRefSearch("");
+  };
+
+  const addRefToDraft = (refaccion) => {
+    setRefCartDraft((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const existing = list.find((item) => item.id === refaccion.id);
+      if (existing) {
+        return list.map((item) =>
+          item.id === refaccion.id ? { ...item, cantidad: item.cantidad + 1 } : item
+        );
+      }
+      return [
+        ...list,
+        {
+          id: refaccion.id,
+          nombre: refaccion.nombre,
+          numero_parte: refaccion.numero_parte || "",
+          cantidad: 1,
+          precio_unit: Number(refaccion.precio_venta || 0),
+        },
+      ];
+    });
+  };
+
+  const updateRefDraftItem = (id, patch) => {
+    setRefCartDraft((prev) => (Array.isArray(prev) ? prev.map((item) => (item.id === id ? { ...item, ...patch } : item)) : prev));
+  };
+
+  const removeRefDraftItem = (id) => {
+    setRefCartDraft((prev) => (Array.isArray(prev) ? prev.filter((item) => item.id !== id) : prev));
+  };
+
+  const confirmRefPicker = () => {
+    setRefCart(Array.isArray(refCartDraft) ? refCartDraft : []);
+    setRefCartTouched(true);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const cancelRefPicker = () => {
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const clearRefCart = () => {
+    setRefCart([]);
+    setRefCartTouched(true);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const refFiltered = refCatalog.filter((r) =>
+    r.nombre?.toLowerCase().includes(refSearch.toLowerCase()) ||
+    r.numero_parte?.toLowerCase().includes(refSearch.toLowerCase())
+  );
+
   const openCreate = () => {
     setEditTarget(null);
     setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
     setFormError("");
+    setRefCart([]);
+    setRefCartDraft(null);
+    setRefSearch("");
+    setRefPickerOpen(false);
+    setRefCartTouched(false);
     setModalOpen(true);
   };
-  const openEdit   = (p) => {
+  const openEdit = async (p) => {
     const cotizacion = getLatestCotizacion(p);
     setEditTarget(p);
     setForm({
@@ -1197,6 +1236,27 @@ const ProyectosModule = ({ darkMode, session }) => {
       monto_refacc: cotizacion?.monto_refacc != null ? String(cotizacion.monto_refacc) : "",
     });
     setFormError("");
+    setRefSearch("");
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+    setRefCartTouched(false);
+    if (cotizacion?.id) {
+      const { data: items } = await supabase
+        .from("cotizacion_items")
+        .select("id, refaccion_id, cantidad, precio_unit, tipo, refacciones (nombre, numero_parte)")
+        .eq("cotizacion_id", cotizacion.id)
+        .eq("tipo", "refaccion");
+      const mapped = (items || []).map((item) => ({
+        id: item.refaccion_id,
+        nombre: item.refacciones?.nombre || item.refaccion_id,
+        numero_parte: item.refacciones?.numero_parte || "",
+        cantidad: item.cantidad || 1,
+        precio_unit: Number(item.precio_unit || 0),
+      }));
+      setRefCart(mapped);
+    } else {
+      setRefCart([]);
+    }
     setModalOpen(true);
   };
 
@@ -1252,13 +1312,37 @@ const ProyectosModule = ({ darkMode, session }) => {
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
     setSaving(true); setFormError("");
     const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
-    const refacc = form.monto_refacc === "" ? 0 : Number(form.monto_refacc);
+    const refacc = Number(refCartTotal || 0);
 
     if (!Number.isFinite(manoObra) || !Number.isFinite(refacc) || manoObra < 0 || refacc < 0) {
       setSaving(false);
       setFormError("La cotización debe contener montos válidos (mayores o iguales a 0).");
       return;
     }
+
+    const syncRefaccionItems = async (cotizacionId) => {
+      if (!refCartTouched || !cotizacionId) return null;
+      const deleteRes = await supabase
+        .from("cotizacion_items")
+        .delete()
+        .eq("cotizacion_id", cotizacionId)
+        .eq("tipo", "refaccion");
+      if (deleteRes.error) return deleteRes.error;
+
+      if (refCart.length > 0) {
+        const rows = refCart.map((item) => ({
+          cotizacion_id: cotizacionId,
+          descripcion: item.nombre || "Refaccion",
+          tipo: "refaccion",
+          refaccion_id: item.id,
+          cantidad: Number(item.cantidad || 1),
+          precio_unit: Number(item.precio_unit || 0),
+        }));
+        const insertRes = await supabase.from("cotizacion_items").insert(rows);
+        if (insertRes.error) return insertRes.error;
+      }
+      return null;
+    };
 
     const payload = { titulo: form.titulo, descripcion: form.descripcion||null, cliente_id: form.cliente_id, vehiculo_id: form.vehiculo_id, mecanico_id: form.mecanico_id||null, estado: form.estado, bloqueado: form.bloqueado, updated_at: new Date().toISOString() };
     let error = null;
@@ -1317,11 +1401,21 @@ const ProyectosModule = ({ darkMode, session }) => {
             .update(quotePayload)
             .eq("id", existingCotizacion.id);
           error = quoteUpdate.error;
+          if (!error) {
+            const syncErr = await syncRefaccionItems(existingCotizacion.id);
+            if (syncErr) error = syncErr;
+          }
         } else if (manoObra > 0 || refacc > 0) {
           const quoteInsert = await supabase
             .from("cotizaciones")
-            .insert([{ proyecto_id: editTarget.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }]);
+            .insert([{ proyecto_id: editTarget.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }])
+            .select("id")
+            .single();
           error = quoteInsert.error;
+          if (!error) {
+            const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+            if (syncErr) error = syncErr;
+          }
         }
 
       }
@@ -1350,8 +1444,14 @@ const ProyectosModule = ({ darkMode, session }) => {
       if (!error && createdProject?.id && (manoObra > 0 || refacc > 0)) {
         const quoteInsert = await supabase
           .from("cotizaciones")
-          .insert([{ proyecto_id: createdProject.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }]);
+          .insert([{ proyecto_id: createdProject.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }])
+          .select("id")
+          .single();
         error = quoteInsert.error;
+        if (!error) {
+          const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+          if (syncErr) error = syncErr;
+        }
       }
     }
 
@@ -1464,27 +1564,16 @@ const ProyectosModule = ({ darkMode, session }) => {
             {/* Mobile */}
             <div className={`md:hidden divide-y ${divider}`}>
               {filtered.map((p) => (
-                <div
-                  key={p.id}
-                  className="px-4 py-4 flex flex-col gap-2 cursor-pointer"
-                  onClick={() => setDetalle(p)}
-                  onTouchEnd={() => setDetalle(p)}
-                >
+                <div key={p.id} className="px-4 py-4 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className={`font-medium ${t}`}>{p.bloqueado && "🔒 "}{p.titulo}</p>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 capitalize ${estadoBadge(p.estado, darkMode)}`}>{p.estado.replace(/_/g, " ")}</span>
                   </div>
                   <p className={`text-xs ${st}`}>{p.clientes?.nombre} · {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo}` : "—"}</p>
                   {p.empleados && <p className={`text-xs ${st}`}>Mecánico: {p.empleados.nombre}</p>}
-                  <div className="flex gap-2 mt-1 flex-wrap">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDetalle(p); }}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300" : "border-gray-200 text-gray-600"}`}
-                    >
-                      Ver fotos
-                    </button>
-                    <BtnEdit onClick={(e) => { e.stopPropagation(); openEdit(p); }} darkMode={darkMode} />
-                    <BtnCancelProject onClick={(e) => { e.stopPropagation(); setDeleteTarget(p); }} darkMode={darkMode} />
+                  <div className="flex gap-2 mt-1">
+                    <BtnEdit onClick={() => openEdit(p)} darkMode={darkMode} />
+                    <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />
                   </div>
                 </div>
               ))}
@@ -1537,21 +1626,159 @@ const ProyectosModule = ({ darkMode, session }) => {
                   placeholder="0.00"
                 />
               </Field>
-              <Field label="Refacciones" darkMode={darkMode}>
-                <Input
-                  darkMode={darkMode}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.monto_refacc}
-                  onChange={(e) => setForm({ ...form, monto_refacc: e.target.value })}
-                  placeholder="0.00"
-                />
-              </Field>
+              <div className="flex flex-col gap-1.5">
+                <label className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
+                  Refacciones
+                </label>
+                {refCart.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={openRefPicker}
+                    className={`px-3 py-2 rounded-md text-sm font-medium border transition-colors ${darkMode ? "border-zinc-700 text-zinc-300 hover:border-zinc-500" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                  >
+                    Agregar refacciones
+                  </button>
+                ) : (
+                  <div className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${darkMode ? "border-zinc-700 text-zinc-100" : "border-gray-200 text-gray-700"}`}>
+                    <span className="text-sm font-medium">${refCartTotal.toFixed(2)}</span>
+                    <button
+                      type="button"
+                      onClick={clearRefCart}
+                      className="w-7 h-7 rounded-full text-white text-sm leading-none"
+                      style={{ backgroundColor: C_RED }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <p className={`mt-2 text-sm ${darkMode ? "text-zinc-300" : "text-gray-700"}`}>
               Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
             </p>
+            {refPickerOpen && createPortal(
+              <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-10 bg-black/60 anim-fadeIn" onClick={cancelRefPicker}>
+                <div
+                  className={`anim-fadeUp relative w-full max-w-5xl rounded-xl ${darkMode ? "bg-[#1e1e26] text-white" : "bg-white text-gray-800"}`}
+                  style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? "border-zinc-700/60" : "border-gray-200"}`}>
+                    <h2 className="font-semibold text-base">Agregar refacciones</h2>
+                    <button onClick={cancelRefPicker} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
+                  </div>
+                  <div className="px-6 py-5 max-h-[75vh] overflow-y-auto">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+                      <div>
+                        <Input
+                          darkMode={darkMode}
+                          placeholder="Buscar refaccion por nombre o numero de parte..."
+                          value={refSearch}
+                          onChange={(e) => setRefSearch(e.target.value)}
+                        />
+                        <div className={`mt-3 divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                          {refFiltered.length === 0 ? (
+                            <div className={`py-6 text-center text-sm ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Sin resultados</div>
+                          ) : (
+                            refFiltered.map((r) => (
+                              <div key={r.id} className={`py-2 flex items-center justify-between ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
+                                <div>
+                                  <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{r.nombre}</p>
+                                  <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{r.numero_parte || "—"}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => addRefToDraft(r)}
+                                  className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                                >
+                                  Agregar
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className={`text-sm font-semibold mb-2 ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>Carrito</p>
+                        {Array.isArray(refCartDraft) && refCartDraft.length > 0 ? (
+                          <div className={`divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                            {refCartDraft.map((item) => (
+                              <div key={item.id} className="py-2 flex flex-col gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{item.nombre}</p>
+                                    <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{item.numero_parte || "—"}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRefDraftItem(item.id)}
+                                    className={`text-xs px-2 py-1 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-red-300" : "border-gray-200 text-gray-500 hover:text-red-500"}`}
+                                  >
+                                    Quitar
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="flex flex-col gap-1">
+                                    <span className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Cantidad</span>
+                                    <Input
+                                      darkMode={darkMode}
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={item.cantidad}
+                                      onChange={(e) => updateRefDraftItem(item.id, { cantidad: Number(e.target.value) })}
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Precio</span>
+                                    <Input
+                                      darkMode={darkMode}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.precio_unit}
+                                      onChange={(e) => updateRefDraftItem(item.id, { precio_unit: e.target.value })}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Agrega refacciones desde la lista.</p>
+                        )}
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Total</span>
+                          <span className={`text-sm font-semibold ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>
+                            ${Array.isArray(refCartDraft)
+                              ? refCartDraft.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0).toFixed(2)
+                              : "0.00"}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelRefPicker}
+                            className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={confirmRefPicker}
+                            className="flex-1 py-2 rounded-lg text-sm font-medium text-white"
+                            style={{ backgroundColor: C_BLUE, boxShadow: `0 2px 8px ${C_BLUE}40` }}
+                          >
+                            Agregar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
           </div>
           <div className="flex items-center gap-3">
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
@@ -1707,7 +1934,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
   const fileRef = useRef(null);
 
   const fetchFotos = useCallback(async () => {
@@ -1802,68 +2028,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     // 3. Terminamos el proceso con éxito
     setUploading(false);
     fetchFotos();
-    if (files.length > 0) {
-      const momentoTexto = momentoLabel(momentoFoto) || "";
-      const titulo = "Nuevas fotos del proyecto";
-      const mensaje = `Se agregaron ${files.length} foto(s) ${momentoTexto ? `(${momentoTexto.toLowerCase()})` : ""} al proyecto "${proyecto?.titulo || ""}".`;
-
-      await notifyCliente({
-        proyectoId: proyecto?.id || null,
-        clienteId: proyecto?.cliente_id || null,
-        clienteCorreo: proyecto?.clientes?.correo || null,
-        titulo,
-        mensaje,
-        userToken: session?.access_token || "",
-      });
-    }
     if (fileRef.current) fileRef.current.value = "";
-  };
-
-  const removePhoto = async (foto) => {
-    if (!foto?.id) return;
-
-    setUploadError("");
-
-    const url = String(foto.url || "");
-    let storagePath = "";
-    try {
-      const pathname = new URL(url).pathname;
-      const prefix = "/storage/v1/object/public/fotografias/";
-      if (pathname.startsWith(prefix)) {
-        storagePath = pathname.slice(prefix.length);
-      }
-    } catch {
-      const publicPrefix = "/storage/v1/object/public/fotografias/";
-      const idx = url.indexOf(publicPrefix);
-      storagePath = idx >= 0 ? url.slice(idx + publicPrefix.length) : "";
-    }
-
-    const { error: dbError } = await supabase
-      .from("fotografias")
-      .delete()
-      .eq("id", foto.id);
-
-    if (dbError) {
-      console.error("[removePhoto] db error:", dbError);
-      setUploadError("No se pudo borrar la foto: " + (dbError.message || dbError));
-      return;
-    }
-
-    if (storagePath) {
-      const { error: storageError } = await supabase.storage
-        .from("fotografias")
-        .remove([storagePath]);
-      if (storageError) {
-        console.error("[removePhoto] storage error:", storageError);
-      }
-    }
-
-    fetchFotos();
-  };
-
-  const requestRemovePhoto = (foto) => {
-    if (!foto?.id) return;
-    setDeleteTarget(foto);
   };
 
   if (!open || !proyecto) return null;
@@ -1972,20 +2137,9 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                     <img
                       src={f.url}
                       alt={f.descripcion || "Foto"}
-                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105 z-0"
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                       onError={(e) => console.error("[img] failed to load:", f.url, e)}
                     />
-                    {canUpload && (
-                      <button
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); requestRemovePhoto(f); }}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold bg-red-600/90 hover:bg-red-600 z-10"
-                        title="Eliminar"
-                      >
-                        ×
-                      </button>
-                    )}
                     {momentoLabel(f.momento) && (
                       <span
                         className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${momentoBadge(f.momento)}`}
@@ -2017,21 +2171,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
         </div>,
         document.body
       )}
-
-      <ConfirmModal
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        title="Eliminar foto"
-        message="¿Deseas borrar esta foto?"
-        onConfirm={() => {
-          const target = deleteTarget;
-          setDeleteTarget(null);
-          removePhoto(target);
-        }}
-        confirmLabel="Eliminar"
-        confirmColor={C_RED}
-        darkMode={darkMode}
-      />
     </>
   );
 };
@@ -2145,6 +2284,10 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
     { id: "vehiculos", label: "Vehículos", icon: "🚗" },
     { id: "proyectos", label: "Proyectos", icon: "🔧" },
+    { id: "refacciones", label: "Refacciones", icon: "🔩" },
+    { id: "proveedores", label: "Proveedores", icon: "🏷️" },
+    { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
+    { id: "ventas-refacciones", label: "Venta Refacciones", icon: "🛒" },
     { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
     { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
@@ -2155,6 +2298,10 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
+      {activeModule === "refacciones" && <RefaccionesModule darkMode={darkMode} readOnly={false} />}
+      {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
+      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
+      {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
       {activeModule === "notificaciones" && (
@@ -3173,7 +3320,6 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
       return;
     }
 
-    const prevEstado = proyecto?.estado || "";
     await supabase
       .from("proyectos")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
@@ -3181,19 +3327,6 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
     setProyectos((prev) =>
       prev.map((p) => p.id === proyecto.id ? { ...p, estado: nuevoEstado } : p)
     );
-
-    if (prevEstado !== nuevoEstado) {
-      const titulo = "Estado de proyecto actualizado";
-      const mensaje = `Tu proyecto "${proyecto?.titulo || ""}" cambio de estado: ${estadoLabel(prevEstado)} -> ${estadoLabel(nuevoEstado)}.`;
-      await notifyCliente({
-        proyectoId: proyecto?.id || null,
-        clienteId: proyecto?.cliente_id || null,
-        clienteCorreo: proyecto?.clientes?.correo || null,
-        titulo,
-        mensaje,
-        userToken: session?.access_token || "",
-      });
-    }
   };
 
   const [detalle, setDetalle] = useState(null);
@@ -3471,6 +3604,8 @@ const DashboardMecanico = ({ session, darkMode }) => {
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
     { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
+    { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
+    { id: "ventas-refacciones",  label: "Venta Refacciones",  icon: "🛒" },
     { id: "notificaciones",     label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
 
@@ -3478,7 +3613,9 @@ const DashboardMecanico = ({ session, darkMode }) => {
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
-      {activeModule === "refacciones"        && <RefaccionesMecanicoModule darkMode={darkMode} />}
+      {activeModule === "refacciones"         && <RefaccionesModule darkMode={darkMode} readOnly allowStockEdit={false} />}
+      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
+      {activeModule === "ventas-refacciones"  && <VentaRefacciones darkMode={darkMode} />}
       {activeModule === "notificaciones" && (
         <NotificacionesModule
           darkMode={darkMode}

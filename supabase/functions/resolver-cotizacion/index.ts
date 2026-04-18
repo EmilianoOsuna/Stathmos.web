@@ -72,6 +72,21 @@ const getClienteIdForUser = async (supabaseAdmin, user) => {
   return clienteByCorreo?.id || null;
 };
 
+const buildStockShortage = (items = []) =>
+  items
+    .filter((item) => {
+      const stock = item?.refacciones?.stock ?? 0;
+      return !item?.refacciones?.id || stock < (item?.cantidad ?? 0);
+    })
+    .map((item) => ({
+      item_id: item?.id ?? null,
+      refaccion_id: item?.refaccion_id ?? null,
+      nombre: item?.refacciones?.nombre ?? null,
+      numero_parte: item?.refacciones?.numero_parte ?? null,
+      stock_disponible: item?.refacciones?.stock ?? 0,
+      cantidad_requerida: item?.cantidad ?? 0,
+    }));
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
@@ -182,6 +197,66 @@ serve(async (req) => {
       notas: notas ?? null,
       updated_at: nowIso,
     };
+
+    if (accionNorm === "aprobar") {
+      const { data: items, error: itemsErr } = await supabaseAdmin
+        .from("cotizacion_items")
+        .select("id, refaccion_id, cantidad, tipo, refacciones (id, nombre, numero_parte, stock)")
+        .eq("cotizacion_id", cotizacion_id)
+        .eq("tipo", "refaccion");
+
+      if (itemsErr) throw itemsErr;
+
+      const faltantes = buildStockShortage(items || []);
+      if (faltantes.length) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Stock insuficiente para aprobar la cotizacion",
+            faltantes,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+        );
+      }
+
+      const actorId = authData?.user?.id ?? null;
+      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
+      const auditRows = [];
+
+      for (const item of items || []) {
+        const beforeStock = item?.refacciones?.stock ?? 0;
+        const newStock = beforeStock - (item?.cantidad ?? 0);
+
+        const { error: updateStockErr } = await supabaseAdmin
+          .from("refacciones")
+          .update({ stock: newStock, updated_at: nowIso })
+          .eq("id", item.refaccion_id);
+
+        if (updateStockErr) throw updateStockErr;
+
+        auditRows.push({
+          usuario_id: actorId,
+          tabla: "refacciones",
+          operacion: "UPDATE",
+          registro_id: item.refaccion_id,
+          datos_antes: {
+            stock: beforeStock,
+          },
+          datos_despues: {
+            stock: newStock,
+            motivo: "APROBACION_COTIZACION",
+            cotizacion_id,
+            item_id: item.id,
+            cantidad: item.cantidad,
+          },
+          ip,
+        });
+      }
+
+      if (auditRows.length) {
+        await supabaseAdmin.from("auditoria").insert(auditRows);
+      }
+    }
 
     const { error: updateCotErr } = await supabaseAdmin
       .from("cotizaciones")
