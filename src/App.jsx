@@ -2997,6 +2997,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
   const [detalle,     setDetalle]     = useState(null);
   const [decisionLoadingId, setDecisionLoadingId] = useState(null);
   const [decisionError, setDecisionError] = useState("");
+  const [decisionSuccess, setDecisionSuccess] = useState("");
 
   useEffect(() => {
     if (!clienteId) return;
@@ -3051,11 +3052,12 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
 
     setDecisionLoadingId(proyecto.id);
     setDecisionError("");
+    setDecisionSuccess("");
 
     let json = null;
     try {
       json = await invokeEdgeFunction("resolver-cotizacion", {
-        body: { cotizacion_id: cotizacion.id, decision },
+        body: { cotizacion_id: cotizacion.id, accion: decision },
         userToken: session?.access_token || "",
       });
     } catch (err) {
@@ -3072,17 +3074,48 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
       return;
     }
 
+    const nextEstado = json?.estado || (decision === "aprobar" ? "aprobada" : "rechazada");
+    const nowIso = new Date().toISOString();
+
     setProyectos((prev) => prev.map((p) => {
       if (p.id !== proyecto.id) return p;
-      const updatedCot = json?.cotizacion || null;
-      const cotizaciones = (p.cotizaciones || []).map((c) => (
-        c.id === cotizacion.id ? (updatedCot ? { ...c, ...updatedCot } : c) : c
-      ));
+      const existing = Array.isArray(p.cotizaciones) ? p.cotizaciones : [];
+      let found = false;
+      const mapped = existing.map((c) => {
+        if (c.id !== cotizacion.id) return c;
+        found = true;
+        return { ...c, estado: nextEstado, fecha_respuesta: nowIso };
+      });
+      const cotizaciones = found
+        ? mapped
+        : [...mapped, { ...cotizacion, estado: nextEstado, fecha_respuesta: nowIso }];
       const updatedProyecto = { ...p, cotizaciones };
-      if (json?.proyecto_estado) updatedProyecto.estado = json.proyecto_estado;
+      if (json?.estado_proyecto) updatedProyecto.estado = json.estado_proyecto;
       return updatedProyecto;
     }));
 
+    setDetalle((prev) => {
+      if (!prev || prev.id !== proyecto.id) return prev;
+      const existing = Array.isArray(prev.cotizaciones) ? prev.cotizaciones : [];
+      let found = false;
+      const mapped = existing.map((c) => {
+        if (c.id !== cotizacion.id) return c;
+        found = true;
+        return { ...c, estado: nextEstado, fecha_respuesta: nowIso };
+      });
+      const cotizaciones = found
+        ? mapped
+        : [...mapped, { ...cotizacion, estado: nextEstado, fecha_respuesta: nowIso }];
+      const updated = { ...prev, cotizaciones };
+      if (json?.estado_proyecto) updated.estado = json.estado_proyecto;
+      return updated;
+    });
+
+    setDecisionSuccess(
+      decision === "aprobar"
+        ? "Cotizacion aprobada correctamente."
+        : "Cotizacion rechazada correctamente."
+    );
     setDecisionLoadingId(null);
   };
 
@@ -3098,6 +3131,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
         <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
       </div>
       {decisionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{decisionError}</p>}
+      {decisionSuccess && <p className="mb-3 text-sm" style={{ color: "#10b981" }}>{decisionSuccess}</p>}
       <Card darkMode={darkMode} className="overflow-hidden">
         {loading ? (
           <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>

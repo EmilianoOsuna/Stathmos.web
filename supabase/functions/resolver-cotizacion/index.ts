@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-user-token",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -99,7 +99,9 @@ serve(async (req) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const authHeader = req.headers.get("authorization") || "";
-    const token = authHeader.replace("Bearer ", "").trim();
+    const headerToken = authHeader.replace("Bearer ", "").trim();
+    const userToken = (req.headers.get("x-user-token") || "").trim();
+    const token = userToken || headerToken;
     if (!token) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized: missing token" }),
@@ -124,16 +126,17 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { cotizacion_id, accion, notas, cliente_id } = body || {};
+    const { cotizacion_id, accion, decision, notas, cliente_id } = body || {};
+    const actionRaw = accion ?? decision;
 
-    if (!cotizacion_id || !accion) {
+    if (!cotizacion_id || !actionRaw) {
       return new Response(
         JSON.stringify({ success: false, error: "Faltan campos: cotizacion_id, accion" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
       );
     }
 
-    const accionNorm = String(accion).trim().toLowerCase();
+    const accionNorm = String(actionRaw).trim().toLowerCase();
     if (!["aprobar", "rechazar"].includes(accionNorm)) {
       return new Response(
         JSON.stringify({ success: false, error: "Accion invalida" }),
