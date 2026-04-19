@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import supabase from "../supabase";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -8,6 +8,7 @@ import { formatDateTimeWorkshop, formatDateWorkshop } from "../utils/datetime";
 export default function Ticket({ proyectoId, darkMode = false, onClose = null, showOmit = true }) {
   const ticketRef = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -157,11 +158,13 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
           // Strip all classes and problematic styles from cloned element
           const allElements = clonedDocument.querySelectorAll('*');
           allElements.forEach((el) => {
-            // Remove all classes to prevent oklch color parsing
-            el.className = '';
+            // Remove class attribute safely for both HTML and SVG elements
+            if (typeof el.removeAttribute === "function") {
+              el.removeAttribute("class");
+            }
             
             // Remove inline styles that might contain oklch
-            if (el.style.cssText) {
+            if (el.style && el.style.cssText) {
               const styles = el.style.cssText.split(';').filter(style => {
                 return style.trim() && !style.includes('oklch');
               }).join(';');
@@ -211,6 +214,20 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   const handlePrint = () => {
     window.print();
   };
+
+  useEffect(() => {
+    if (loading || !ticket) return;
+
+    const params = new URLSearchParams(location.search);
+    const shouldAutoPrint = params.get("autoprint") === "1";
+    if (!shouldAutoPrint) return;
+
+    const timer = window.setTimeout(() => {
+      handlePrint();
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [loading, ticket, location.search]);
 
   const handleOmit = () => {
     if (onClose) {

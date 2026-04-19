@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import supabase from "../supabase";
 import { formatDateWorkshop, formatDateTimeWorkshop } from "../utils/datetime";
-import { ChevronDown, Download, Eye, Search, Filter, X } from "lucide-react";
+import { ChevronDown, Download, Eye, Search, Filter, X, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -235,11 +235,13 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
           // Strip all classes and problematic styles from cloned element
           const allElements = clonedDocument.querySelectorAll('*');
           allElements.forEach((el) => {
-            // Remove all classes to prevent oklch color parsing
-            el.className = '';
+            // Remove class attribute safely for both HTML and SVG elements
+            if (typeof el.removeAttribute === "function") {
+              el.removeAttribute("class");
+            }
             
             // Remove inline styles that might contain oklch
-            if (el.style.cssText) {
+            if (el.style && el.style.cssText) {
               const styles = el.style.cssText.split(';').filter(style => {
                 return style.trim() && !style.includes('oklch');
               }).join(';');
@@ -281,6 +283,16 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
       console.error("Error al generar PDF:", error);
     } finally {
       setGenerandoPDF((prev) => ({ ...prev, [servicio.id]: false }));
+    }
+  };
+
+  const imprimirTicketServicio = (servicioId) => {
+    const ticketUrl = `${window.location.origin}/ticket/${servicioId}?autoprint=1`;
+    const popup = window.open(ticketUrl, "_blank", "noopener,noreferrer");
+
+    // If popup is blocked, fallback to same-tab navigation.
+    if (!popup) {
+      window.location.assign(ticketUrl);
     }
   };
 
@@ -629,7 +641,18 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                   </div>
 
                   {/* Botones de acción */}
-                  <div className={`flex gap-2 pt-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                  <div className={`flex flex-wrap gap-2 pt-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                    <button
+                      onClick={() => imprimirTicketServicio(servicio.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition ${
+                        darkMode
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-blue-500 hover:bg-blue-600 text-white"
+                      }`}
+                    >
+                      <Printer className="w-4 h-4" />
+                      Imprimir Ticket
+                    </button>
                     <button
                       onClick={() => generarPDFServicio(servicio)}
                       disabled={generandoPDF[servicio.id]}
