@@ -290,10 +290,6 @@ CREATE TABLE public.citas (
   CONSTRAINT citas_vehiculo_fkey FOREIGN KEY (vehiculo_id) REFERENCES public.vehiculos(id)
 );
 
-CREATE UNIQUE INDEX citas_fecha_hora_unica_activa_idx
-  ON public.citas (fecha_hora)
-  WHERE estado <> 'cancelada';
-
 COMMENT ON TABLE public.citas IS 'Citas agendadas.';
 
 

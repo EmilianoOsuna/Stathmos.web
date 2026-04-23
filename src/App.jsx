@@ -1,18 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import supabase from "./supabase";
 import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
+import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdminWrapper";
+import MecanicoDiagnosticosModule from "./components/MecanicoDiagnosticosModule";
+import ReportesOperativosWrapper from "./components/ReportesOperativosWrapper";
 import CitasModule from "./components/CitasModule";
-import RoleCalendarDashboard from "./components/RoleCalendarDashboard";
+import RefaccionesModule from "./components/RefaccionesModule";
+import ProveedoresModule from "./components/ProveedoresModule";
+import CompraRefacciones from "./components/CompraRefacciones";
+import VentaRefacciones from "./components/VentaRefacciones";
 import { loadStripe } from '@stripe/stripe-js';
-import { formatDateWorkshop, todayWorkshopYmd } from "./utils/datetime";
+import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 const C_BLUE = "#60aebb";
 const C_RED  = "#db3c1c";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // ─── Logo ─────────────────────────────
 const LogoMark = ({ className = "h-6 w-auto" }) => (
@@ -69,6 +78,88 @@ const ESTADO_LABELS = {
 
 const estadoLabel = (estado) => ESTADO_LABELS[estado] || (estado ? String(estado).replace(/_/g, " ") : "—");
 
+const getLatestCotizacion = (proyecto) => {
+  const cotizaciones = Array.isArray(proyecto?.cotizaciones) ? proyecto.cotizaciones : [];
+  if (!cotizaciones.length) return null;
+
+  return [...cotizaciones].sort((a, b) => {
+    const ad = new Date(a?.created_at || a?.fecha_emision || 0).getTime();
+    const bd = new Date(b?.created_at || b?.fecha_emision || 0).getTime();
+    return bd - ad;
+  })[0];
+};
+
+const useUserNotifications = (session) => {
+  const userId = session?.user?.id || null;
+  const [notificaciones, setNotificaciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("notificaciones")
+      .select("id, titulo, mensaje, leida, proyecto_id, created_at")
+      .eq("usuario_id", userId)
+      .order("created_at", { ascending: false });
+    setNotificaciones(data || []);
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchNotifications();
+
+    const channel = supabase
+      .channel(`notificaciones-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notificaciones", filter: `usuario_id=eq.${userId}` },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, fetchNotifications]);
+
+  const unreadCount = notificaciones.filter((n) => !n.leida).length;
+
+  return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
+};
+
+const invokeEdgeFunction = async (name, { body, userToken }) => {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "x-user-token": userToken || "",
+    },
+    body: JSON.stringify(body || {}),
+  });
+
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    json = null;
+  }
+
+  if (!res.ok) {
+    const msg = json?.error || json?.message || `Edge Function error (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return json;
+};
+
+const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
+
 /*
   CHANGES ADDED (compared to initial project state):
   - `isPayable` helper: determines whether a proyecto/ticket is eligible for payment (added to centralize logic).
@@ -84,9 +175,16 @@ const estadoLabel = (estado) => ESTADO_LABELS[estado] || (estado ? String(estado
   Purpose: allow safe server-side creation of `pagos` (bypassing RLS securely) while providing a local offline mode for testing when Supabase access isn't available.
 */
 
-const isPayable = (e) => {
-  const v = String(e || "").toLowerCase().trim();
-  return v === "terminado" || v === "listo" || v === "ready";
+const isPayable = (ticket) => {
+  const estadoRaw = typeof ticket === "string" ? ticket : ticket?.estado;
+  const cotizacion = typeof ticket === "object" && ticket
+    ? (ticket.cotizacion || getLatestCotizacion(ticket))
+    : null;
+
+  const estado = String(estadoRaw || "").toLowerCase().trim();
+  const cotizacionAprobada = cotizacion?.estado === "aprobada";
+
+  return estado === "en_progreso" && cotizacionAprobada;
 };
 
 const normalizeRole = (value = "") =>
@@ -102,6 +200,24 @@ const getRoleFromSession = (session) => {
   const rol = normalizeRole(appRole || metaRole || "");
   if (["administrador", "mecanico", "cliente"].includes(rol)) return rol;
   return "";
+};
+
+const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
+  if (!invokeError) return fallbackMessage;
+
+  const directMessage = invokeError?.message;
+  const response = invokeError?.context;
+
+  if (!response || typeof response.json !== "function") {
+    return directMessage || fallbackMessage;
+  }
+
+  try {
+    const payload = await response.clone().json();
+    return payload?.error || payload?.message || directMessage || fallbackMessage;
+  } catch {
+    return directMessage || fallbackMessage;
+  }
 };
 
 // ─── Global CSS animations (injected once) ────────────────────────────────────
@@ -140,7 +256,13 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
   if (!open) return null;
   const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
   const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
-  return (
+  const bodyRef = useRef(null);
+  useEffect(() => {
+    if (open && bodyRef.current) {
+      bodyRef.current.scrollTop = 0;
+    }
+  }, [open, title]);
+  const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
       <div
         className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-y-auto`}
@@ -151,10 +273,11 @@ const Modal = ({ open, onClose, title, children, darkMode }) => {
           <h2 className="font-semibold text-base">{title}</h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div ref={bodyRef} className="px-6 py-5 max-h-[70vh] overflow-y-auto">{children}</div>
       </div>
     </div>
   );
+  return createPortal(modalContent, document.body);
 };
 
 // ─── Error Boundary (captura errores de render en UI) ───────────────────────
@@ -784,7 +907,11 @@ const VehiculosModule = ({ darkMode }) => {
       : await supabase.from("vehiculos").insert([payload]);
     setSaving(false);
     if (error) { setFormError(error.message); return; }
-    setModalOpen(false); fetchAll();
+    setModalOpen(false);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+    setRefCartTouched(false);
+    fetchAll();
   };
 
   const handleToggle = async () => {
@@ -955,37 +1082,382 @@ const ProyectosModule = ({ darkMode, session }) => {
   const [modalOpen,    setModalOpen]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const [refCatalog, setRefCatalog] = useState([]);
+  const [refSearch, setRefSearch] = useState("");
+  const [refCart, setRefCart] = useState([]);
+  const [refCartDraft, setRefCartDraft] = useState(null);
+  const [refPickerOpen, setRefPickerOpen] = useState(false);
+  const [refCartTouched, setRefCartTouched] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [p, c, v, e] = await Promise.all([
-      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre)").order("created_at", { ascending: false }),
+    const [p, c, v, e, r] = await Promise.all([
+      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
-      supabase.from("empleados").select("id,nombre").eq("activo", true).order("nombre"),
+      supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
+      supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
     ]);
-    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setLoading(false);
+    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setLoading(false);
   }, []);
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real (cuando cliente aprueba cotización)
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-admin-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     setFilteredVehiculos(form.cliente_id ? vehiculos.filter((v) => v.cliente_id === form.cliente_id) : []);
   }, [form.cliente_id, vehiculos]);
 
-  const openCreate = () => { setEditTarget(null); setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false }); setFormError(""); setModalOpen(true); };
-  const openEdit   = (p) => { setEditTarget(p); setForm({ titulo: p.titulo||"", descripcion: p.descripcion||"", cliente_id: p.cliente_id||"", vehiculo_id: p.vehiculo_id||"", mecanico_id: p.mecanico_id||"", estado: p.estado||"activo", bloqueado: p.bloqueado??false }); setFormError(""); setModalOpen(true); };
+  const refCartTotal = useMemo(() => (
+    refCart.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0)
+  ), [refCart]);
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      monto_refacc: refCart.length ? refCartTotal.toFixed(2) : "",
+    }));
+  }, [refCartTotal, refCart.length]);
+
+  const openRefPicker = () => {
+    setRefCartDraft(refCart);
+    setRefPickerOpen(true);
+    setRefSearch("");
+  };
+
+  const addRefToDraft = (refaccion) => {
+    setRefCartDraft((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const existing = list.find((item) => item.id === refaccion.id);
+      if (existing) {
+        return list.map((item) =>
+          item.id === refaccion.id ? { ...item, cantidad: item.cantidad + 1 } : item
+        );
+      }
+      return [
+        ...list,
+        {
+          id: refaccion.id,
+          nombre: refaccion.nombre,
+          numero_parte: refaccion.numero_parte || "",
+          cantidad: 1,
+          precio_unit: Number(refaccion.precio_venta || 0),
+        },
+      ];
+    });
+  };
+
+  const updateRefDraftItem = (id, patch) => {
+    setRefCartDraft((prev) => (Array.isArray(prev) ? prev.map((item) => (item.id === id ? { ...item, ...patch } : item)) : prev));
+  };
+
+  const removeRefDraftItem = (id) => {
+    setRefCartDraft((prev) => (Array.isArray(prev) ? prev.filter((item) => item.id !== id) : prev));
+  };
+
+  const confirmRefPicker = () => {
+    setRefCart(Array.isArray(refCartDraft) ? refCartDraft : []);
+    setRefCartTouched(true);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const cancelRefPicker = () => {
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const clearRefCart = () => {
+    setRefCart([]);
+    setRefCartTouched(true);
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+  };
+
+  const refFiltered = refCatalog.filter((r) =>
+    r.nombre?.toLowerCase().includes(refSearch.toLowerCase()) ||
+    r.numero_parte?.toLowerCase().includes(refSearch.toLowerCase())
+  );
+
+  const openCreate = () => {
+    setEditTarget(null);
+    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
+    setFormError("");
+    setRefCart([]);
+    setRefCartDraft(null);
+    setRefSearch("");
+    setRefPickerOpen(false);
+    setRefCartTouched(false);
+    setModalOpen(true);
+  };
+  const openEdit = async (p) => {
+    const cotizacion = getLatestCotizacion(p);
+    setEditTarget(p);
+    setForm({
+      titulo: p.titulo || "",
+      descripcion: p.descripcion || "",
+      cliente_id: p.cliente_id || "",
+      vehiculo_id: p.vehiculo_id || "",
+      mecanico_id: p.mecanico_id || "",
+      estado: p.estado || "activo",
+      bloqueado: p.bloqueado ?? false,
+      monto_mano_obra: cotizacion?.monto_mano_obra != null ? String(cotizacion.monto_mano_obra) : "",
+      monto_refacc: cotizacion?.monto_refacc != null ? String(cotizacion.monto_refacc) : "",
+    });
+    setFormError("");
+    setRefSearch("");
+    setRefPickerOpen(false);
+    setRefCartDraft(null);
+    setRefCartTouched(false);
+    if (cotizacion?.id) {
+      const { data: items } = await supabase
+        .from("cotizacion_items")
+        .select("id, refaccion_id, cantidad, precio_unit, tipo, refacciones (nombre, numero_parte)")
+        .eq("cotizacion_id", cotizacion.id)
+        .eq("tipo", "refaccion");
+      const mapped = (items || []).map((item) => ({
+        id: item.refaccion_id,
+        nombre: item.refacciones?.nombre || item.refaccion_id,
+        numero_parte: item.refacciones?.numero_parte || "",
+        cantidad: item.cantidad || 1,
+        precio_unit: Number(item.precio_unit || 0),
+      }));
+      setRefCart(mapped);
+    } else {
+      setRefCart([]);
+    }
+    setModalOpen(true);
+  };
+
+  const notifyMecanicoAsignacion = async ({ proyectoId, mecanicoId, tituloProyecto }) => {
+    if (!mecanicoId) return;
+    try {
+      const cachedEmpleado = (empleados || []).find((e) => e.id === mecanicoId) || null;
+      let usuarioId = cachedEmpleado?.usuario_id || null;
+      let correo = cachedEmpleado?.correo || null;
+
+      if (!usuarioId || !correo) {
+        const { data: empleado, error: empleadoErr } = await supabase
+          .from("empleados")
+          .select("usuario_id, correo")
+          .eq("id", mecanicoId)
+          .maybeSingle();
+
+        if (!empleadoErr) {
+          usuarioId = usuarioId || empleado?.usuario_id || null;
+          correo = correo || empleado?.correo || null;
+        }
+      }
+
+      if (!usuarioId && correo) {
+        const { data: usuario } = await supabase
+          .from("usuarios")
+          .select("id")
+          .eq("correo", correo)
+          .maybeSingle();
+        usuarioId = usuario?.id || null;
+      }
+
+      if (!usuarioId) return;
+
+      const titulo = "Nuevo proyecto asignado";
+      const mensaje = `Se te asigno el proyecto "${tituloProyecto}".`;
+
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: {
+          usuario_id: usuarioId,
+          proyecto_id: proyectoId,
+          titulo,
+          mensaje,
+        },
+        userToken: session?.access_token || "",
+      });
+    } catch (err) {
+      console.warn("[notifyMecanicoAsignacion] error:", err);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
     setSaving(true); setFormError("");
+    const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
+    const refacc = Number(refCartTotal || 0);
+
+    if (!Number.isFinite(manoObra) || !Number.isFinite(refacc) || manoObra < 0 || refacc < 0) {
+      setSaving(false);
+      setFormError("La cotización debe contener montos válidos (mayores o iguales a 0).");
+      return;
+    }
+
+    const syncRefaccionItems = async (cotizacionId) => {
+      if (!refCartTouched || !cotizacionId) return null;
+      const deleteRes = await supabase
+        .from("cotizacion_items")
+        .delete()
+        .eq("cotizacion_id", cotizacionId)
+        .eq("tipo", "refaccion");
+      if (deleteRes.error) return deleteRes.error;
+
+      if (refCart.length > 0) {
+        const rows = refCart.map((item) => ({
+          cotizacion_id: cotizacionId,
+          descripcion: item.nombre || "Refaccion",
+          tipo: "refaccion",
+          refaccion_id: item.id,
+          cantidad: Number(item.cantidad || 1),
+          precio_unit: Number(item.precio_unit || 0),
+        }));
+        const insertRes = await supabase.from("cotizacion_items").insert(rows);
+        if (insertRes.error) return insertRes.error;
+      }
+      return null;
+    };
+
     const payload = { titulo: form.titulo, descripcion: form.descripcion||null, cliente_id: form.cliente_id, vehiculo_id: form.vehiculo_id, mecanico_id: form.mecanico_id||null, estado: form.estado, bloqueado: form.bloqueado, updated_at: new Date().toISOString() };
-    const { error } = editTarget
-      ? await supabase.from("proyectos").update(payload).eq("id", editTarget.id)
-      : await supabase.from("proyectos").insert([{ ...payload, fecha_ingreso: new Date().toISOString() }]);
+    let error = null;
+
+    if (editTarget) {
+      const prevMecanicoId = editTarget.mecanico_id || null;
+      const latestFromTarget = getLatestCotizacion(editTarget);
+      const quoteChanged = Boolean(latestFromTarget) && (
+        Number(latestFromTarget.monto_mano_obra || 0) !== manoObra ||
+        Number(latestFromTarget.monto_refacc || 0) !== refacc
+      );
+
+      if (form.estado === "en_progreso") {
+        const canStart = Boolean(latestFromTarget && latestFromTarget.estado === "aprobada" && !quoteChanged);
+        if (!canStart) {
+          setSaving(false);
+          setFormError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
+          return;
+        }
+      }
+
+      const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
+      error = projectRes.error;
+      if (!error && form.mecanico_id && form.mecanico_id !== prevMecanicoId) {
+        await notifyMecanicoAsignacion({
+          proyectoId: editTarget.id,
+          mecanicoId: form.mecanico_id,
+          tituloProyecto: form.titulo,
+        });
+      }
+
+      if (!error) {
+        const { data: existingCotizacion, error: quoteFetchError } = await supabase
+          .from("cotizaciones")
+          .select("id,monto_mano_obra,monto_refacc,estado")
+          .eq("proyecto_id", editTarget.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (quoteFetchError) {
+          error = quoteFetchError;
+        } else if (existingCotizacion?.id) {
+          const quoteChangedInDb = Number(existingCotizacion.monto_mano_obra || 0) !== manoObra || Number(existingCotizacion.monto_refacc || 0) !== refacc;
+          const quotePayload = { monto_mano_obra: manoObra, monto_refacc: refacc, updated_at: new Date().toISOString() };
+
+          if (quoteChangedInDb) {
+            quotePayload.estado = existingCotizacion.estado === "pendiente" ? "pendiente" : "modificada";
+            quotePayload.aprobada_por = null;
+            quotePayload.rechazada_por = null;
+            quotePayload.fecha_respuesta = null;
+          }
+
+          const quoteUpdate = await supabase
+            .from("cotizaciones")
+            .update(quotePayload)
+            .eq("id", existingCotizacion.id);
+          error = quoteUpdate.error;
+          if (!error) {
+            const syncErr = await syncRefaccionItems(existingCotizacion.id);
+            if (syncErr) error = syncErr;
+          }
+        } else if (manoObra > 0 || refacc > 0) {
+          const quoteInsert = await supabase
+            .from("cotizaciones")
+            .insert([{ proyecto_id: editTarget.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }])
+            .select("id")
+            .single();
+          error = quoteInsert.error;
+          if (!error) {
+            const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+            if (syncErr) error = syncErr;
+          }
+        }
+
+      }
+    } else {
+      if (form.estado === "en_progreso") {
+        setSaving(false);
+        setFormError("No puedes iniciar ejecución en un proyecto nuevo sin aprobación previa del cliente.");
+        return;
+      }
+
+      const { data: createdProject, error: createError } = await supabase
+        .from("proyectos")
+        .insert([{ ...payload, fecha_ingreso: new Date().toISOString() }])
+        .select("id")
+        .single();
+      error = createError;
+
+      if (!error && createdProject?.id && form.mecanico_id) {
+        await notifyMecanicoAsignacion({
+          proyectoId: createdProject.id,
+          mecanicoId: form.mecanico_id,
+          tituloProyecto: form.titulo,
+        });
+      }
+
+      if (!error && createdProject?.id && (manoObra > 0 || refacc > 0)) {
+        const quoteInsert = await supabase
+          .from("cotizaciones")
+          .insert([{ proyecto_id: createdProject.id, monto_mano_obra: manoObra, monto_refacc: refacc, estado: "pendiente" }])
+          .select("id")
+          .single();
+        error = quoteInsert.error;
+        if (!error) {
+          const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+          if (syncErr) error = syncErr;
+        }
+      }
+    }
+
     setSaving(false);
     if (error) { setFormError(error.message); return; }
     setModalOpen(false); fetchAll();
@@ -1141,6 +1613,176 @@ const ProyectosModule = ({ darkMode, session }) => {
               {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
             </Select>
           </Field>
+          <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+              Cotización Inicial
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Mano de Obra" darkMode={darkMode}>
+                <Input
+                  darkMode={darkMode}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.monto_mano_obra}
+                  onChange={(e) => setForm({ ...form, monto_mano_obra: e.target.value })}
+                  placeholder="0.00"
+                />
+              </Field>
+              <div className="flex flex-col gap-1.5">
+                <label className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
+                  Refacciones
+                </label>
+                {refCart.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={openRefPicker}
+                    className={`px-3 py-2 rounded-md text-sm font-medium border transition-colors ${darkMode ? "border-zinc-700 text-zinc-300 hover:border-zinc-500" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+                  >
+                    Agregar refacciones
+                  </button>
+                ) : (
+                  <div className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${darkMode ? "border-zinc-700 text-zinc-100" : "border-gray-200 text-gray-700"}`}>
+                    <span className="text-sm font-medium">${refCartTotal.toFixed(2)}</span>
+                    <button
+                      type="button"
+                      onClick={clearRefCart}
+                      className="w-7 h-7 rounded-full text-white text-sm leading-none"
+                      style={{ backgroundColor: C_RED }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className={`mt-2 text-sm ${darkMode ? "text-zinc-300" : "text-gray-700"}`}>
+              Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
+            </p>
+            {refPickerOpen && createPortal(
+              <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-10 bg-black/60 anim-fadeIn" onClick={cancelRefPicker}>
+                <div
+                  className={`anim-fadeUp relative w-full max-w-5xl rounded-xl ${darkMode ? "bg-[#1e1e26] text-white" : "bg-white text-gray-800"}`}
+                  style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? "border-zinc-700/60" : "border-gray-200"}`}>
+                    <h2 className="font-semibold text-base">Agregar refacciones</h2>
+                    <button onClick={cancelRefPicker} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
+                  </div>
+                  <div className="px-6 py-5 max-h-[75vh] overflow-y-auto">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+                      <div>
+                        <Input
+                          darkMode={darkMode}
+                          placeholder="Buscar refaccion por nombre o numero de parte..."
+                          value={refSearch}
+                          onChange={(e) => setRefSearch(e.target.value)}
+                        />
+                        <div className={`mt-3 divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                          {refFiltered.length === 0 ? (
+                            <div className={`py-6 text-center text-sm ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Sin resultados</div>
+                          ) : (
+                            refFiltered.map((r) => (
+                              <div key={r.id} className={`py-2 flex items-center justify-between ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
+                                <div>
+                                  <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{r.nombre}</p>
+                                  <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{r.numero_parte || "—"}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => addRefToDraft(r)}
+                                  className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                                >
+                                  Agregar
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className={`text-sm font-semibold mb-2 ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>Carrito</p>
+                        {Array.isArray(refCartDraft) && refCartDraft.length > 0 ? (
+                          <div className={`divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                            {refCartDraft.map((item) => (
+                              <div key={item.id} className="py-2 flex flex-col gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{item.nombre}</p>
+                                    <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{item.numero_parte || "—"}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRefDraftItem(item.id)}
+                                    className={`text-xs px-2 py-1 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-red-300" : "border-gray-200 text-gray-500 hover:text-red-500"}`}
+                                  >
+                                    Quitar
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="flex flex-col gap-1">
+                                    <span className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Cantidad</span>
+                                    <Input
+                                      darkMode={darkMode}
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={item.cantidad}
+                                      onChange={(e) => updateRefDraftItem(item.id, { cantidad: Number(e.target.value) })}
+                                    />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <span className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Precio</span>
+                                    <Input
+                                      darkMode={darkMode}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.precio_unit}
+                                      onChange={(e) => updateRefDraftItem(item.id, { precio_unit: e.target.value })}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Agrega refacciones desde la lista.</p>
+                        )}
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Total</span>
+                          <span className={`text-sm font-semibold ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>
+                            ${Array.isArray(refCartDraft)
+                              ? refCartDraft.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0).toFixed(2)
+                              : "0.00"}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelRefPicker}
+                            className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={confirmRefPicker}
+                            className="flex-1 py-2 rounded-lg text-sm font-medium text-white"
+                            style={{ backgroundColor: C_BLUE, boxShadow: `0 2px 8px ${C_BLUE}40` }}
+                          >
+                            Agregar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
             <label htmlFor="bloqueado" className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Bloqueado (entrega pendiente de pago)</label>
@@ -1178,6 +1820,7 @@ const ProtectedRoute = ({ session, children }) => {
 const UserMenu = ({ session, onLogout, darkMode }) => {
   const [open, setOpen] = useClickOutside();
   const email = session?.user?.email || "";
+  const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
@@ -1208,6 +1851,9 @@ const UserMenu = ({ session, onLogout, darkMode }) => {
           {/* User info header */}
           <div className={`px-4 py-2.5 border-b ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
             <p className={`text-xs font-medium truncate ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{email}</p>
+            {displayName && (
+              <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
+            )}
             <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
           </div>
           {/* Actions */}
@@ -1240,6 +1886,7 @@ function useClickOutside() {
 const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
   const [open, setOpen, ref] = useClickOutside();
   const email = session?.user?.email || "";
+  const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
@@ -1265,6 +1912,9 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
         >
           <div className={`px-4 py-2.5 border-b ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
             <p className={`text-xs font-medium truncate ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{email}</p>
+            {displayName && (
+              <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
+            )}
             <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
           </div>
           <button
@@ -1280,18 +1930,13 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 // ─── Shell compartido (topbar + sidebar) ─────────────────────────────────────
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
-const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, enableDiagnosticoInicial = false, empleadoId = null }) => {
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
   const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
-  const [diagInicialId, setDiagInicialId] = useState(null);
-  const [diagInicialTexto, setDiagInicialTexto] = useState("");
-  const [diagInicialLoading, setDiagInicialLoading] = useState(false);
-  const [diagInicialSaving, setDiagInicialSaving] = useState(false);
-  const [diagInicialError, setDiagInicialError] = useState("");
   const fileRef = useRef(null);
 
   const fetchFotos = useCallback(async () => {
@@ -1314,66 +1959,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   }, [open, fetchFotos]);
 
   useEffect(() => {
-    const fetchDiagnosticoInicial = async () => {
-      if (!open || !enableDiagnosticoInicial || !proyecto?.id) return;
-      setDiagInicialLoading(true);
-      setDiagInicialError("");
-      const { data, error } = await supabase
-        .from("diagnosticos")
-        .select("id, sintomas")
-        .eq("proyecto_id", proyecto.id)
-        .eq("tipo", "inicial")
-        .maybeSingle();
-
-      if (error) {
-        setDiagInicialError(error.message || "No se pudo cargar el diagnóstico inicial.");
-      }
-
-      setDiagInicialId(data?.id || null);
-      setDiagInicialTexto(data?.sintomas || "");
-      setDiagInicialLoading(false);
+    if (!lightbox) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
     };
-
-    fetchDiagnosticoInicial();
-  }, [open, enableDiagnosticoInicial, proyecto?.id]);
-
-  const guardarDiagnosticoInicial = async () => {
-    const texto = String(diagInicialTexto || "").trim();
-    if (!texto) {
-      setDiagInicialError("El diagnóstico inicial no puede guardarse vacío.");
-      return;
-    }
-    if (!empleadoId || !proyecto?.id) {
-      setDiagInicialError("No se pudo identificar el mecánico o el proyecto.");
-      return;
-    }
-
-    setDiagInicialSaving(true);
-    setDiagInicialError("");
-
-    const { data, error } = await supabase
-      .from("diagnosticos")
-      .upsert(
-        [{
-          proyecto_id: proyecto.id,
-          mecanico_id: empleadoId,
-          tipo: "inicial",
-          sintomas: texto,
-        }],
-        { onConflict: "proyecto_id,tipo" }
-      )
-      .select("id")
-      .maybeSingle();
-
-    if (error) {
-      setDiagInicialError(error.message || "No se pudo guardar el diagnóstico inicial.");
-      setDiagInicialSaving(false);
-      return;
-    }
-
-    setDiagInicialId(data?.id || diagInicialId);
-    setDiagInicialSaving(false);
-  };
+  }, [lightbox]);
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1448,9 +2040,20 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
   const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
-  const estadoProyecto = String(proyecto?.estado || "").toLowerCase();
-  const puedeEditarDiagnosticoInicial = canUpload && estadoProyecto === "activo";
-  const soloLecturaDiagnosticoInicial = !canUpload || estadoProyecto === "en_progreso";
+  const momentoLabel = (value) => {
+    if (value === "antes") return "Antes";
+    if (value === "durante") return "Durante";
+    if (value === "despues") return "Despues";
+    return "";
+  };
+  const momentoBadge = (value) => {
+    const map = {
+      antes: darkMode ? "bg-amber-900/70 text-amber-200 border-amber-700" : "bg-amber-100 text-amber-800 border-amber-200",
+      durante: darkMode ? "bg-sky-900/70 text-sky-200 border-sky-700" : "bg-sky-100 text-sky-800 border-sky-200",
+      despues: darkMode ? "bg-emerald-900/70 text-emerald-200 border-emerald-700" : "bg-emerald-100 text-emerald-800 border-emerald-200",
+    };
+    return map[value] || (darkMode ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
+  };
 
   return (
     <>
@@ -1492,58 +2095,8 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             ) : null)}
           </div>
 
-          {enableDiagnosticoInicial && (
-            <div className={`px-6 py-4 border-t ${divider}`}>
-              <div className="flex items-center justify-between mb-2">
-                <p className={`text-xs font-semibold uppercase tracking-widest ${st}`}>Diagnóstico inicial</p>
-                {canUpload && !puedeEditarDiagnosticoInicial && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded border ${darkMode ? "border-zinc-700 text-zinc-500" : "border-gray-200 text-gray-400"}`}>
-                    Ya no puede modificar el diagnóstico
-                  </span>
-                )}
-              </div>
-
-              {diagInicialLoading ? (
-                <p className={`text-xs ${st}`}>Cargando diagnóstico...</p>
-              ) : (
-                <>
-                  <textarea
-                    value={diagInicialTexto}
-                    onChange={(e) => setDiagInicialTexto(e.target.value)}
-                    placeholder="Escribe el diagnóstico inicial del proyecto..."
-                    rows={4}
-                    disabled={!puedeEditarDiagnosticoInicial || diagInicialSaving}
-                    className={`w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border resize-none ${
-                      darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-                    } ${!puedeEditarDiagnosticoInicial ? "opacity-60 cursor-not-allowed" : ""}`}
-                  />
-                  {diagInicialError && <p className="text-xs mt-2" style={{ color: C_RED }}>{diagInicialError}</p>}
-                  <div className="mt-2 flex items-center justify-between">
-                    <p className={`text-[11px] ${st}`}>
-                      {soloLecturaDiagnosticoInicial
-                        ? "Solo lectura en estado en progreso"
-                        : diagInicialId
-                        ? "Diagnóstico inicial guardado"
-                        : "Pendiente por guardar"}
-                    </p>
-                    {puedeEditarDiagnosticoInicial && (
-                      <button
-                        onClick={guardarDiagnosticoInicial}
-                        disabled={diagInicialSaving}
-                        className="px-3 py-1.5 rounded-md text-xs font-medium text-white disabled:opacity-50"
-                        style={{ backgroundColor: C_BLUE }}
-                      >
-                        {diagInicialSaving ? "Guardando..." : "Guardar diagnóstico"}
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           {/* Fotografías */}
-          <div className={`px-6 py-4 border-t ${divider}`}>
+          <div className="px-6 py-4">
             <div className="flex items-center justify-between mb-3">
               <p className={`text-xs font-semibold uppercase tracking-widest ${st}`}>
                 Fotografías {fotos.length > 0 && `(${fotos.length})`}
@@ -1590,6 +2143,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                       className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
                       onError={(e) => console.error("[img] failed to load:", f.url, e)}
                     />
+                    {momentoLabel(f.momento) && (
+                      <span
+                        className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${momentoBadge(f.momento)}`}
+                      >
+                        {momentoLabel(f.momento)}
+                      </span>
+                    )}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-end p-2">
                       {f.descripcion && <p className="text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity truncate">{f.descripcion}</p>}
                     </div>
@@ -1601,11 +2161,18 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
         </div>
       </div>
 
-      {lightbox && (
-        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="Foto" className="max-w-full max-h-full rounded-lg object-contain" style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }} />
+      {lightbox && createPortal(
+        <div className="fixed inset-0 z-[999] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
+          <img
+            src={lightbox}
+            alt="Foto"
+            className="max-w-full max-h-full rounded-lg object-contain"
+            style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}
+            onClick={(e) => e.stopPropagation()}
+          />
           <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white text-2xl leading-none opacity-70 hover:opacity-100">×</button>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
@@ -1637,7 +2204,18 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
         style={active ? { boxShadow: "0 1px 4px rgba(0,0,0,0.2)" } : {}}
       >
         <span>{item.icon}</span>
-        <span>{item.label}</span>
+        <span className="flex-1 text-left">{item.label}</span>
+        {Number(item.badge) > 0 && (
+          <span
+            className={`min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-semibold flex items-center justify-center border ${
+              darkMode
+                ? "bg-red-900/60 text-red-200 border-red-800"
+                : "bg-red-100 text-red-700 border-red-200"
+            }`}
+          >
+            {item.badge}
+          </span>
+        )}
       </button>
     );
   };
@@ -1688,14 +2266,36 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 
 // ─── Dashboard Admin ──────────────────────────────────────────────────────────
 const Dashboard = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("citas");
+  const [activeModule, setActiveModule] = useState("clientes");
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
+
   const navItems = [
     { id: "clientes",  label: "Clientes",  icon: "👥" },
     { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
     { id: "vehiculos", label: "Vehículos", icon: "🚗" },
     { id: "proyectos", label: "Proyectos", icon: "🔧" },
+    { id: "refacciones", label: "Refacciones", icon: "🔩" },
+    { id: "proveedores", label: "Proveedores", icon: "🏷️" },
+    { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
+    { id: "ventas-refacciones", label: "Venta Refacciones", icon: "🛒" },
     { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
+    { id: "historial-servicios", label: "Historial de Servicios", icon: "📜" },
+    { id: "reportes", label: "Reportes Operativos", icon: "📊" },
+    { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador">
@@ -1703,8 +2303,23 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
+      {activeModule === "refacciones" && <RefaccionesModule darkMode={darkMode} readOnly={false} />}
+      {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
+      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
+      {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
+      {activeModule === "historial-servicios" && <HistorialServiciosAdminWrapper darkMode={darkMode} />}
+      {activeModule === "reportes" && <ReportesOperativosWrapper darkMode={darkMode} />}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };
@@ -1772,9 +2387,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState(null);
-  useEffect(() => {
-    if (selectedTicket) console.log("MiCarrito - selectedTicket:", selectedTicket);
-  }, [selectedTicket]);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -1807,6 +2419,9 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             placas
           ),
           cotizaciones (
+            estado,
+            created_at,
+            fecha_emision,
             monto_total,
             monto_mano_obra,
             monto_refacc,
@@ -1821,20 +2436,24 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         )
         .eq("cliente_id", clienteId)
         .neq("estado", "cancelado")
-        .order("fecha_cierre", { ascending: false });
+        .order("fecha_cierre", { ascending: false })
+        .order("created_at", { ascending: false, foreignTable: "cotizaciones" });
 
       if (proyectos) {
-        setTickets(proyectos.map((p) => ({
-          id: p.id,
-          titulo: p.titulo,
-          descripcion: p.descripcion,
-          estado: p.estado,
-          fechaIngreso: p.fecha_ingreso,
-          fechaCierre: p.fecha_cierre,
-          vehiculo: p.vehiculos,
-          cotizacion: p.cotizaciones?.[0] || null,
-          items: p.cotizaciones?.[0]?.cotizacion_items || [],
-        })));
+        setTickets(proyectos.map((p) => {
+          const cotizacion = getLatestCotizacion(p);
+          return {
+            id: p.id,
+            titulo: p.titulo,
+            descripcion: p.descripcion,
+            estado: p.estado,
+            fechaIngreso: p.fecha_ingreso,
+            fechaCierre: p.fecha_cierre,
+            vehiculo: p.vehiculos,
+            cotizacion,
+            items: cotizacion?.cotizacion_items || [],
+          };
+        }));
       }
     } catch (error) {
       console.error("Error al obtener tickets:", error);
@@ -1850,8 +2469,8 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         setProcessingPayment(false);
         return;
       }
-      if (!isPayable(selectedTicket?.estado)) {
-        setPaymentError("No es posible procesar el pago: el ticket no está en estado 'terminado'.");
+      if (!isPayable(selectedTicket)) {
+        setPaymentError("No es posible procesar el pago: la cotización debe estar aprobada y el proyecto en progreso.");
         setProcessingPayment(false);
         return;
       }
@@ -1897,7 +2516,8 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
       });
 
       if (invokeError) {
-        throw new Error(invokeError.message || "No se pudo invocar la función crear-pago.");
+        const message = await getFunctionErrorMessage(invokeError, "No se pudo invocar la función crear-pago.");
+        throw new Error(message);
       }
       if (!json?.success) {
         throw new Error(json?.error || "No se pudo registrar el pago.");
@@ -1911,6 +2531,10 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
         t.id === selectedTicket.id ? { ...t, estado: "entregado" } : t
       ));
       setSelectedTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
+
+      setTimeout(() => {
+        navigate(`/ticket/${selectedTicket.id}`);
+      }, 500);
     } catch (error) {
       console.error("Error al procesar pago:", error);
       setPaymentError("Error al procesar el pago: " + (error?.message || String(error)));
@@ -1926,6 +2550,16 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
     const montoTotal = selectedTicket.cotizacion?.monto_total || 0;
     const montoManoObra = selectedTicket.cotizacion?.monto_mano_obra || 0;
     const montoRefacciones = selectedTicket.cotizacion?.monto_refacc || 0;
+    const cotizacionAprobada = selectedTicket.cotizacion?.estado === "aprobada";
+    const estadoProyecto = String(selectedTicket.estado || "").toLowerCase().trim();
+    const proyectoEnProgreso = estadoProyecto === "en_progreso";
+    const pagoHabilitado = proyectoEnProgreso && cotizacionAprobada;
+    const bloqueoProcesoTecnico = estadoProyecto === "pendiente_cotizacion" || !cotizacionAprobada;
+    const mensajePagoNoDisponible = estadoProyecto === "entregado"
+      ? "Este proyecto ya fue pagado."
+      : bloqueoProcesoTecnico
+        ? "El proceso técnico no ha iniciado. Debes aprobar la cotización antes de pagar."
+        : "El pago se habilitará cuando el proyecto esté en progreso y la cotización aprobada.";
 
     return (
       <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
@@ -1969,12 +2603,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             </div>
           </Card>
 
-          {/* DEBUG: mostrar estado actual y si es pagable */}
-          <div className="mb-4 text-sm text-zinc-400">
-            <p>Estado raw: <span className="font-mono">{String(selectedTicket.estado)}</span></p>
-            <p>isPayable: <span className="font-mono">{String(isPayable(selectedTicket.estado))}</span></p>
-          </div>
-
           {/* Vehículo */}
           <Card darkMode={darkMode} className="mb-6">
             <div className="p-6">
@@ -2007,8 +2635,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
               <p className={`font-semibold ${t} mb-2`}>{selectedTicket.titulo}</p>
               <p className={`text-sm ${st} mb-4`}>{selectedTicket.descripcion}</p>
               
-              // ADDED: guard to avoid render errors when `items` is missing from cotizacion
-              // This was added because some proyectos may not have cotizacion or cotizacion_items yet.
               {(selectedTicket.items || []).length > 0 && (
                 <div>
                   <p className={`font-semibold text-sm mb-2 ${t}`}>Items:</p>
@@ -2050,7 +2676,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
           </Card>
 
           {/* Métodos de Pago */}
-          {isPayable(selectedTicket.estado) && (
+          {pagoHabilitado && (
             <Card darkMode={darkMode}>
               <div className="p-6">
                 <h2 className={`text-lg font-semibold mb-4 ${t}`}>💳 Selecciona Método de Pago</h2>
@@ -2254,16 +2880,18 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
             </Card>
           )}
 
-          {selectedTicket.estado !== "terminado" && (
+          {!pagoHabilitado && (
             <Card darkMode={darkMode} className="border-2 border-amber-600">
               <div className="p-6 text-center">
                 <p className={`text-lg font-semibold ${darkMode ? "text-amber-300" : "text-amber-700"}`}>
-                  ⏳ Auto aún no está listo
+                  ⏳ Pago no disponible
                 </p>
                 <p className={`text-sm mt-2 ${darkMode ? "text-amber-200" : "text-amber-600"}`}>
                   Estado actual: <span className="font-bold capitalize">{selectedTicket.estado}</span>
                 </p>
-                <p className={`text-xs mt-3 ${st}`}>Volverá a estar disponible para pagar cuando pase a estado "terminado"</p>
+                <p className={`text-xs mt-3 ${st}`}>
+                  {mensajePagoNoDisponible}
+                </p>
               </div>
             </Card>
           )}
@@ -2311,7 +2939,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
                   </span>
                 </div>
                 {/* Botón Pagar directo en lista si es pagable */}
-                {isPayable(ticket.estado) && (
+                {isPayable(ticket) && (
                   <div className="mt-3">
                     <button
                       onClick={(e) => {
@@ -2325,6 +2953,13 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
                       Pagar
                     </button>
                   </div>
+                )}
+                {!isPayable(ticket) && (
+                  <p className={`mt-3 text-xs ${st}`}>
+                    {String(ticket.estado || "").toLowerCase().trim() === "entregado"
+                      ? "Pago registrado."
+                      : "Proceso técnico no iniciado o cotización sin aprobar."}
+                  </p>
                 )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -2367,6 +3002,9 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
   const [proyectos,   setProyectos]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [detalle,     setDetalle]     = useState(null);
+  const [decisionLoadingId, setDecisionLoadingId] = useState(null);
+  const [decisionError, setDecisionError] = useState("");
+  const [decisionSuccess, setDecisionSuccess] = useState("");
 
   useEffect(() => {
     if (!clienteId) return;
@@ -2374,7 +3012,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
       setLoading(true);
       const { data } = await supabase
         .from("proyectos")
-        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre)")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
         .eq("cliente_id", clienteId)
         .order("created_at", { ascending: false });
       setProyectos(data || []);
@@ -2382,6 +3020,111 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
     };
     fetch();
   }, [clienteId]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-cliente-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto && updatedProyecto.cliente_id === clienteId) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [clienteId]);
+
+  const handleCotizacionDecision = async (proyecto, decision) => {
+    if (!clienteId) return;
+    const cotizacion = getLatestCotizacion(proyecto);
+    if (!cotizacion?.id) return;
+
+    setDecisionLoadingId(proyecto.id);
+    setDecisionError("");
+    setDecisionSuccess("");
+
+    let json = null;
+    try {
+      json = await invokeEdgeFunction("resolver-cotizacion", {
+        body: { cotizacion_id: cotizacion.id, accion: decision },
+        userToken: session?.access_token || "",
+      });
+    } catch (err) {
+      const msg = err?.message || "No se pudo registrar tu respuesta a la cotizacion.";
+      setDecisionError(msg);
+      setDecisionLoadingId(null);
+      return;
+    }
+
+    if (!json?.success) {
+      const msg = json?.error || "No se pudo registrar tu respuesta a la cotizacion.";
+      setDecisionError(msg);
+      setDecisionLoadingId(null);
+      return;
+    }
+
+    const nextEstado = json?.estado || (decision === "aprobar" ? "aprobada" : "rechazada");
+    const nowIso = new Date().toISOString();
+
+    setProyectos((prev) => prev.map((p) => {
+      if (p.id !== proyecto.id) return p;
+      const existing = Array.isArray(p.cotizaciones) ? p.cotizaciones : [];
+      let found = false;
+      const mapped = existing.map((c) => {
+        if (c.id !== cotizacion.id) return c;
+        found = true;
+        return { ...c, estado: nextEstado, fecha_respuesta: nowIso };
+      });
+      const cotizaciones = found
+        ? mapped
+        : [...mapped, { ...cotizacion, estado: nextEstado, fecha_respuesta: nowIso }];
+      const updatedProyecto = { ...p, cotizaciones };
+      if (json?.estado_proyecto) updatedProyecto.estado = json.estado_proyecto;
+      return updatedProyecto;
+    }));
+
+    setDetalle((prev) => {
+      if (!prev || prev.id !== proyecto.id) return prev;
+      const existing = Array.isArray(prev.cotizaciones) ? prev.cotizaciones : [];
+      let found = false;
+      const mapped = existing.map((c) => {
+        if (c.id !== cotizacion.id) return c;
+        found = true;
+        return { ...c, estado: nextEstado, fecha_respuesta: nowIso };
+      });
+      const cotizaciones = found
+        ? mapped
+        : [...mapped, { ...cotizacion, estado: nextEstado, fecha_respuesta: nowIso }];
+      const updated = { ...prev, cotizaciones };
+      if (json?.estado_proyecto) updated.estado = json.estado_proyecto;
+      return updated;
+    });
+
+    setDecisionSuccess(
+      decision === "aprobar"
+        ? "Cotizacion aprobada correctamente."
+        : "Cotizacion rechazada correctamente."
+    );
+    setDecisionLoadingId(null);
+  };
 
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
@@ -2394,6 +3137,8 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
         <h2 className={`text-lg font-semibold ${t}`}>Mis Proyectos</h2>
         <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
       </div>
+      {decisionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{decisionError}</p>}
+      {decisionSuccess && <p className="mb-3 text-sm" style={{ color: "#10b981" }}>{decisionSuccess}</p>}
       <Card darkMode={darkMode} className="overflow-hidden">
         {loading ? (
           <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
@@ -2408,6 +3153,50 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
                 onClick={() => setDetalle(p)}
               >
                 <div className="flex-1">
+                  {(() => {
+                    const cot = getLatestCotizacion(p);
+                    const quotePending = cot && ["pendiente", "modificada"].includes(cot.estado);
+                    return (
+                      <>
+                        <div className="flex items-center gap-2 mb-1">
+                          {cot && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
+                              cot.estado === "aprobada"
+                                ? (darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200")
+                                : cot.estado === "rechazada"
+                                ? (darkMode ? "bg-red-900/40 text-red-300 border-red-800" : "bg-red-50 text-red-700 border-red-200")
+                                : (darkMode ? "bg-amber-900/40 text-amber-300 border-amber-800" : "bg-amber-50 text-amber-700 border-amber-200")
+                            }`}>
+                              Cotización: {cot.estado}
+                            </span>
+                          )}
+                        </div>
+                        {cot && (
+                          <p className={`text-xs mb-1 ${st}`}>
+                            Presupuesto estimado: <span className="font-semibold">${Number(cot.monto_total || (Number(cot.monto_mano_obra || 0) + Number(cot.monto_refacc || 0))).toFixed(2)}</span>
+                          </p>
+                        )}
+                        {quotePending && (
+                          <div className="flex gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              disabled={decisionLoadingId === p.id}
+                              onClick={() => handleCotizacionDecision(p, "aprobar")}
+                              className="px-2.5 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {decisionLoadingId === p.id ? "Procesando..." : "Aprobar"}
+                            </button>
+                            <button
+                              disabled={decisionLoadingId === p.id}
+                              onClick={() => handleCotizacionDecision(p, "rechazar")}
+                              className="px-2.5 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <div className="flex items-center gap-2 mb-1">
                     {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
@@ -2434,7 +3223,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
       
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
-        canUpload={false} session={session} enableDiagnosticoInicial
+        canUpload={false} session={session}
       />
     </div>
   );
@@ -2442,8 +3231,22 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
 
 // ─── Dashboard Cliente ────────────────────────────────────────────────────────
 const DashboardCliente = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("citas");
+  const [activeModule, setActiveModule] = useState("mis-proyectos");
   const [clienteId,    setClienteId]    = useState(null);
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
 
   useEffect(() => {
     const loadCliente = async () => {
@@ -2458,10 +3261,11 @@ const DashboardCliente = ({ session, darkMode }) => {
   }, [session]);
 
   const navItems = [
-    { id: "citas",         label: "Citas",          icon: "📅" },
     { id: "mis-proyectos", label: "Mis Proyectos", icon: "🔧" },
     { id: "mis-vehiculos", label: "Mis Vehículos",  icon: "🚗" },
-    { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"}
+    { id: "citas",         label: "Citas",          icon: "📅" },
+    { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"},
+    { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
 
   return (
@@ -2470,6 +3274,15 @@ const DashboardCliente = ({ session, darkMode }) => {
       {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} />}
       {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };
@@ -2479,6 +3292,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
   const [proyectos,    setProyectos]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [filterEstado, setFilterEstado] = useState("todos");
+  const [actionError,  setActionError]  = useState("");
 
   useEffect(() => {
     if (!empleadoId) return;
@@ -2486,13 +3300,44 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
       setLoading(true);
       const { data } = await supabase
         .from("proyectos")
-        .select("*, clientes(nombre), vehiculos(marca,modelo,placas)")
+        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), cotizaciones(id,estado,created_at,fecha_emision)")
         .eq("mecanico_id", empleadoId)
         .order("created_at", { ascending: false });
       setProyectos(data || []);
       setLoading(false);
     };
     fetch();
+  }, [empleadoId]);
+
+  // Escuchar cambios en proyectos y cotizaciones en tiempo real (cuando cliente aprueba cotización)
+  useEffect(() => {
+    const subscription = supabase
+      .channel("proyectos-mecanico-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
+        const { new: updatedProyecto } = payload;
+        if (updatedProyecto && updatedProyecto.mecanico_id === empleadoId) {
+          setProyectos((prev) => {
+            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...updatedProyecto };
+            return updated;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
+        const { new: updatedCotizacion } = payload;
+        if (updatedCotizacion) {
+          setProyectos((prev) => prev.map((p) => ({
+            ...p,
+            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
+          })));
+        }
+      })
+      .subscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [empleadoId]);
 
   const filtered = proyectos.filter((p) =>
@@ -2510,6 +3355,12 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
     : "border text-xs font-medium px-3 py-1.5 rounded-md border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600";
 
   const handleEstadoChange = async (proyecto, nuevoEstado) => {
+    setActionError("");
+    if (nuevoEstado === "en_progreso" && !hasApprovedQuote(proyecto)) {
+      setActionError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
+      return;
+    }
+
     await supabase
       .from("proyectos")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
@@ -2529,6 +3380,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
           <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} en total</p>
         </div>
       </div>
+      {actionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{actionError}</p>}
 
       {/* Stats strip */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
@@ -2565,6 +3417,15 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
             {filtered.map((p) => (
               <div key={p.id} className={`px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-4 transition-colors ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
                 <div className="flex-1 cursor-pointer" onClick={() => setDetalle(p)}>
+                  {(() => {
+                    const cot = getLatestCotizacion(p);
+                    if (!cot) return null;
+                    return (
+                      <p className={`text-[10px] uppercase tracking-wider mb-1 ${cot.estado === "aprobada" ? "text-emerald-500" : cot.estado === "rechazada" ? "text-red-500" : "text-amber-500"}`}>
+                        Cotización {cot.estado}
+                      </p>
+                    );
+                  })()}
                   <div className="flex items-center gap-2 mb-1">
                     {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
@@ -2592,7 +3453,6 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
                     </select>
                   )}
                 </div>
-
               </div>
             ))}
           </div>
@@ -2601,7 +3461,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
       <ProyectoDetalleModal
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
-        canUpload={true} session={session} enableDiagnosticoInicial empleadoId={empleadoId}
+        canUpload={true} session={session}
       />
     </div>
   );
@@ -2689,10 +3549,85 @@ const RefaccionesMecanicoModule = ({ darkMode }) => {
   );
 };
 
+// ─── Módulo Notificaciones (comun) ──────────────────────────────────────────
+const NotificacionesModule = ({ darkMode, notificaciones, loading, onMarkRead, onMarkAllRead }) => {
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className={`text-lg font-semibold ${t}`}>Notificaciones</h2>
+          <p className={`text-xs ${st} mt-0.5`}>{notificaciones.length} en total</p>
+        </div>
+        {onMarkAllRead && notificaciones.some((n) => !n.leida) && (
+          <button
+            onClick={onMarkAllRead}
+            className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+          >
+            Marcar todas como leidas
+          </button>
+        )}
+      </div>
+
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : notificaciones.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>No hay notificaciones</div>
+        ) : (
+          <div className={`divide-y ${divider}`}>
+            {notificaciones.map((n) => (
+              <div key={n.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-start gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className={`font-semibold ${t}`}>{n.titulo}</p>
+                    {!n.leida && (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${darkMode ? "bg-blue-900/50 text-blue-200 border-blue-800" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+                        Nuevo
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs ${st} mt-1`}>{n.mensaje}</p>
+                  <p className={`text-[10px] ${st} mt-2`}>{formatDateTimeWorkshop(n.created_at)}</p>
+                </div>
+                {!n.leida && onMarkRead && (
+                  <button
+                    onClick={() => onMarkRead(n.id)}
+                    className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                  >
+                    Marcar como leida
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
+
 // ─── Dashboard Mecánico ───────────────────────────────────────────────────────
 const DashboardMecanico = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("citas");
+  const [activeModule, setActiveModule] = useState("proyectos-mecanico");
   const [empleadoId,   setEmpleadoId]   = useState(null);
+  const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
+
+  const handleMarkRead = async (id) => {
+    if (!id) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await supabase.from("notificaciones").update({ leida: true }).eq("usuario_id", userId).eq("leida", false);
+    refresh();
+  };
 
   useEffect(() => {
     const loadEmpleado = async () => {
@@ -2707,16 +3642,32 @@ const DashboardMecanico = ({ session, darkMode }) => {
   }, [session]);
 
   const navItems = [
-    { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
+    { id: "diagnosticos",       label: "Diagnósticos",   icon: "📋" },
+    { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
+    { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
+    { id: "ventas-refacciones",  label: "Venta Refacciones",  icon: "🛒" },
+    { id: "notificaciones",     label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
 
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
+      {activeModule === "diagnosticos" && <MecanicoDiagnosticosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
-      {activeModule === "refacciones"        && <RefaccionesMecanicoModule darkMode={darkMode} />}
+      {activeModule === "refacciones"         && <RefaccionesModule darkMode={darkMode} readOnly allowStockEdit={false} />}
+      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
+      {activeModule === "ventas-refacciones"  && <VentaRefacciones darkMode={darkMode} />}
+      {activeModule === "notificaciones" && (
+        <NotificacionesModule
+          darkMode={darkMode}
+          notificaciones={notificaciones}
+          loading={loadingNotificaciones}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
+      )}
     </DashboardShell>
   );
 };

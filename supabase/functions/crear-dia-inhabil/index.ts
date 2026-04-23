@@ -15,12 +15,6 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
-const nextDay = (fecha: string) => {
-  const d = new Date(`${fecha}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
@@ -61,25 +55,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: "Fecha requerida" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
-      });
-    }
-
-    const inicio = `${fecha}T00:00:00-06:00`;
-    const fin = `${nextDay(fecha)}T00:00:00-06:00`;
-
-    const { data: citasExistentes, error: citasErr } = await supabaseAdmin
-      .from("citas")
-      .select("id, estado")
-      .gte("fecha_hora", inicio)
-      .lt("fecha_hora", fin)
-      .in("estado", ["pendiente", "confirmada", "concluida", "completada"])
-      .limit(1);
-
-    if (citasErr) throw citasErr;
-    if ((citasExistentes || []).length > 0) {
-      return new Response(JSON.stringify({ success: false, error: "No se puede marcar como inhábil: ya existen citas agendadas ese día." }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 409,
       });
     }
 
