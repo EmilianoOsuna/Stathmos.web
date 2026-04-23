@@ -25,10 +25,14 @@ const estadoBadge = (estado, darkMode) => {
     pendiente: darkMode ? "bg-amber-900/40 text-amber-300 border-amber-800" : "bg-amber-50 text-amber-700 border-amber-200",
     confirmada: darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-800" : "bg-emerald-50 text-emerald-700 border-emerald-200",
     cancelada: darkMode ? "bg-red-900/40 text-red-300 border-red-800" : "bg-red-50 text-red-700 border-red-200",
+    concluida: darkMode ? "bg-sky-900/40 text-sky-300 border-sky-800" : "bg-sky-50 text-sky-700 border-sky-200",
     completada: darkMode ? "bg-sky-900/40 text-sky-300 border-sky-800" : "bg-sky-50 text-sky-700 border-sky-200",
+    rechazada: darkMode ? "bg-red-900/40 text-red-300 border-red-800" : "bg-red-50 text-red-700 border-red-200",
   };
   return map[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
 };
+
+const CALENDAR_HIDDEN_STATES = new Set(["cancelada", "rechazada"]);
 
 const ymd = (d) => {
   const y = d.getFullYear();
@@ -48,10 +52,16 @@ const addDays = (date, days) => {
 };
 
 const calendarStatusClasses = (estado, darkMode) => {
-  if (estado === "confirmada" || estado === "completada") {
+  if (estado === "confirmada") {
     return darkMode
       ? "bg-emerald-900/60 text-emerald-200 border-emerald-700"
       : "bg-emerald-50 text-emerald-700 border-emerald-200";
+  }
+
+  if (estado === "concluida" || estado === "completada") {
+    return darkMode
+      ? "bg-sky-900/60 text-sky-200 border-sky-700"
+      : "bg-sky-50 text-sky-700 border-sky-200";
   }
 
   if (estado === "pendiente") {
@@ -92,6 +102,13 @@ const isValidSlot = (fecha, hora) => {
   if (day >= 1 && day <= 5) return inMorning || inEvening;
   if (day === 6) return inMorning;
   return false;
+};
+
+const isSameSlot = (fechaHoraA, fechaHoraB) => {
+  const a = new Date(fechaHoraA).getTime();
+  const b = new Date(fechaHoraB).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b)) return false;
+  return a === b;
 };
 
 const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
@@ -143,6 +160,7 @@ export default function CitasModule({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [agendarError, setAgendarError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [inhabilOpen, setInhabilOpen] = useState(false);
   const [filterMode, setFilterMode] = useState("hoy");
@@ -150,6 +168,22 @@ export default function CitasModule({
   const [calendarView, setCalendarView] = useState("month");
   const [monthDate, setMonthDate] = useState(new Date());
   const [inhabilForm, setInhabilForm] = useState({ fecha: ymd(new Date()), motivo: "" });
+
+  const accionesDisponibles = (estado) => {
+    if (estado === "pendiente") return ["aceptar", "rechazar"];
+    if (estado === "confirmada") return ["concluir", "rechazar", "pendiente"];
+    if (estado === "concluida" || estado === "completada") return ["aceptar", "pendiente"];
+    if (estado === "cancelada" || estado === "rechazada") return ["aceptar", "pendiente"];
+    return ["aceptar", "rechazar", "concluir", "pendiente"];
+  };
+
+  const accionLabel = (accion) => {
+    if (accion === "aceptar") return role === "administrador" ? "Validar" : "Aceptar";
+    if (accion === "rechazar") return "Rechazar";
+    if (accion === "concluir") return "Concluir";
+    if (accion === "pendiente") return "Pendiente";
+    return accion;
+  };
 
   const [form, setForm] = useState({
     fecha: ymd(new Date()),
@@ -271,12 +305,13 @@ export default function CitasModule({
 
   const upcomingCitas = useMemo(() => {
     const now = new Date();
-    return (citas || []).filter((c) => new Date(c.fecha_hora) >= now && c.estado !== "cancelada");
+    return (citas || []).filter((c) => new Date(c.fecha_hora) >= now && !CALENDAR_HIDDEN_STATES.has(c.estado));
   }, [citas]);
 
   const citasPorDia = useMemo(() => {
     const map = new Map();
     for (const c of citas) {
+      if (CALENDAR_HIDDEN_STATES.has(c.estado)) continue;
       const key = toWorkshopYmd(c.fecha_hora);
       map.set(key, (map.get(key) || 0) + 1);
     }
@@ -351,7 +386,7 @@ export default function CitasModule({
   }, [calendarRange, citas]);
 
   const calendarRangeCitas = useMemo(() => {
-    return calendarCitas.filter((cita) => cita.estado !== "cancelada");
+    return calendarCitas.filter((cita) => !CALENDAR_HIDDEN_STATES.has(cita.estado));
   }, [calendarCitas]);
 
   const calendarDates = useMemo(() => {
@@ -449,20 +484,29 @@ export default function CitasModule({
     }
 
     if (isBlockedDate(value)) {
-      setError(isSunday(value) ? "Los domingos están bloqueados para agendar citas." : "Ese día está marcado como inhábil y no se puede seleccionar.");
+      setAgendarError(isSunday(value) ? "Día no disponible." : "Ese día está marcado como inhábil y no se puede seleccionar.");
       return;
     }
 
-    setError("");
+    setAgendarError("");
     setForm((prev) => ({ ...prev, fecha: value }));
   };
 
   const handleAgendar = async () => {
     setSaving(true);
     setError("");
+    setAgendarError("");
     try {
       if (!form.vehiculo_id) throw new Error("Selecciona un vehículo.");
       if (role === "administrador" && !form.cliente_id) throw new Error("Selecciona un cliente.");
+
+      // Validación local para feedback inmediato antes de invocar la función.
+      const fechaHoraSolicitada = `${form.fecha}T${form.hora}:00${WORKSHOP_OFFSET}`;
+      const slotOcupado = (citas || []).some((cita) => isSameSlot(cita.fecha_hora, fechaHoraSolicitada));
+      if (slotOcupado) {
+        throw new Error("Ese horario ya está ocupado por otra cita. Selecciona una hora diferente.");
+      }
+
       if (isBlockedDate(form.fecha)) {
         throw new Error(isSunday(form.fecha) ? "Los domingos no están disponibles para agendar citas." : "El día seleccionado está marcado como inhábil.");
       }
@@ -489,9 +533,10 @@ export default function CitasModule({
 
       setModalOpen(false);
       setForm((prev) => ({ ...prev, notas: "", vehiculo_id: "", fecha: nextSelectableDate() }));
+      setAgendarError("");
       await fetchCitas();
     } catch (e) {
-      setError(e.message || "No se pudo agendar la cita.");
+      setAgendarError(e.message || "No se pudo agendar la cita.");
     } finally {
       setSaving(false);
     }
@@ -545,6 +590,26 @@ export default function CitasModule({
     }
   };
 
+  const handleEliminarDiaInhabil = async (id) => {
+    setSaving(true);
+    setError("");
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("eliminar-dia-inhabil", {
+        body: { id },
+      });
+      if (invokeError) {
+        const message = await getFunctionErrorMessage(invokeError, "No se pudo eliminar el día inhábil.");
+        throw new Error(message);
+      }
+      if (!data?.success) throw new Error(data?.error || "No se pudo eliminar el día inhábil.");
+      await fetchCitas();
+    } catch (e) {
+      setError(e.message || "No se pudo eliminar el día inhábil.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const t = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-500";
 
@@ -558,7 +623,10 @@ export default function CitasModule({
         <div className="flex gap-2">
           {(role === "cliente" || role === "administrador") && (
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => {
+                setAgendarError("");
+                setModalOpen(true);
+              }}
               className="px-4 py-2 rounded-lg text-sm font-medium text-white"
               style={{ backgroundColor: "#60aebb" }}
             >
@@ -566,12 +634,14 @@ export default function CitasModule({
             </button>
           )}
           {role === "administrador" && (
-            <button
-              onClick={() => setInhabilOpen(true)}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-amber-600 hover:bg-amber-700"
-            >
-              Agregar día inhábil
-            </button>
+            <>
+              <button
+                onClick={() => setInhabilOpen(true)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-amber-600 hover:bg-amber-700"
+              >
+                Días inhábiles
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -625,7 +695,7 @@ export default function CitasModule({
                     const key = ymd(dateObj);
                     const count = citasPorDia.get(key) || 0;
                     const isToday = key === todayKey;
-                    const citasDelDia = (citasPorFecha.get(key) || []).filter((cita) => cita.estado !== "cancelada");
+                    const citasDelDia = (citasPorFecha.get(key) || []).filter((cita) => !CALENDAR_HIDDEN_STATES.has(cita.estado));
                     const visibleItems = citasDelDia.slice(0, 2);
                     return (
                       <div
@@ -655,7 +725,7 @@ export default function CitasModule({
               <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
                 {calendarDates.map((dateObj) => {
                   const key = ymd(dateObj);
-                  const citasDelDia = (citasPorFecha.get(key) || []).filter((cita) => cita.estado !== "cancelada");
+                  const citasDelDia = (citasPorFecha.get(key) || []).filter((cita) => !CALENDAR_HIDDEN_STATES.has(cita.estado));
                   return (
                     <div key={key} className={`rounded-lg border p-2 ${calendarDayBg(dateObj)}`}>
                       <p className={`text-xs font-semibold ${key === todayKey ? "text-sky-500" : t}`}>
@@ -717,22 +787,18 @@ export default function CitasModule({
                     <p className={`text-sm font-semibold ${t}`}>{c.motivo || "Servicio"}</p>
                     <p className={`text-xs ${st}`}>{formatDateTimeWorkshop(c.fecha_hora)}</p>
                     <span className={`mt-1 inline-block px-2 py-0.5 text-xs rounded border ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
-                    {canManage && c.estado === "pendiente" && (
+                    {canManage && (
                       <div className="mt-2 flex gap-2">
-                        <button
-                          disabled={saving}
-                          onClick={() => handleResolver(c.id, "aceptar")}
-                          className="px-2.5 py-1 rounded text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
-                        >
-                          {role === "administrador" ? "Validar cita" : "Aceptar"}
-                        </button>
-                        <button
-                          disabled={saving}
-                          onClick={() => handleResolver(c.id, "rechazar")}
-                          className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                        >
-                          Rechazar
-                        </button>
+                        {accionesDisponibles(c.estado).map((accion) => (
+                          <button
+                            key={`${c.id}-${accion}`}
+                            disabled={saving}
+                            onClick={() => handleResolver(c.id, accion)}
+                            className={`px-2.5 py-1 rounded text-xs text-white disabled:opacity-50 ${accion === "rechazar" ? "bg-red-600 hover:bg-red-700" : accion === "concluir" ? "bg-sky-700 hover:bg-sky-800" : accion === "pendiente" ? "bg-zinc-600 hover:bg-zinc-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
+                          >
+                            {accionLabel(accion)}
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -787,32 +853,18 @@ export default function CitasModule({
                         <span className={`inline-block px-2 py-0.5 rounded text-xs border ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
                       </td>
                       <td className="text-right">
-                        {c.estado === "pendiente" ? (
+                        {canManage ? (
                           <div className="inline-flex gap-2">
-                            {role === "administrador" ? (
+                            {accionesDisponibles(c.estado).map((accion) => (
                               <button
+                                key={`${c.id}-${accion}`}
                                 disabled={saving}
-                                onClick={() => handleResolver(c.id, "aceptar")}
-                                className="px-2.5 py-1 rounded text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+                                onClick={() => handleResolver(c.id, accion)}
+                                className={`px-2.5 py-1 rounded text-xs text-white disabled:opacity-50 ${accion === "rechazar" ? "bg-red-600 hover:bg-red-700" : accion === "concluir" ? "bg-sky-700 hover:bg-sky-800" : accion === "pendiente" ? "bg-zinc-600 hover:bg-zinc-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
                               >
-                                Validar cita
+                                {accionLabel(accion)}
                               </button>
-                            ) : (
-                              <button
-                                disabled={saving}
-                                onClick={() => handleResolver(c.id, "aceptar")}
-                                className="px-2.5 py-1 rounded text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                Aceptar
-                              </button>
-                            )}
-                            <button
-                              disabled={saving}
-                              onClick={() => handleResolver(c.id, "rechazar")}
-                              className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                            >
-                              Rechazar
-                            </button>
+                            ))}
                           </div>
                         ) : (
                           <span className={st}>—</span>
@@ -827,7 +879,20 @@ export default function CitasModule({
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} darkMode={darkMode} title="Agendar cita">
+      <Modal
+        open={modalOpen}
+        onClose={() => {
+          setAgendarError("");
+          setModalOpen(false);
+        }}
+        darkMode={darkMode}
+        title="Agendar cita"
+      >
+        {agendarError && (
+          <div className="mb-3 p-3 rounded border border-red-300 bg-red-50 text-red-700 text-sm">
+            {agendarError}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={`text-xs font-semibold ${st}`}>Día</label>
@@ -905,7 +970,10 @@ export default function CitasModule({
 
         <div className="mt-5 flex gap-2">
           <button
-            onClick={() => setModalOpen(false)}
+            onClick={() => {
+              setAgendarError("");
+              setModalOpen(false);
+            }}
             className={`flex-1 px-4 py-2 rounded border text-sm ${darkMode ? "border-zinc-700 text-zinc-300" : "border-gray-300 text-gray-700"}`}
           >
             Cancelar
@@ -920,7 +988,7 @@ export default function CitasModule({
         </div>
       </Modal>
 
-      <Modal open={inhabilOpen} onClose={() => setInhabilOpen(false)} darkMode={darkMode} title="Agregar día inhábil">
+      <Modal open={inhabilOpen} onClose={() => setInhabilOpen(false)} darkMode={darkMode} title="Gestionar días inhábiles">
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className={`text-xs font-semibold ${st}`}>Fecha</label>
@@ -942,6 +1010,29 @@ export default function CitasModule({
               placeholder="Festivo, mantenimiento, etc."
             />
           </div>
+        </div>
+        <div className={`mt-4 rounded border p-3 max-h-44 overflow-y-auto ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+          {diasInhabiles.length === 0 ? (
+            <p className={`text-xs ${st}`}>No hay días inhábiles registrados.</p>
+          ) : (
+            <div className="space-y-2">
+              {diasInhabiles.map((d) => (
+                <div key={d.id} className={`flex items-center justify-between gap-2 text-xs ${t}`}>
+                  <div>
+                    <p className="font-semibold">{formatDateWorkshop(d.fecha, { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}</p>
+                    {d.motivo && <p className={st}>{d.motivo}</p>}
+                  </div>
+                  <button
+                    onClick={() => handleEliminarDiaInhabil(d.id)}
+                    disabled={saving}
+                    className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="mt-5 flex gap-2">
           <button

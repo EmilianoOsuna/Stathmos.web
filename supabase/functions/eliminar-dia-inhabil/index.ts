@@ -15,12 +15,6 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
-const nextDay = (fecha: string) => {
-  const d = new Date(`${fecha}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
@@ -56,49 +50,33 @@ serve(async (req) => {
       });
     }
 
-    const { fecha, motivo } = await req.json();
-    if (!fecha) {
-      return new Response(JSON.stringify({ success: false, error: "Fecha requerida" }), {
+    const { id, fecha } = await req.json();
+    if (!id && !fecha) {
+      return new Response(JSON.stringify({ success: false, error: "id o fecha requerido" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       });
     }
 
-    const inicio = `${fecha}T00:00:00-06:00`;
-    const fin = `${nextDay(fecha)}T00:00:00-06:00`;
+    let query = supabaseAdmin
+      .from("dias_inhabiles")
+      .update({ activo: false, updated_at: new Date().toISOString() })
+      .eq("activo", true);
 
-    const { data: citasExistentes, error: citasErr } = await supabaseAdmin
-      .from("citas")
-      .select("id, estado")
-      .gte("fecha_hora", inicio)
-      .lt("fecha_hora", fin)
-      .in("estado", ["pendiente", "confirmada", "concluida", "completada"])
-      .limit(1);
+    if (id) query = query.eq("id", id);
+    if (fecha) query = query.eq("fecha", fecha);
 
-    if (citasErr) throw citasErr;
-    if ((citasExistentes || []).length > 0) {
-      return new Response(JSON.stringify({ success: false, error: "No se puede marcar como inhábil: ya existen citas agendadas ese día." }), {
+    const { data, error } = await query.select("id, fecha, activo");
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: "Día inhábil no encontrado" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 409,
+        status: 404,
       });
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("dias_inhabiles")
-      .upsert([
-        {
-          fecha,
-          motivo: motivo || null,
-          activo: true,
-          updated_at: new Date().toISOString(),
-        },
-      ], { onConflict: "fecha" })
-      .select("id, fecha, motivo, activo")
-      .single();
-
-    if (error) throw error;
-
-    return new Response(JSON.stringify({ success: true, dia: data }), {
+    return new Response(JSON.stringify({ success: true, dias: data }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });

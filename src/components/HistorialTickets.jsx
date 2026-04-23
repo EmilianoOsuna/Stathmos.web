@@ -114,7 +114,7 @@ export default function HistorialTickets({ darkMode = false }) {
         >
           ← Volver a Historial
         </button>
-        <Ticket proyectoId={selectedTicket.id} darkMode={darkMode} showOmit={false} />
+        <Ticket proyectoId={selectedTicket.id} darkMode={darkMode} />
       </div>
     );
   }

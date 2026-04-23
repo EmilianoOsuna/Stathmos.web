@@ -15,6 +15,13 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+const actionToStatus: Record<string, string> = {
+  aceptar: "confirmada",
+  rechazar: "cancelada",
+  concluir: "concluida",
+  pendiente: "pendiente",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -46,7 +53,7 @@ serve(async (req) => {
     const role = normalizeRole(user?.app_metadata?.rol || user?.user_metadata?.rol || "");
     if (!["administrador", "mecanico"].includes(role)) {
       return new Response(
-        JSON.stringify({ success: false, error: "No autorizado para validar citas" }),
+        JSON.stringify({ success: false, error: "No autorizado para gestionar citas" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
       );
     }
@@ -60,7 +67,7 @@ serve(async (req) => {
     }
 
     const accionNorm = String(accion).toLowerCase();
-    if (!["aceptar", "rechazar"].includes(accionNorm)) {
+    if (!actionToStatus[accionNorm]) {
       return new Response(
         JSON.stringify({ success: false, error: "Acción inválida" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
@@ -69,7 +76,7 @@ serve(async (req) => {
 
     const { data: cita, error: citaErr } = await supabaseAdmin
       .from("citas")
-      .select("id")
+      .select("id, estado")
       .eq("id", cita_id)
       .maybeSingle();
 
@@ -81,7 +88,14 @@ serve(async (req) => {
       );
     }
 
-    const nuevoEstado = accionNorm === "aceptar" ? "confirmada" : "cancelada";
+    const nuevoEstado = actionToStatus[accionNorm];
+
+    if (cita.estado === nuevoEstado) {
+      return new Response(
+        JSON.stringify({ success: true, estado: nuevoEstado, unchanged: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
+    }
     const { error: updateErr } = await supabaseAdmin
       .from("citas")
       .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
