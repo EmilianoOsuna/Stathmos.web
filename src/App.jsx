@@ -114,15 +114,23 @@ const useUserNotifications = (session) => {
     fetchNotifications();
 
     const channel = supabase
-      .channel(`notificaciones-${userId}`)
+      .channel(`notificaciones_channel_${userId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "notificaciones", filter: `usuario_id=eq.${userId}` },
-        () => {
+        { event: "INSERT", schema: "public", table: "notificaciones", filter: `usuario_id=eq.${userId}` },
+        (payload) => {
+          console.log("🔔 Nueva notificación recibida en tiempo real:", payload);
           fetchNotifications();
         }
       )
-      .subscribe();
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "notificaciones", filter: `usuario_id=eq.${userId}` },
+        () => fetchNotifications()
+      )
+      .subscribe((status) => {
+        console.log(`📡 Estado suscripción notificaciones (${userId}):`, status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -1240,7 +1248,7 @@ const VehiculosModule = ({ darkMode }) => {
 };
 
 // ─── PROYECTOS MODULE ─────────────────────────────────────────────────────────
-const ProyectosModule = ({ darkMode, session }) => {
+const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [proyectos,  setProyectos]  = useState([]);
   const [clientes,   setClientes]   = useState([]);
   const [vehiculos,  setVehiculos]  = useState([]);
@@ -1287,6 +1295,13 @@ const ProyectosModule = ({ darkMode, session }) => {
   useSupabaseRealtime("proyectos", fetchAll);
   useSupabaseRealtime("cotizaciones", fetchAll);
   useSupabaseRealtime("fotografias", fetchAll);
+
+  useEffect(() => {
+    if (initialProjectId && proyectos.length > 0) {
+      const target = proyectos.find(p => p.id === initialProjectId);
+      if (target) setDetalle(target);
+    }
+  }, [initialProjectId, proyectos]);
 
   useEffect(() => {
     setFilteredVehiculos(form.cliente_id ? vehiculos.filter((v) => v.cliente_id === form.cliente_id) : []);
@@ -2034,7 +2049,7 @@ function useClickOutside() {
 }
 
 // Componente Dropdown de Notificaciones
-const NotificacionesDropdown = ({ session, darkMode }) => {
+const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
   const [open, setOpen, ref] = useClickOutside();
   const { notificaciones, unreadCount, refresh } = useUserNotifications(session);
 
@@ -2080,7 +2095,15 @@ const NotificacionesDropdown = ({ session, darkMode }) => {
               <p className={`text-xs text-center py-6 ${darkMode ? "text-zinc-500" : "text-gray-500"}`}>No tienes notificaciones</p>
             ) : (
               notificaciones.map(n => (
-                <div key={n.id} className={`p-3 rounded-lg flex flex-col gap-1 transition-colors ${darkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-50"} ${!n.leida ? (darkMode ? "bg-zinc-800/80" : "bg-blue-50/80") : ""}`}>
+                <div
+                  key={n.id}
+                  onClick={() => {
+                    handleMarkRead(n.id);
+                    if (onNotificationClick) onNotificationClick(n);
+                    setOpen(false);
+                  }}
+                  className={`p-3 rounded-lg flex flex-col gap-1 transition-colors cursor-pointer ${darkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-50"} ${!n.leida ? (darkMode ? "bg-zinc-800/80" : "bg-blue-50/80") : ""}`}
+                >
                   <div className="flex justify-between items-start gap-2">
                     <p className={`text-xs font-semibold ${darkMode ? "text-zinc-200" : "text-gray-800"} ${!n.leida ? "font-bold" : ""}`}>{n.titulo}</p>
                     {!n.leida && <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1"></span>}
@@ -2089,7 +2112,7 @@ const NotificacionesDropdown = ({ session, darkMode }) => {
                   <div className="flex justify-between items-center mt-1">
                     <p className={`text-[9px] ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{formatDateTimeWorkshop(n.created_at)}</p>
                     {!n.leida && (
-                      <button onClick={() => handleMarkRead(n.id)} className="text-[10px] text-blue-500 hover:underline">Marcar leída</button>
+                      <span className="text-[10px] text-blue-500 font-medium">Nueva</span>
                     )}
                   </div>
                 </div>
@@ -2574,7 +2597,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   );
 };
 
-const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveModule, children, rolLabel }) => {
+const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveModule, children, rolLabel, onNotificationClick }) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -2638,7 +2661,7 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <NotificacionesDropdown session={session} darkMode={darkMode} />
+          <NotificacionesDropdown session={session} darkMode={darkMode} onNotificationClick={onNotificationClick} />
           <UserMenuWithRef session={session} onLogout={handleLogout} darkMode={darkMode} rolLabel={rolLabel} />
         </div>
       </header>
@@ -2666,6 +2689,14 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 // ─── Dashboard Admin ──────────────────────────────────────────────────────────
 const Dashboard = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("citas");
+  const [notifProjectId, setNotifProjectId] = useState(null);
+
+  const handleNotificationClick = (n) => {
+    if (n.proyecto_id) {
+      setNotifProjectId(n.proyecto_id);
+      setActiveModule("proyectos");
+    }
+  };
 
   const navItems = [
     { id: "citas", label: "Citas", icon: <LucideIcon name="calendar" /> },
@@ -2682,11 +2713,11 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "reportes", label: "Reportes Operativos", icon: <LucideIcon name="chart" /> },
   ];
   return (
-    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador">
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador" onNotificationClick={handleNotificationClick}>
       {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} />}
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
-      {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} />}
+      {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} initialProjectId={notifProjectId} />}
       {activeModule === "refacciones" && <RefaccionesModule darkMode={darkMode} readOnly={false} />}
       {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
       {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
@@ -3391,7 +3422,7 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
 }
 
 // ─── Módulo Proyectos Cliente (solo lectura, filtrado por cliente autenticado) ─
-const MisProyectosModule = ({ darkMode, clienteId, session }) => {
+const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = null }) => {
   const [proyectos,   setProyectos]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [detalle,     setDetalle]     = useState(null);
@@ -3413,6 +3444,13 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
     };
     fetch();
   }, [clienteId]);
+
+  useEffect(() => {
+    if (initialProjectId && proyectos.length > 0) {
+      const target = proyectos.find(p => p.id === initialProjectId);
+      if (target) setDetalle(target);
+    }
+  }, [initialProjectId, proyectos]);
 
   // Escuchar cambios en proyectos y cotizaciones en tiempo real
   useEffect(() => {
@@ -3626,6 +3664,14 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
 const DashboardCliente = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("citas");
   const [clienteId,    setClienteId]    = useState(null);
+  const [notifProjectId, setNotifProjectId] = useState(null);
+
+  const handleNotificationClick = (n) => {
+    if (n.proyecto_id) {
+      setNotifProjectId(n.proyecto_id);
+      setActiveModule("mis-proyectos");
+    }
+  };
 
   useEffect(() => {
     const loadCliente = async () => {
@@ -3647,8 +3693,8 @@ const DashboardCliente = ({ session, darkMode }) => {
   ];
 
   return (
-    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Cliente">
-      {activeModule === "mis-proyectos" && <MisProyectosModule darkMode={darkMode} clienteId={clienteId} session={session} />}
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Cliente" onNotificationClick={handleNotificationClick}>
+      {activeModule === "mis-proyectos" && <MisProyectosModule darkMode={darkMode} clienteId={clienteId} session={session} initialProjectId={notifProjectId} />}
       {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} />}
       {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
@@ -3657,7 +3703,7 @@ const DashboardCliente = ({ session, darkMode }) => {
 };
 
 // ─── Módulo Proyectos Mecánico (proyectos asignados a él) ──────────────────────
-const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
+const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProjectId = null }) => {
   const [proyectos,    setProyectos]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [filterEstado, setFilterEstado] = useState("todos");
@@ -3676,6 +3722,13 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session }) => {
 
   useEffect(() => { fetch(); }, [fetch]);
   useSupabaseRealtime("proyectos", fetch);
+
+  useEffect(() => {
+    if (initialProjectId && proyectos.length > 0) {
+      const target = proyectos.find(p => p.id === initialProjectId);
+      if (target) setDetalle(target);
+    }
+  }, [initialProjectId, proyectos]);
 
   const filtered = proyectos.filter((p) =>
     filterEstado === "todos" || p.estado === filterEstado
@@ -3951,6 +4004,14 @@ const NotificacionesModule = ({ darkMode, notificaciones, loading, onMarkRead, o
 const DashboardMecanico = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("citas");
   const [empleadoId,   setEmpleadoId]   = useState(null);
+  const [notifProjectId, setNotifProjectId] = useState(null);
+
+  const handleNotificationClick = (n) => {
+    if (n.proyecto_id) {
+      setNotifProjectId(n.proyecto_id);
+      setActiveModule("proyectos-mecanico");
+    }
+  };
 
   useEffect(() => {
     const loadEmpleado = async () => {
@@ -3974,8 +4035,8 @@ const DashboardMecanico = ({ session, darkMode }) => {
   ];
 
   return (
-    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico">
-      {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} />}
+    <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico" onNotificationClick={handleNotificationClick}>
+      {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} initialProjectId={notifProjectId} />}
       {activeModule === "diagnosticos" && <MecanicoDiagnosticosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "refacciones"         && <RefaccionesModule darkMode={darkMode} readOnly allowStockEdit={false} />}
