@@ -68,6 +68,15 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
             precio_unit,
             subtotal
           )
+        ),
+        diagnosticos (
+          id,
+          tipo,
+          hallazgos,
+          created_at,
+          empleados (
+            nombre
+          )
         )
       `).order("fecha_ingreso", { ascending: false });
 
@@ -110,7 +119,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal))
+                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
             `)
             .in("cliente_id", clienteIds)
             .order("fecha_ingreso", { ascending: false });
@@ -137,7 +147,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal))
+                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -164,7 +175,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal))
+                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -218,6 +230,13 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
       return bd - ad;
     })[0];
   };
+
+  const cleanHallazgosText = (value = "") =>
+    String(value)
+      .split("\n")
+      .map((line) => line.replace(/^\s*\[[^\]]+\]\s*/, ""))
+      .join("\n")
+      .trim();
 
   const generarPDFServicio = async (servicio) => {
     setGenerandoPDF((prev) => ({ ...prev, [servicio.id]: true }));
@@ -327,7 +346,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
     <div className={`w-full ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       {/* Encabezado */}
       <div className="mb-6 px-4 md:px-6 pt-4">
-        <h1 className={`text-2xl font-bold ${textPrimary}`}>📋 Historial de Servicios (Admin)</h1>
+        <h1 className={`text-2xl font-bold ${textPrimary}`}> Historial de Servicios</h1>
         <p className={`text-sm ${textSecondary} mt-1`}>Visualiza el historial completo de servicios, fotos y facturas</p>
       </div>
 
@@ -465,7 +484,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                   <div ref={detailRef}>
                     {/* Sección de Información General */}
                     <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}>📋 Información General</h4>
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}> Información General</h4>
                       <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
                         <div>
                           <p className={`text-xs ${textSecondary} font-medium`}>CLIENTE</p>
@@ -490,16 +509,42 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                     {/* Sección de Descripción */}
                     {servicio.descripcion && (
                       <div className="mb-6">
-                        <h4 className={`font-semibold ${textPrimary} mb-3`}>📝 Descripción del Servicio</h4>
+                        <h4 className={`font-semibold ${textPrimary} mb-3`}> Descripción del Servicio</h4>
                         <div className={`p-4 rounded ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
                           <p className={textSecondary}>{servicio.descripcion}</p>
                         </div>
                       </div>
                     )}
 
+                    {/* Sección de Observaciones del Proyecto */}
+                    <div className="mb-6">
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}> Observaciones del Proyecto</h4>
+                      {Array.isArray(servicio.diagnosticos) && servicio.diagnosticos.filter((d) => d.tipo === "final").length > 0 ? (
+                        <div className="space-y-3">
+                          {servicio.diagnosticos
+                            .filter((d) => d.tipo === "final")
+                            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+                            .map((obs, idx) => (
+                              <div key={obs.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                                <p className={`text-xs font-medium mb-2 ${textSecondary}`}>Observación {idx + 1}</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{cleanHallazgosText(obs.hallazgos || "") || "Sin contenido"}</p>
+                                <p className={`text-xs mt-2 ${textSecondary}`}>
+                                  {obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : "Observación registrada"}
+                                  {obs.created_at ? ` • ${formatDateTimeWorkshop(obs.created_at)}` : ""}
+                                </p>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
+                          <p className={`text-sm ${textSecondary}`}>No hay observaciones registradas</p>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Sección de Fotos */}
                     <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}>📸 Fotos del Servicio</h4>
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Fotos del Servicio</h4>
                       {loadingFotos[servicio.id] ? (
                         <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
                           <p className={`text-sm ${textSecondary}`}>Cargando fotos...</p>
@@ -550,7 +595,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
 
                     {/* Sección de Cotizaciones/Facturas */}
                     <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}>💰 Cotizaciones y Facturas</h4>
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Cotizaciones y Facturas</h4>
                       {Array.isArray(servicio.cotizaciones) && servicio.cotizaciones.length > 0 ? (
                         <div className="space-y-3">
                           {servicio.cotizaciones.map((cot, idx) => (

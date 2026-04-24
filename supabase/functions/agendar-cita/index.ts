@@ -211,6 +211,21 @@ serve(async (req) => {
     // Guardamos con offset fijo del taller para conservar horario de captura local.
     const fechaHoraISO = `${fecha}T${hora}:00${TALLER_TIMEZONE_OFFSET}`;
 
+    const { data: citaExistente, error: citaExistenteErr } = await supabaseAdmin
+      .from("citas")
+      .select("id, estado")
+      .eq("fecha_hora", fechaHoraISO)
+      .neq("estado", "cancelada")
+      .maybeSingle();
+
+    if (citaExistenteErr) throw citaExistenteErr;
+    if (citaExistente?.id) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Ya existe una cita registrada para ese horario" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+      );
+    }
+
     const { data: cita, error: citaErr } = await supabaseAdmin
       .from("citas")
       .insert([

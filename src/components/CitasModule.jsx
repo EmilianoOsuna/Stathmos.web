@@ -30,6 +30,38 @@ const estadoBadge = (estado, darkMode) => {
   return map[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
 };
 
+const TIME_SLOT_MINUTES = ["00", "20", "40"];
+
+const getTimeSlotsForDate = (fecha) => {
+  const date = new Date(`${fecha}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return [];
+
+  const day = date.getDay();
+  const windows = [];
+
+  if (day >= 1 && day <= 5) {
+    windows.push([9, 14], [17, 20]);
+  } else if (day === 6) {
+    windows.push([9, 14]);
+  }
+
+  const slots = [];
+  for (const [startHour, endHour] of windows) {
+    for (let hour = startHour; hour <= endHour; hour += 1) {
+      const minutes = hour === endHour ? ["00"] : TIME_SLOT_MINUTES;
+      for (const minute of minutes) {
+        slots.push(`${String(hour).padStart(2, "0")}:${minute}`);
+      }
+    }
+  }
+
+  return slots;
+};
+
+const isCountableCalendarCita = (cita) => ["confirmada", "en_progreso"].includes(cita?.estado);
+
+const isVisibleCalendarCita = (cita) => cita?.estado !== "cancelada";
+
 const ymd = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -86,6 +118,8 @@ const isValidSlot = (fecha, hora) => {
   if (day === 0) return false;
 
   const mins = hmToMinutes(hora);
+  if (mins % 20 !== 0) return false;
+
   const inMorning = mins >= 9 * 60 && mins <= 14 * 60;
   const inEvening = mins >= 17 * 60 && mins <= 20 * 60;
 
@@ -143,8 +177,10 @@ export default function CitasModule({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [modalError, setModalError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [inhabilOpen, setInhabilOpen] = useState(false);
+  const [showInhabilList, setShowInhabilList] = useState(false);
   const [filterMode, setFilterMode] = useState("hoy");
   const [filterDate, setFilterDate] = useState(ymd(new Date()));
   const [calendarView, setCalendarView] = useState("month");
@@ -161,6 +197,7 @@ export default function CitasModule({
   });
 
   const selectedClienteId = role === "administrador" ? form.cliente_id : clienteId;
+  const timeSlots = useMemo(() => getTimeSlotsForDate(form.fecha), [form.fecha]);
 
   const isBlockedDate = (fecha) => Boolean(fecha) && (isSunday(fecha) || inhabilSet.has(fecha));
 
@@ -181,6 +218,8 @@ export default function CitasModule({
     setLoading(true);
     setError("");
     try {
+      let currentCitas = [];
+
       if (role === "cliente") {
         if (!clienteId) {
           setCitas([]);
@@ -195,7 +234,8 @@ export default function CitasModule({
           .order("fecha_hora", { ascending: true });
 
         if (citasError) throw citasError;
-        setCitas(data || []);
+        currentCitas = data || [];
+        setCitas(currentCitas);
 
         const { data: vData, error: vErr } = await supabase
           .from("vehiculos")
@@ -213,7 +253,8 @@ export default function CitasModule({
           .order("fecha_hora", { ascending: true });
 
         if (citasError) throw citasError;
-        setCitas(data || []);
+        currentCitas = data || [];
+        setCitas(currentCitas);
 
         if (role === "administrador") {
           const { data: cData, error: cErr } = await supabase
@@ -232,6 +273,23 @@ export default function CitasModule({
           if (vErr) throw vErr;
           setVehiculos(vData || []);
         }
+      }
+
+      const overduePendings = currentCitas.filter(
+        (cita) => cita.estado === "pendiente" && new Date(cita.fecha_hora).getTime() <= Date.now()
+      );
+
+      if (overduePendings.length > 0) {
+        await Promise.all(
+          overduePendings.map((cita) =>
+            supabase.functions.invoke("resolver-cita", {
+              body: { cita_id: cita.id, accion: "auto_cancelar" },
+            })
+          )
+        );
+
+        await fetchCitas();
+        return;
       }
 
       // Siempre cargamos días inhábiles para que el calendario refleje bloqueos en gris.
@@ -267,6 +325,13 @@ export default function CitasModule({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diasInhabiles]);
 
+  useEffect(() => {
+    if (!timeSlots.length) return;
+    if (!timeSlots.includes(form.hora)) {
+      setForm((prev) => ({ ...prev, hora: timeSlots[0] }));
+    }
+  }, [form.hora, timeSlots]);
+
   const todayKey = todayWorkshopYmd();
 
   const upcomingCitas = useMemo(() => {
@@ -277,6 +342,7 @@ export default function CitasModule({
   const citasPorDia = useMemo(() => {
     const map = new Map();
     for (const c of citas) {
+      if (!isCountableCalendarCita(c)) continue;
       const key = toWorkshopYmd(c.fecha_hora);
       map.set(key, (map.get(key) || 0) + 1);
     }
@@ -351,7 +417,7 @@ export default function CitasModule({
   }, [calendarRange, citas]);
 
   const calendarRangeCitas = useMemo(() => {
-    return calendarCitas.filter((cita) => cita.estado !== "cancelada");
+    return calendarCitas.filter((cita) => isVisibleCalendarCita(cita));
   }, [calendarCitas]);
 
   const calendarDates = useMemo(() => {
@@ -399,7 +465,7 @@ export default function CitasModule({
     if (!dateObj) return "";
     const key = ymd(dateObj);
     if (!isBlockedDate(key)) return darkMode ? "bg-[#17171f] border-zinc-800" : "bg-gray-50 border-gray-200";
-    return darkMode ? "bg-zinc-700 border-zinc-600" : "bg-gray-200 border-gray-300";
+    return darkMode ? "bg-zinc-700/80 border-zinc-600" : "bg-gray-200 border-gray-300";
   };
 
   const shiftCalendar = (direction) => {
@@ -444,22 +510,23 @@ export default function CitasModule({
 
   const handleFormDateChange = (value) => {
     if (!value) {
+      setModalError("");
       setForm((prev) => ({ ...prev, fecha: value }));
       return;
     }
 
     if (isBlockedDate(value)) {
-      setError(isSunday(value) ? "Los domingos están bloqueados para agendar citas." : "Ese día está marcado como inhábil y no se puede seleccionar.");
+      setModalError(isSunday(value) ? "Los domingos están bloqueados para agendar citas." : "Ese día está marcado como inhábil y no se puede seleccionar.");
       return;
     }
 
-    setError("");
+    setModalError("");
     setForm((prev) => ({ ...prev, fecha: value }));
   };
 
   const handleAgendar = async () => {
     setSaving(true);
-    setError("");
+    setModalError("");
     try {
       if (!form.vehiculo_id) throw new Error("Selecciona un vehículo.");
       if (role === "administrador" && !form.cliente_id) throw new Error("Selecciona un cliente.");
@@ -468,6 +535,15 @@ export default function CitasModule({
       }
       if (!isValidSlot(form.fecha, form.hora)) {
         throw new Error("Horario inválido. Usa lunes a viernes 9:00-14:00 y 17:00-20:00, o sábado 9:00-14:00.");
+      }
+
+      const requestedDateTime = new Date(`${form.fecha}T${form.hora}:00${WORKSHOP_OFFSET}`);
+      const duplicatedSlot = (citas || []).some((cita) => (
+        cita.estado !== "cancelada" && new Date(cita.fecha_hora).getTime() === requestedDateTime.getTime()
+      ));
+
+      if (duplicatedSlot) {
+        throw new Error("Ya existe una cita registrada para ese horario.");
       }
 
       const { data, error: invokeError } = await supabase.functions.invoke("agendar-cita", {
@@ -488,10 +564,11 @@ export default function CitasModule({
       if (!data?.success) throw new Error(data?.error || "No se pudo agendar la cita.");
 
       setModalOpen(false);
+      setModalError("");
       setForm((prev) => ({ ...prev, notas: "", vehiculo_id: "", fecha: nextSelectableDate() }));
       await fetchCitas();
     } catch (e) {
-      setError(e.message || "No se pudo agendar la cita.");
+      setModalError(e.message || "No se pudo agendar la cita.");
     } finally {
       setSaving(false);
     }
@@ -540,6 +617,29 @@ export default function CitasModule({
       await fetchCitas();
     } catch (e) {
       setError(e.message || "No se pudo guardar el día inhábil.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEliminarDiaInhabil = async (diaId) => {
+    setSaving(true);
+    setError("");
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("eliminar-dia-inhabil", {
+        body: { dia_id: diaId },
+      });
+
+      if (invokeError) {
+        const message = await getFunctionErrorMessage(invokeError, "No se pudo eliminar el día inhábil.");
+        throw new Error(message);
+      }
+
+      if (!data?.success) throw new Error(data?.error || "No se pudo eliminar el día inhábil.");
+
+      await fetchCitas();
+    } catch (e) {
+      setError(e.message || "No se pudo eliminar el día inhábil.");
     } finally {
       setSaving(false);
     }
@@ -827,7 +927,12 @@ export default function CitasModule({
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} darkMode={darkMode} title="Agendar cita">
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setModalError(""); }} darkMode={darkMode} title="Agendar cita">
+        {modalError && (
+          <div className="mb-4 p-3 rounded border border-red-300 bg-red-50 text-red-700 text-sm">
+            {modalError}
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={`text-xs font-semibold ${st}`}>Día</label>
@@ -842,13 +947,15 @@ export default function CitasModule({
           </div>
           <div>
             <label className={`text-xs font-semibold ${st}`}>Hora</label>
-            <input
-              type="time"
-              step="1800"
+            <select
               value={form.hora}
               onChange={(e) => setForm({ ...form, hora: e.target.value })}
               className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            />
+            >
+              {timeSlots.map((slot) => (
+                <option key={slot} value={slot}>{slot}</option>
+              ))}
+            </select>
           </div>
           {role === "administrador" && (
             <div>
@@ -900,7 +1007,7 @@ export default function CitasModule({
         </div>
 
         <div className="mt-4 text-xs text-amber-600">
-          Horarios válidos: lunes a viernes de 9:00 a 14:00 y 17:00 a 20:00; sábado de 9:00 a 14:00. Domingos y días inhábiles están bloqueados.
+          Horarios válidos: lunes a viernes de 9:00 a 14:00 y 17:00 a 20:00; sábado de 9:00 a 14:00. Solo se muestran minutos en intervalos de 20 minutos. Domingos y días inhábiles están bloqueados.
         </div>
 
         <div className="mt-5 flex gap-2">
@@ -919,6 +1026,50 @@ export default function CitasModule({
           </button>
         </div>
       </Modal>
+
+      {role === "administrador" && (
+        <div className={`mt-5 rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
+          <div className={`px-4 py-3 border-b flex items-center justify-between gap-3 ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
+            <div>
+              <h3 className={`text-sm font-semibold ${t}`}>Días inhábiles</h3>
+              <p className={`text-xs ${st}`}>Abre este apartado para ver y eliminar días registrados.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInhabilList((prev) => !prev)}
+              className={`px-3 py-1.5 rounded text-xs border ${showInhabilList ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-300" : "border-gray-300 text-gray-700"}`}
+            >
+              {showInhabilList ? "Ocultar" : "Visualizar"}
+            </button>
+          </div>
+          {showInhabilList && (
+            <div className="p-3">
+              {diasInhabiles.length === 0 ? (
+                <p className={`text-sm ${st}`}>No hay días inhábiles registrados.</p>
+              ) : (
+                <div className="space-y-2">
+                  {diasInhabiles.map((dia) => (
+                    <div key={dia.id} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-800 bg-[#1d1d26]" : "border-gray-200 bg-white"}`}>
+                      <div>
+                        <p className={`text-sm font-semibold ${t}`}>{formatDateWorkshop(dia.fecha, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</p>
+                        <p className={`text-xs ${st}`}>{dia.motivo || "Sin motivo"}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => handleEliminarDiaInhabil(dia.id)}
+                        className="px-3 py-1.5 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <Modal open={inhabilOpen} onClose={() => setInhabilOpen(false)} darkMode={darkMode} title="Agregar día inhábil">
         <div className="grid grid-cols-1 gap-3">

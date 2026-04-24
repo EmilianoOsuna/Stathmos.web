@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
-import { Edit, Trash2, AlertCircle } from "lucide-react";
+import { Edit, AlertCircle } from "lucide-react";
 import { formatDateTimeWorkshop } from "../utils/datetime";
 
 export default function DiagnosticoView({ 
@@ -37,27 +37,17 @@ export default function DiagnosticoView({
     }
   };
 
-  const handleDelete = async (diagnosticoId) => {
-    if (!window.confirm("¿Eliminar este diagnóstico?")) return;
-
-    try {
-      const { error: dbError } = await supabase
-        .from("diagnosticos")
-        .delete()
-        .eq("id", diagnosticoId);
-
-      if (dbError) throw dbError;
-      setDiagnosticos((prev) => prev.filter((d) => d.id !== diagnosticoId));
-    } catch (err) {
-      console.error("Error al eliminar:", err);
-      alert("Error al eliminar diagnóstico");
-    }
-  };
-
   const textPrimary = darkMode ? "text-zinc-100" : "text-gray-800";
   const textSecondary = darkMode ? "text-zinc-500" : "text-gray-500";
   const bgCard = darkMode ? "bg-zinc-800/50" : "bg-gray-50";
   const bgBorder = darkMode ? "border-zinc-700" : "border-gray-200";
+
+  const cleanHallazgosText = (value = "") =>
+    String(value)
+      .split("\n")
+      .map((line) => line.replace(/^\s*\[[^\]]+\]\s*/, ""))
+      .join("\n")
+      .trim();
 
   if (loading) {
     return (
@@ -100,14 +90,14 @@ export default function DiagnosticoView({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                 <span className={`font-semibold ${textPrimary}`}>
-                  {diagnostico.tipo === "inicial" ? "📋 Diagnóstico Inicial" : "✓ Diagnóstico Final"}
+                  {diagnostico.tipo === "inicial" ? " Diagnóstico Inicial" : " Observación"}
                 </span>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                   diagnostico.tipo === "inicial"
                     ? darkMode ? "bg-blue-900/30 text-blue-300" : "bg-blue-50 text-blue-700"
                     : darkMode ? "bg-emerald-900/30 text-emerald-300" : "bg-emerald-50 text-emerald-700"
                 }`}>
-                  {diagnostico.tipo}
+                  {diagnostico.tipo === "inicial" ? "inicial" : "observación"}
                 </span>
               </div>
               <p className={`text-xs ${textSecondary}`}>
@@ -132,9 +122,9 @@ export default function DiagnosticoView({
               {/* Hallazgos */}
               {diagnostico.hallazgos && (
                 <div>
-                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2`}>🔍 Hallazgos</p>
+                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2`}> Observaciones</p>
                   <p className={`text-sm ${textPrimary} leading-relaxed whitespace-pre-wrap`}>
-                    {diagnostico.hallazgos}
+                    {cleanHallazgosText(diagnostico.hallazgos)}
                   </p>
                 </div>
               )}
@@ -164,17 +154,7 @@ export default function DiagnosticoView({
                     Editar
                   </button>
                 )}
-                <button
-                  onClick={() => handleDelete(diagnostico.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition ${
-                    darkMode
-                      ? "bg-red-900/30 hover:bg-red-900/50 text-red-300"
-                      : "bg-red-100 hover:bg-red-200 text-red-700"
-                  }`}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </button>
+                
               </div>
             </div>
           )}

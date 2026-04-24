@@ -44,13 +44,6 @@ serve(async (req) => {
 
     const user = authData.user;
     const role = normalizeRole(user?.app_metadata?.rol || user?.user_metadata?.rol || "");
-    if (!["administrador", "mecanico"].includes(role)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "No autorizado para validar citas" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
-      );
-    }
-
     const { cita_id, accion } = await req.json();
     if (!cita_id || !accion) {
       return new Response(
@@ -60,7 +53,16 @@ serve(async (req) => {
     }
 
     const accionNorm = String(accion).toLowerCase();
-    if (!["aceptar", "rechazar"].includes(accionNorm)) {
+    const esAutoCancelacion = accionNorm === "auto_cancelar";
+
+    if (!esAutoCancelacion && !["administrador", "mecanico"].includes(role)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "No autorizado para validar citas" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
+      );
+    }
+
+    if (!["aceptar", "rechazar", "auto_cancelar"].includes(accionNorm)) {
       return new Response(
         JSON.stringify({ success: false, error: "Acción inválida" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
@@ -69,7 +71,7 @@ serve(async (req) => {
 
     const { data: cita, error: citaErr } = await supabaseAdmin
       .from("citas")
-      .select("id")
+      .select("id, estado, fecha_hora, cliente_id")
       .eq("id", cita_id)
       .maybeSingle();
 
@@ -81,6 +83,39 @@ serve(async (req) => {
       );
     }
 
+    if (esAutoCancelacion) {
+      const citaFecha = new Date(cita.fecha_hora);
+      if (Number.isNaN(citaFecha.getTime())) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Fecha de cita inválida" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+
+      if (citaFecha.getTime() > Date.now()) {
+        return new Response(
+          JSON.stringify({ success: false, error: "La cita aún no vence" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+
+      if (role === "cliente") {
+        const { data: cliente, error: clienteErr } = await supabaseAdmin
+          .from("clientes")
+          .select("id")
+          .or(`usuario_id.eq.${user.id},correo.eq.${user.email}`)
+          .maybeSingle();
+
+        if (clienteErr) throw clienteErr;
+        if (!cliente?.id || cliente.id !== cita.cliente_id) {
+          return new Response(
+            JSON.stringify({ success: false, error: "No autorizado para cancelar esta cita" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
+          );
+        }
+      }
+    }
+
     const nuevoEstado = accionNorm === "aceptar" ? "confirmada" : "cancelada";
     const { error: updateErr } = await supabaseAdmin
       .from("citas")
@@ -90,7 +125,7 @@ serve(async (req) => {
     if (updateErr) throw updateErr;
 
     return new Response(
-      JSON.stringify({ success: true, estado: nuevoEstado }),
+      JSON.stringify({ success: true, estado: nuevoEstado, auto_cancelada: esAutoCancelacion }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {

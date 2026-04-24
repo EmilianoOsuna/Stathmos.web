@@ -11,3 +11,20 @@ input:-webkit-autofill {
         -webkit-text-fill-color: #e4e4e7; /* light text for dark mode */
     }
 }
+
+.observaciones-overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    overflow: auto;
+}
+
+.observaciones-modal {
+    position: relative;
+    width: min(calc(100dvw - 2rem), 42rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    margin: auto;
+}

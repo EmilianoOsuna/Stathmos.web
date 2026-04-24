@@ -1087,6 +1087,13 @@ const ProyectosModule = ({ darkMode, session }) => {
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
   const [detalle, setDetalle] = useState(null);
+
+  const handleProyectoActualizado = (updates) => {
+    if (!updates?.id) return;
+
+    setProyectos((prev) => prev.map((p) => (p.id === updates.id ? { ...p, ...updates } : p)));
+    setDetalle((prev) => (prev?.id === updates.id ? { ...prev, ...updates } : prev));
+  };
   const [refCatalog, setRefCatalog] = useState([]);
   const [refSearch, setRefSearch] = useState("");
   const [refCart, setRefCart] = useState([]);
@@ -1097,7 +1104,7 @@ const ProyectosModule = ({ darkMode, session }) => {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [p, c, v, e, r] = await Promise.all([
-      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
+      supabase.from("proyectos").select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
@@ -1805,6 +1812,7 @@ const ProyectosModule = ({ darkMode, session }) => {
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
         canUpload={true} session={session}
+        onProjectUpdated={handleProyectoActualizado}
       />
     </div>
   );
@@ -1930,13 +1938,17 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 // ─── Shell compartido (topbar + sidebar) ─────────────────────────────────────
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
-const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, onProjectUpdated = null }) => {
   const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
+  const [estadoInicialProyecto, setEstadoInicialProyecto] = useState("");
+  const [estadoInicialGuardando, setEstadoInicialGuardando] = useState(false);
+  const [estadoInicialError, setEstadoInicialError] = useState("");
+  const [estadoProyectoLocal, setEstadoProyectoLocal] = useState(proyecto?.estado || "activo");
   const fileRef = useRef(null);
 
   const fetchFotos = useCallback(async () => {
@@ -1957,6 +1969,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     if (open) fetchFotos();
     else { setFotos([]); setUploadError(""); setLightbox(null); }
   }, [open, fetchFotos]);
+
+  useEffect(() => {
+    if (!open || !proyecto) return;
+    setEstadoInicialProyecto(proyecto.descripcion || "");
+    setEstadoProyectoLocal(proyecto.estado || "activo");
+    setEstadoInicialError("");
+  }, [open, proyecto?.id, proyecto?.descripcion, proyecto?.estado]);
 
   useEffect(() => {
     if (!lightbox) return undefined;
@@ -2034,12 +2053,48 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const handleGuardarEstadoInicial = async () => {
+    if (!proyecto?.id) return;
+    if (estadoProyectoLocal !== "activo") return;
+    if (!estadoInicialProyecto.trim()) {
+      setEstadoInicialError("Ingresa el estado inicial del proyecto antes de guardarlo.");
+      return;
+    }
+
+    setEstadoInicialGuardando(true);
+    setEstadoInicialError("");
+
+    try {
+      const nuevoValor = estadoInicialProyecto.trim();
+      const { error } = await supabase
+        .from("proyectos")
+        .update({
+          descripcion: nuevoValor,
+          estado: "en_progreso",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", proyecto.id);
+
+      if (error) throw error;
+
+      setEstadoProyectoLocal("en_progreso");
+      if (onProjectUpdated) {
+        onProjectUpdated({ id: proyecto.id, descripcion: nuevoValor, estado: "en_progreso" });
+      }
+    } catch (error) {
+      setEstadoInicialError(error?.message || "No se pudo guardar el estado inicial del proyecto.");
+    } finally {
+      setEstadoInicialGuardando(false);
+    }
+  };
+
   if (!open || !proyecto) return null;
 
   const t       = darkMode ? "text-zinc-100"  : "text-gray-800";
   const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
   const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
+  const puedeEditarEstadoInicial = estadoProyectoLocal === "activo";
   const momentoLabel = (value) => {
     if (value === "antes") return "Antes";
     if (value === "durante") return "Durante";
@@ -2054,6 +2109,19 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     };
     return map[value] || (darkMode ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
   };
+
+  const cleanHallazgosText = (value = "") =>
+    String(value)
+      .split("\n")
+      .map((line) => line.replace(/^\s*\[[^\]]+\]\s*/, ""))
+      .join("\n")
+      .trim();
+
+  const diagnosticosProyecto = Array.isArray(proyecto.diagnosticos) ? proyecto.diagnosticos : [];
+  const diagnosticoInicial = diagnosticosProyecto.find((d) => d.tipo === "inicial") || null;
+  const observaciones = diagnosticosProyecto
+    .filter((d) => d.tipo === "final")
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   return (
     <>
@@ -2093,6 +2161,88 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                 <p className={`text-sm mt-0.5 ${t}`}>{val}</p>
               </div>
             ) : null)}
+          </div>
+
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Estado inicial del proyecto</p>
+                <p className={`text-xs mt-0.5 ${st}`}>
+                  {puedeEditarEstadoInicial
+                    ? "Registra aquí el estado inicial antes de pasar el proyecto a En progreso."
+                    : "Este texto queda en solo lectura cuando el proyecto ya está En progreso."}
+                </p>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(estadoProyectoLocal, darkMode)}`}>
+                {estadoProyectoLocal?.replace(/_/g, " ")}
+              </span>
+            </div>
+
+            <textarea
+              value={estadoInicialProyecto}
+              onChange={(e) => setEstadoInicialProyecto(e.target.value)}
+              readOnly={!puedeEditarEstadoInicial}
+              rows={4}
+              placeholder="Describe el estado inicial, hallazgos principales y condiciones del vehículo al recibirlo."
+              className={`w-full px-4 py-3 rounded-lg border text-sm resize-none outline-none ${puedeEditarEstadoInicial ? "focus:ring-2 focus:ring-sky-500" : "opacity-90"} ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            />
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className={`text-xs ${st}`}>
+                {puedeEditarEstadoInicial ? "Al guardar, el proyecto pasará automáticamente a En progreso." : "El texto queda bloqueado para edición."}
+              </p>
+              {puedeEditarEstadoInicial && (
+                <button
+                  type="button"
+                  onClick={handleGuardarEstadoInicial}
+                  disabled={estadoInicialGuardando}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50"
+                >
+                  {estadoInicialGuardando ? "Guardando..." : "Guardar y pasar a En progreso"}
+                </button>
+              )}
+            </div>
+
+            {estadoInicialError && (
+              <p className="mt-2 text-xs text-red-500">{estadoInicialError}</p>
+            )}
+
+            <div className={`mt-4 pt-4 border-t ${divider} space-y-4`}>
+              <div>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st}`}>Diagnóstico inicial</p>
+                {diagnosticoInicial ? (
+                  <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+                    <p className={`text-sm font-medium ${t}`}>{diagnosticoInicial.sintomas || "Sin contenido"}</p>
+                    {diagnosticoInicial.causa_raiz && (
+                      <p className={`text-xs mt-2 ${st}`}>Causa: {diagnosticoInicial.causa_raiz}</p>
+                    )}
+                    <p className={`text-[11px] mt-2 ${st}`}>
+                      {diagnosticoInicial.empleados?.nombre ? `Registrado por ${diagnosticoInicial.empleados.nombre}` : "Diagnóstico registrado"}
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`text-xs ${st}`}>Aún no hay diagnóstico inicial registrado.</p>
+                )}
+              </div>
+
+              <div>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st}`}>Observaciones</p>
+                {observaciones.length === 0 ? (
+                  <p className={`text-xs ${st}`}>Aún no hay observaciones registradas.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {observaciones.map((obs) => (
+                      <div key={obs.id} className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+                        <p className={`text-sm whitespace-pre-wrap ${t}`}>{cleanHallazgosText(obs.hallazgos || "")}</p>
+                        <p className={`text-[11px] mt-2 ${st}`}>
+                          {obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : "Observación registrada"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Fotografías */}
@@ -2266,7 +2416,7 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 
 // ─── Dashboard Admin ──────────────────────────────────────────────────────────
 const Dashboard = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("clientes");
+  const [activeModule, setActiveModule] = useState("citas");
   const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
 
   const handleMarkRead = async (id) => {
@@ -2283,6 +2433,7 @@ const Dashboard = ({ session, darkMode }) => {
   };
 
   const navItems = [
+    { id: "citas", label: "Citas", icon: "📅" },
     { id: "clientes",  label: "Clientes",  icon: "👥" },
     { id: "empleados", label: "Empleados", icon: "🧑‍🔧" },
     { id: "vehiculos", label: "Vehículos", icon: "🚗" },
@@ -2291,7 +2442,6 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "proveedores", label: "Proveedores", icon: "🏷️" },
     { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
     { id: "ventas-refacciones", label: "Venta Refacciones", icon: "🛒" },
-    { id: "citas", label: "Citas", icon: "📅" },
     { id: "historial-tickets", label: "Historial de Tickets", icon: "📋" },
     { id: "historial-servicios", label: "Historial de Servicios", icon: "📜" },
     { id: "reportes", label: "Reportes Operativos", icon: "📊" },
@@ -3231,7 +3381,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session }) => {
 
 // ─── Dashboard Cliente ────────────────────────────────────────────────────────
 const DashboardCliente = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("mis-proyectos");
+  const [activeModule, setActiveModule] = useState("citas");
   const [clienteId,    setClienteId]    = useState(null);
   const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
 
@@ -3261,9 +3411,9 @@ const DashboardCliente = ({ session, darkMode }) => {
   }, [session]);
 
   const navItems = [
+    { id: "citas",         label: "Citas",          icon: "📅" },
     { id: "mis-proyectos", label: "Mis Proyectos", icon: "🔧" },
     { id: "mis-vehiculos", label: "Mis Vehículos",  icon: "🚗" },
-    { id: "citas",         label: "Citas",          icon: "📅" },
     { id: "mi-carrito",    label: "Mi carrito",icon: "🛒"},
     { id: "notificaciones", label: "Notificaciones", icon: "🔔", badge: unreadCount },
   ];
@@ -3612,7 +3762,7 @@ const NotificacionesModule = ({ darkMode, notificaciones, loading, onMarkRead, o
 
 // ─── Dashboard Mecánico ───────────────────────────────────────────────────────
 const DashboardMecanico = ({ session, darkMode }) => {
-  const [activeModule, setActiveModule] = useState("proyectos-mecanico");
+  const [activeModule, setActiveModule] = useState("citas");
   const [empleadoId,   setEmpleadoId]   = useState(null);
   const { notificaciones, loading: loadingNotificaciones, unreadCount, refresh } = useUserNotifications(session);
 
@@ -3642,9 +3792,9 @@ const DashboardMecanico = ({ session, darkMode }) => {
   }, [session]);
 
   const navItems = [
+    { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: "🔧" },
     { id: "diagnosticos",       label: "Diagnósticos",   icon: "📋" },
-    { id: "citas",              label: "Citas",          icon: "📅" },
     { id: "refacciones",        label: "Refacciones",    icon: "🔩" },
     { id: "compras-refacciones", label: "Compra Refacciones", icon: "🧾" },
     { id: "ventas-refacciones",  label: "Venta Refacciones",  icon: "🛒" },

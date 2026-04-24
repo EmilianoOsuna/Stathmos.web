@@ -92,6 +92,7 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
   };
 
   const handleOpenModal = (proyecto) => {
+    if (!["activo", "en_progreso"].includes(proyecto.estado)) return;
     setSelectedProyecto(proyecto);
     setModalOpen(true);
   };
@@ -142,7 +143,7 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       {/* Encabezado */}
       <div className="mb-6">
-        <h1 className={`text-2xl font-bold ${textPrimary}`}>📋 Diagnósticos de Vehículos</h1>
+        <h1 className={`text-2xl font-bold ${textPrimary}`}> Diagnósticos de Vehículos</h1>
         <p className={`text-sm ${textSecondary} mt-1`}>Registra y gestiona diagnósticos iniciales de fallas</p>
         <p className={`text-xs ${textSecondary} mt-2`}>
           {diagnosticoInitialCount} de {proyectos.length} proyectos con diagnóstico inicial
@@ -197,6 +198,17 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
         ) : (
           filteredProyectos.map((proyecto) => {
             const tieneDiagInitial = (mecanicosAsignados[proyecto.id] || []).some(d => d.tipo === "inicial");
+            const tieneObservacion = (mecanicosAsignados[proyecto.id] || []).some(d => d.tipo === "final");
+            const esActivo = proyecto.estado === "activo";
+            const esEnProgreso = proyecto.estado === "en_progreso";
+            const puedeCapturar = (esActivo && !tieneDiagInitial) || esEnProgreso;
+
+            const accionLabel = esActivo
+              ? (tieneDiagInitial ? "Diagnóstico Inicial Registrado" : "Registrar Diagnóstico Inicial")
+              : esEnProgreso
+              ? (tieneObservacion ? "Añadir Otra Observación" : "Añadir Observación")
+              : "No disponible";
+
             return (
               <div
                 key={proyecto.id}
@@ -228,8 +240,21 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
                     </div>
                     <button
                       onClick={() => handleOpenModal(proyecto)}
+                      disabled={!puedeCapturar}
                       className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
-                        tieneDiagInitial
+                        !puedeCapturar
+                          ? darkMode
+                            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : esActivo
+                          ? darkMode
+                            ? "bg-orange-600 hover:bg-orange-700 text-white"
+                            : "bg-orange-500 hover:bg-orange-600 text-white"
+                          : esEnProgreso
+                          ? darkMode
+                            ? "bg-sky-600 hover:bg-sky-700 text-white"
+                            : "bg-sky-500 hover:bg-sky-600 text-white"
+                          : tieneDiagInitial
                           ? darkMode
                             ? "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
                             : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -239,7 +264,7 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
                       }`}
                     >
                       <Plus className="w-4 h-4" />
-                      {tieneDiagInitial ? "Diagnóstico Registrado" : "Registrar Diagnóstico"}
+                      {accionLabel}
                     </button>
                   </div>
 
@@ -273,6 +298,7 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
             setSelectedProyecto(null);
           }}
           proyectoId={selectedProyecto.id}
+          proyectoEstado={selectedProyecto.estado}
           mecanico_id={mecanico_id}
           darkMode={darkMode}
           onSuccess={handleDiagnosticoGuardado}
