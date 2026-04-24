@@ -140,8 +140,7 @@ const invokeEdgeFunction = async (name, { body, userToken }) => {
     headers: {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
-      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-user-token": userToken || "",
+      authorization: `Bearer ${userToken || SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify(body || {}),
   });
