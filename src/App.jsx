@@ -168,6 +168,85 @@ const invokeEdgeFunction = async (name, { body, userToken }) => {
   return json;
 };
 
+// ─── Notification Helpers ──────────────────────────────────────────────────────
+const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fechaHora, session }) => {
+  try {
+    let name = clienteNombre;
+    if (!name && clienteId) {
+      const { data } = await supabase.from("clientes").select("nombre").eq("id", clienteId).maybeSingle();
+      name = data?.nombre;
+    }
+    const finalName = name || "Un cliente";
+
+    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    if (!admins || admins.length === 0) return;
+
+    const titulo = "Nueva cita agendada";
+    const mensaje = `${finalName} ha agendado una cita para el ${fechaHora}.`;
+
+    for (const admin of admins) {
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: { usuario_id: admin.id, cita_id: citaId, titulo, mensaje },
+        userToken: session?.access_token || "",
+      });
+    }
+  } catch (err) {
+    console.warn("[notifyAdminNewAppointment] error:", err);
+  }
+};
+
+const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }) => {
+  try {
+    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    if (!admins || admins.length === 0) return;
+
+    const titulo = "Pago recibido";
+    const mensaje = `Se ha registrado un pago de $${monto} para el proyecto "${tituloProyecto}".`;
+
+    for (const admin of admins) {
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: { usuario_id: admin.id, proyecto_id: proyectoId, titulo, mensaje },
+        userToken: session?.access_token || "",
+      });
+    }
+  } catch (err) {
+    console.warn("[notifyAdminPayment] error:", err);
+  }
+};
+
+const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
+  if (!clienteId) return;
+  try {
+    const { data: cliente } = await supabase
+      .from("clientes")
+      .select("usuario_id, correo")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    let usuarioId = cliente?.usuario_id;
+    if (!usuarioId && cliente?.correo) {
+      const { data: usuario } = await supabase.from("usuarios").select("id").eq("correo", cliente.correo).maybeSingle();
+      usuarioId = usuario?.id;
+    }
+
+    if (!usuarioId) return;
+
+    const estadoStr = estadoLabel(nuevoEstado);
+    const isFinished = nuevoEstado === "entregado" || nuevoEstado === "terminado";
+    const titulo = isFinished ? "Proyecto finalizado" : "Actualización de tu proyecto";
+    const mensaje = isFinished
+      ? `Tu proyecto "${tituloProyecto}" ha sido finalizado. ¡Gracias por tu confianza!`
+      : `El estado de tu proyecto "${tituloProyecto}" ha cambiado a: ${estadoStr}.`;
+
+    await invokeEdgeFunction("enviar-notificacion", {
+      body: { usuario_id: usuarioId, proyecto_id: proyectoId, titulo, mensaje },
+      userToken: session?.access_token || "",
+    });
+  } catch (err) {
+    console.warn("[notifyClientStateChange] error:", err);
+  }
+};
+
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
 /*
@@ -1542,6 +1621,16 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         });
       }
 
+      if (!error && form.estado !== editTarget.estado) {
+        await notifyClientStateChange({
+          proyectoId: editTarget.id,
+          clienteId: form.cliente_id,
+          tituloProyecto: form.titulo,
+          nuevoEstado: form.estado,
+          session,
+        });
+      }
+
       if (!error) {
         const { data: existingCotizacion, error: quoteFetchError } = await supabase
           .from("cotizaciones")
@@ -2722,7 +2811,16 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
       {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
       {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
-      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="administrador" canManage />}
+      {activeModule === "citas" && (
+        <CitasModule darkMode={darkMode} role="administrador" canManage onAppointmentCreated={(data) => {
+          notifyAdminNewAppointment({
+            citaId: data.citaId,
+            clienteId: data.clienteId,
+            fechaHora: `${data.fecha} ${data.hora}`,
+            session
+          });
+        }} />
+      )}
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
       {activeModule === "historial-servicios" && <HistorialServiciosAdminWrapper darkMode={darkMode} />}
       {activeModule === "reportes" && <ReportesOperativosWrapper darkMode={darkMode} />}
@@ -2931,6 +3029,13 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
       if (!json?.success) {
         throw new Error(json?.error || "No se pudo registrar el pago.");
       }
+
+      await notifyAdminPayment({
+        proyectoId: selectedTicket.id,
+        tituloProyecto: selectedTicket.titulo,
+        monto: montoTotal,
+        session,
+      });
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
@@ -3696,7 +3801,14 @@ const DashboardCliente = ({ session, darkMode }) => {
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Cliente" onNotificationClick={handleNotificationClick}>
       {activeModule === "mis-proyectos" && <MisProyectosModule darkMode={darkMode} clienteId={clienteId} session={session} initialProjectId={notifProjectId} />}
       {activeModule === "mis-vehiculos" && <MisVehiculosModule darkMode={darkMode} clienteId={clienteId} />}
-      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} />}
+      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="cliente" clienteId={clienteId} onAppointmentCreated={(data) => {
+        notifyAdminNewAppointment({
+          citaId: data.citaId,
+          clienteId: data.clienteId,
+          fechaHora: `${data.fecha} ${data.hora}`,
+          session
+        });
+      }} />}
       {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
     </DashboardShell>
   );
@@ -3758,6 +3870,14 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
     setProyectos((prev) =>
       prev.map((p) => p.id === proyecto.id ? { ...p, estado: nuevoEstado } : p)
     );
+
+    await notifyClientStateChange({
+      proyectoId: proyecto.id,
+      clienteId: proyecto.cliente_id,
+      tituloProyecto: proyecto.titulo,
+      nuevoEstado: nuevoEstado,
+      session,
+    });
   };
 
   const [detalle, setDetalle] = useState(null);

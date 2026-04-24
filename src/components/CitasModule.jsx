@@ -170,6 +170,7 @@ export default function CitasModule({
   role = "cliente",
   clienteId = null,
   canManage = false,
+  onAppointmentCreated = null,
 }) {
   const [citas, setCitas] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
@@ -567,6 +568,15 @@ export default function CitasModule({
         throw new Error(message);
       }
       if (!data?.success) throw new Error(data?.error || "No se pudo agendar la cita.");
+      
+      if (onAppointmentCreated) {
+        onAppointmentCreated({
+          citaId: data.cita?.id,
+          clienteId: selectedClienteId,
+          fecha: form.fecha,
+          hora: form.hora
+        });
+      }
 
       setModalOpen(false);
       setModalError("");
