@@ -15,6 +15,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
   const [fotos, setFotos] = useState({});
   const [loadingFotos, setLoadingFotos] = useState({});
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [fechaInicio, setFechaInicio] = useState("");
+  const [fechaFin, setFechaFin] = useState("");
   const [generandoPDF, setGenerandoPDF] = useState({});
   const detailRef = useRef(null);
 
@@ -25,13 +27,6 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
   const [rtTick, setRtTick] = useState(0);
   useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
   useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
-
-  useEffect(() => {
-    fetchServicios();
-    if (expandedServicio) {
-      fetchFotosServicio(expandedServicio, true);
-    }
-  }, [fetchServicios, rtTick]);
 
   const fetchAllServicios = async () => {
     setLoading(true);
@@ -225,8 +220,32 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
     }
   }, [fotos]);
 
+  useEffect(() => {
+    fetchServicios();
+  }, [searchTerm, searchType, rtTick]);
+
+  useEffect(() => {
+    if (expandedServicio) {
+      fetchFotosServicio(expandedServicio, true);
+    }
+  }, [expandedServicio]);
+
   const serviciosFiltrados = servicios.filter((s) => {
     if (filtroEstado !== "todos" && s.estado !== filtroEstado) return false;
+    
+    if (fechaInicio || fechaFin) {
+      const fechaServicio = new Date(s.fecha_ingreso);
+      if (fechaInicio) {
+        const inicio = new Date(fechaInicio);
+        if (fechaServicio < inicio) return false;
+      }
+      if (fechaFin) {
+        const fin = new Date(fechaFin);
+        fin.setHours(23, 59, 59, 999);
+        if (fechaServicio > fin) return false;
+      }
+    }
+    
     return true;
   });
 
@@ -360,7 +379,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
 
       {/* Búsqueda */}
       <div className={`mx-4 md:mx-6 mb-6 rounded-lg p-4 border ${bgCard}`}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div className="md:col-span-2">
             <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Buscar por</label>
             <div className="flex gap-2">
@@ -402,6 +421,26 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
             </select>
           </div>
 
+          <div>
+            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Desde</label>
+            <input
+              type="date"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
+            />
+          </div>
+
+          <div>
+            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Hasta</label>
+            <input
+              type="date"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
+            />
+          </div>
+
           <div className="flex items-end">
             <button
               onClick={searchTerm.trim() ? fetchServicios : fetchAllServicios}
@@ -429,11 +468,11 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
             <p className={`text-sm ${textSecondary}`}>
               {servicios.length === 0
                 ? "No hay servicios registrados"
-                : `No hay servicios con el estado "${filtroEstado}"`}
+                : `No hay servicios que coincidan con los filtros seleccionados`}
             </p>
-            {servicios.length === 0 && searchTerm && (
+            {servicios.length > 0 && (
               <p className={`text-xs ${textTertiary} mt-2`}>
-                Búsqueda: "{searchTerm}" • Prueba con otros términos
+                Verifica los filtros: estado, rango de fechas o término de búsqueda
               </p>
             )}
           </div>
