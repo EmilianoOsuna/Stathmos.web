@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import Ticket from "./Ticket";
 import { formatDateWorkshop } from "../utils/datetime";
 
@@ -11,9 +12,12 @@ export default function HistorialTickets({ darkMode = false }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("reciente");
 
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
+
   useEffect(() => {
     fetchTickets();
-  }, []);
+  }, [rtTick]);
 
   const fetchTickets = async () => {
     try {

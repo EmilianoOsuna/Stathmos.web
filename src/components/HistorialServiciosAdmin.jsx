@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { formatDateWorkshop, formatDateTimeWorkshop } from "../utils/datetime";
 import { ChevronDown, Download, Eye, Search, Filter, X, Printer } from "lucide-react";
 import jsPDF from "jspdf";
@@ -21,9 +22,16 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
   const [lightbox, setLightbox] = useState(null);
 
   // Cargar todos los servicios al inicializar
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
+
   useEffect(() => {
-    fetchAllServicios();
-  }, []);
+    fetchServicios();
+    if (expandedServicio) {
+      fetchFotosServicio(expandedServicio, true);
+    }
+  }, [fetchServicios, rtTick]);
 
   const fetchAllServicios = async () => {
     setLoading(true);
@@ -196,8 +204,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
     }
   }, [searchTerm, searchType]);
 
-  const fetchFotosServicio = useCallback(async (servicioId) => {
-    if (fotos[servicioId]) return; // Ya cargadas
+  const fetchFotosServicio = useCallback(async (servicioId, force = false) => {
+    if (!force && fotos[servicioId]) return; // Ya cargadas
 
     setLoadingFotos((prev) => ({ ...prev, [servicioId]: true }));
     try {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 
 const C_BLUE = "#60aebb";
 
@@ -39,6 +40,10 @@ export default function ProveedoresModule({ darkMode }) {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("proveedores", () => setRtTick(t => t + 1));
+  useEffect(() => { fetchAll(); }, [rtTick]);
 
   const showStatus = (type, message) => setStatus({ type, message });
 

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 
 const C_BLUE = "#60aebb";
 
@@ -41,19 +42,18 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingSave, setPendingSave] = useState(null);
 
-  const fetchAll = async () => {
+  const fetchRefacciones = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("refacciones")
-      .select("id, nombre, descripcion, numero_parte, precio_compra, precio_venta, stock, stock_minimo, activo")
-      .order("nombre");
+    const { data } = await supabase.from("refacciones").select("*").order("numero_parte");
     setRefacciones(data || []);
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    fetchAll();
-  }, []);
+    fetchRefacciones();
+  }, [fetchRefacciones]);
+
+  useSupabaseRealtime("refacciones", fetchRefacciones);
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>

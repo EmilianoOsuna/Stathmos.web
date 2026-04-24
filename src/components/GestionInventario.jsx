@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 
 const C_BLUE = "#60aebb";
 const C_RED = "#db3c1c";
@@ -91,6 +92,12 @@ export default function GestionInventario({ darkMode, role = "administrador", in
   useEffect(() => {
     fetchAll();
   }, []);
+
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("refacciones", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("proveedores", () => setRtTick(t => t + 1));
+
+  useEffect(() => { fetchAll(); }, [rtTick]);
 
   useEffect(() => {
     if (initialTab) {

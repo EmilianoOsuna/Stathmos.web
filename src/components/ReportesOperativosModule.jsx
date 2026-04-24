@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity } from "lucide-react";
 import { formatDateWorkshop } from "../utils/datetime";
 import jsPDF from "jspdf";
@@ -50,6 +51,17 @@ export default function ReportesOperativosModule({ darkMode = false }) {
     setFechaFin(hoy.toISOString().split("T")[0]);
     setFechaInicio(hace30Dias.toISOString().split("T")[0]);
   }, []);
+
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("citas", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("cotizaciones", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("compras_refacciones", () => setRtTick(t => t + 1));
+
+  useEffect(() => {
+    if (resumenGeneral) {
+      generateReports();
+    }
+  }, [rtTick]);
 
   const generateReports = async () => {
     if (!fechaInicio || !fechaFin) {

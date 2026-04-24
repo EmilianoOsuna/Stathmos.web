@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import DiagnosticoModal from "./DiagnosticoModal";
 import DiagnosticoView from "./DiagnosticoView";
 import { Plus, Search, AlertCircle } from "lucide-react";
@@ -30,11 +31,15 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
     fetchMecanicoId();
   }, [session]);
 
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("diagnosticos", () => setRtTick(t => t + 1));
+
   useEffect(() => {
     if (mecanico_id) {
       fetchProyectos();
     }
-  }, [mecanico_id]);
+  }, [mecanico_id, rtTick]);
 
   const fetchProyectos = async () => {
     setLoading(true);

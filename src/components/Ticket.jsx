@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { formatDateTimeWorkshop, formatDateWorkshop } from "../utils/datetime";
@@ -42,9 +43,12 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
     confirmacion: false,
   });
 
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("pagos", () => setRtTick(t => t + 1));
+
   useEffect(() => {
     fetchTicket();
-  }, [proyectoId]);
+  }, [proyectoId, rtTick]);
 
   const fetchTicket = async () => {
     try {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import {
   WORKSHOP_OFFSET,
   formatDateWorkshop,
@@ -313,10 +314,14 @@ export default function CitasModule({
     }
   };
 
+  const [rtTick, setRtTick] = useState(0);
+  useSupabaseRealtime("citas", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("dias_inhabiles", () => setRtTick(t => t + 1));
+
   useEffect(() => {
     fetchCitas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, clienteId]);
+  }, [role, clienteId, rtTick]);
 
   useEffect(() => {
     if (isBlockedDate(form.fecha)) {
