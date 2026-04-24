@@ -121,7 +121,24 @@ export default function Login() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Contraseña</label>
+            <div className="flex justify-between items-center">
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Contraseña</label>
+              <button 
+                onClick={async () => {
+                  if (!email.trim()) { setError("Ingresa tu correo para recuperar la contraseña."); return; }
+                  setLoading(true); setError("");
+                  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}/cambiar-contrasena`,
+                  });
+                  setLoading(false);
+                  if (error) setError("Hubo un error. Revisa tu correo e intenta de nuevo.");
+                  else setError("Correo de recuperación enviado. Revisa tu bandeja de entrada.");
+                }}
+                className="text-[10px] hover:underline" style={{ color: "#60aebb" }}
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
             <input
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey}

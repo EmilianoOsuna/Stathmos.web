@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-route
 import supabase from "./supabase";
 import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
+import CambiarContrasena from "./CambiarContrasena";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
 import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdminWrapper";
@@ -3905,6 +3906,7 @@ export default function App() {
       <Routes>
         <Route path="/login"              element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route path="/completar-registro" element={<CompletarRegistro />} />
+        <Route path="/cambiar-contrasena" element={<CambiarContrasena />} />
         <Route path="/dashboard"          element={<ProtectedRoute session={session}><ErrorBoundary>{renderDashboard()}</ErrorBoundary></ProtectedRoute>} />
         <Route path="/ticket/:proyectoId" element={<ProtectedRoute session={session}><TicketWrapper darkMode={darkMode} /></ProtectedRoute>} />
         <Route path="*"                   element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
