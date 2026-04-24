@@ -424,13 +424,33 @@ const ClientesModule = ({ darkMode }) => {
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
   const handleSave = async () => {
-    if (!form.nombre.trim() || !form.telefono.trim()) { setFormError("Nombre y teléfono son obligatorios."); return; }
+    if (!form.nombre.trim()) { setFormError("Nombre es obligatorio."); return; }
     setSaving(true); setFormError("");
-    const { error } = editTarget
-      ? await supabase.from("clientes").update({ ...form, updated_at: new Date().toISOString() }).eq("id", editTarget.id)
-      : await supabase.from("clientes").insert([form]);
+    
+    let resultError = null;
+
+    if (editTarget) {
+      const { error } = await supabase.from("clientes").update({ ...form, updated_at: new Date().toISOString() }).eq("id", editTarget.id);
+      resultError = error?.message;
+    } else {
+      if (!form.correo?.trim()) { setFormError("El correo es obligatorio para invitar al cliente."); setSaving(false); return; }
+      
+      const { data, error } = await supabase.functions.invoke('crear-cliente', {
+        body: {
+          nombre: form.nombre,
+          correo: form.correo,
+          telefono: form.telefono,
+          rfc: form.rfc,
+          direccion: form.direccion
+        }
+      });
+      console.log("Respuesta de la función:", data);
+      console.log("Error de conexión:", error);
+      resultError = error?.message || (data && !data.success ? data.error : null);
+    }
+
     setSaving(false);
-    if (error) { setFormError(error.message); return; }
+    if (resultError) { setFormError(resultError); return; }
     setModalOpen(false); fetchClientes();
   };
 
@@ -612,6 +632,7 @@ const EmpleadosModule = ({ darkMode }) => {
     setEditTarget(null);
     setForm({
       usuario_id: "",
+      rol_destino: "Mecánico",
       nombre: "",
       telefono: "",
       correo: "",
@@ -628,6 +649,7 @@ const EmpleadosModule = ({ darkMode }) => {
     setEditTarget(e);
     setForm({
       usuario_id: e.usuario_id || "",
+      rol_destino: "Mecánico",
       nombre: e.nombre || "",
       telefono: e.telefono || "",
       correo: e.correo || "",
@@ -641,32 +663,51 @@ const EmpleadosModule = ({ darkMode }) => {
   };
 
   const handleSave = async () => {
-    if (!form.usuario_id || !form.nombre.trim() || !form.correo.trim()) {
-      setFormError("Usuario, nombre y correo son obligatorios.");
-      return;
-    }
-
     setSaving(true);
     setFormError("");
 
-    const payload = {
-      usuario_id: form.usuario_id,
-      nombre: form.nombre.trim(),
-      telefono: form.telefono.trim() || null,
-      correo: form.correo.trim().toLowerCase(),
-      rfc: form.rfc.trim().toUpperCase() || null,
-      fecha_ingreso: form.fecha_ingreso || null,
-      disponible: form.disponible,
-      activo: form.activo,
-      updated_at: new Date().toISOString(),
-    };
+    let resultError = null;
 
-    const { error } = editTarget
-      ? await supabase.from("empleados").update(payload).eq("id", editTarget.id)
-      : await supabase.from("empleados").insert([payload]);
+    if (editTarget) {
+      if (!form.nombre.trim() || !form.correo.trim()) {
+        setFormError("Nombre y correo son obligatorios.");
+        setSaving(false); return;
+      }
+      
+      const payload = {
+        nombre: form.nombre.trim(),
+        telefono: form.telefono.trim() || null,
+        correo: form.correo.trim().toLowerCase(),
+        rfc: form.rfc.trim().toUpperCase() || null,
+        fecha_ingreso: form.fecha_ingreso || null,
+        disponible: form.disponible,
+        activo: form.activo,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("empleados").update(payload).eq("id", editTarget.id);
+      resultError = error?.message;
+    } else {
+      if (!form.nombre.trim() || !form.correo.trim() || !form.rol_destino) {
+        setFormError("Nombre, correo y rol son obligatorios.");
+        setSaving(false); return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('crear-empleado', {
+        body: {
+          nombre: form.nombre.trim(),
+          correo: form.correo.trim().toLowerCase(),
+          telefono: form.telefono.trim() || null,
+          rfc: form.rfc.trim().toUpperCase() || null,
+          rol_destino: form.rol_destino,
+          fecha_contratacion: form.fecha_ingreso || null,
+        }
+      });
+      resultError = error?.message || (data && !data.success ? data.error : null);
+    }
 
     setSaving(false);
-    if (error) { setFormError(error.message); return; }
+    if (resultError) { setFormError(resultError); return; }
     setModalOpen(false);
     fetchAll();
   };
@@ -800,14 +841,14 @@ const EmpleadosModule = ({ darkMode }) => {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? "Editar Empleado" : "Nuevo Empleado"} darkMode={darkMode}>
         <div className="flex flex-col gap-4">
-          <Field label="Usuario (usuario_id)" required darkMode={darkMode}>
-            <Select darkMode={darkMode} value={form.usuario_id} onChange={(e) => setForm({ ...form, usuario_id: e.target.value })}>
-              <option value="">Seleccionar usuario…</option>
-              {usuarios.map((u) => (
-                <option key={u.id} value={u.id}>{u.nombre} · {u.correo}</option>
-              ))}
-            </Select>
-          </Field>
+          {!editTarget && (
+            <Field label="Rol del empleado" required darkMode={darkMode}>
+              <Select darkMode={darkMode} value={form.rol_destino || "Mecánico"} onChange={(e) => setForm({ ...form, rol_destino: e.target.value })}>
+                <option value="Mecánico">Mecánico</option>
+                <option value="Administrador">Administrador</option>
+              </Select>
+            </Field>
+          )}
 
           <Field label="Nombre" required darkMode={darkMode}>
             <Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Nombre del empleado" />

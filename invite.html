@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invitación a Stathmos</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f9fafb;
+      color: #333333;
+      margin: 0;
+      padding: 0;
+    }
+    /* 1. Agregamos un borde cyan en la parte superior del contenedor para que resalte */
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      border-top: 6px solid #5ba2af; /* <--- AQUÍ ESTÁ EL CYAN */
+    }
+
+    /* 2. Actualizamos el color de los enlaces al tono cyan exacto de tu dibujo */
+    a {
+      color: #5ba2af; /* <--- AQUÍ ESTÁ EL CYAN */
+      text-decoration: underline;
+    }
+    .header {
+      background-color: #ffffff; /* Fondo blanco para que el arte de línea destaque */
+      padding: 40px 24px 20px 24px;
+      text-align: center;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .logo-img {
+      max-width: 350px;
+      height: auto;
+      margin-bottom: 20px;
+    }
+    .content {
+      padding: 32px 24px;
+      line-height: 1.6;
+    }
+    .content p {
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .button-container {
+      text-align: center;
+      margin: 32px 0;
+    }
+    .button {
+      background-color: #c74d32; /* El rojo cálido terracota de tu imagen */
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      display: inline-block;
+      transition: background-color 0.2s;
+    }
+    .button:hover {
+      background-color: #ac3d26;
+    }
+    .footer {
+      background-color: #f9fafb;
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      color: #6b7280;
+      border-top: 1px solid #f3f4f6;
+    }
+    a {
+      color: #1a5e7b; /* El azul turquesa de tu imagen para los enlaces */
+      text-decoration: underline;
+    }
+    .plain-link {
+      word-break: break-all;
+      font-size: 14px;
+      color: #4b5563;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="C:\Users\emiliano_osuna\Documents\TEC\INGENIERÍA DE SOFTWARE\Stathmos.web\src\assets\logo.svg" alt="Stathmos - Gestión de Taller" class="logo-img">
+    </div>
+    <div class="content">
+      <p>Hola,</p>
+      <p>Te hemos invitado a crear una cuenta en <strong>Stathmos</strong>, el sistema integral para la gestión de tu taller.</p>
+      <p>Con tu nueva cuenta, podrás acceder a las herramientas y datos asignados a tu rol de inmediato.</p>
+      <p>Para aceptar esta invitación y establecer tu contraseña, simplemente haz clic en el botón de abajo:</p>
+      
+      <div class="button-container">
+        <a href="{{ .ConfirmationURL }}" class="button">Aceptar Invitación</a>
+      </div>
+      
+      <p>Si el botón no funciona, copia y pega este enlace directamente en tu navegador:</p>
+      <p><a href="{{ .ConfirmationURL }}" class="plain-link">{{ .ConfirmationURL }}</a></p>
+      
+      <p>Saludos,<br>El equipo de Stathmos</p>
+    </div>
+    <div class="footer">
+      <p>Si no esperabas esta invitación, puedes ignorar este correo de forma segura.</p>
+    </div>
+  </div>
+</body>
+</html>

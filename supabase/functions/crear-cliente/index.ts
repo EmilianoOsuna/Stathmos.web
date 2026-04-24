@@ -41,11 +41,14 @@ serve(async (req) => {
     if (dbError) throw dbError;
 
     // 2. Enviar invite por correo
-    // El trigger fn_crear_perfil_y_rol crea public.usuarios automáticamente
-    // cuando el cliente acepta el invite y confirma su cuenta
+    // Obtenemos el origen para que funcione tanto en local (http://localhost:5173) como en prod
+    const origin = req.headers.get("origin") || "https://stathmos.online";
+    
+    // El trigger en la base de datos crea public.usuarios y vincula el public.clientes automáticamente
+    // al ser llamado o por el RPC desde el cliente.
     const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(correo, {
       data: { rol: "cliente", nombre },
-      redirectTo: "https://stathmos.online/completar-registro",
+      redirectTo: `${origin}/completar-registro`,
     });
 
     if (inviteError) throw inviteError;

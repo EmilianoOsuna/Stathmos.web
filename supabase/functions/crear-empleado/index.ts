@@ -17,41 +17,58 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { nombre, correo, telefono, puesto, fecha_contratacion, contraseña } = await req.json();
+    // --- SEGURIDAD: Validar que sea un Admin quien invita ---
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    
+    if (!token) {
+      throw new Error("No hay sesión activa.");
+    }
 
-    // Validar campos requeridos
-    if (!nombre || !correo || !contraseña || !puesto) {
+    const { data: { user: adminUser }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    // Verificamos en los metadatos de Supabase Auth si es Administrador
+    if (userError || adminUser?.user_metadata?.rol?.toLowerCase() !== 'administrador') {
+      throw new Error("No tienes permisos para invitar empleados. Solo administradores pueden hacer esto.");
+    }
+
+    const { nombre, correo, telefono, rfc, rol_destino, fecha_contratacion } = await req.json();
+
+    if (!nombre || !correo || !rol_destino) {
       return new Response(
-        JSON.stringify({ success: false, error: "Faltan campos requeridos: nombre, correo, puesto, contraseña" }),
+        JSON.stringify({ success: false, error: "Faltan campos requeridos." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
       );
     }
 
-    // 1. Crear usuario en auth.users
-    // El trigger fn_crear_perfil_y_rol se encarga de:
-    //   - Crear el registro en public.usuarios
-    //   - Inyectar el rol en app_metadata del JWT
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: correo,
-      password: contraseña,
-      email_confirm: true,
-      user_metadata: { nombre, rol: "mecanico" }, // el trigger lee de aquí
+    // Determinamos el origen para el redireccionamiento
+    const origin = req.headers.get("origin") || "https://stathmos.online";
+
+    // 1. Crear y enviar invite por correo 
+    // El trigger `tr_crear_perfil_usuario` leerá el rol ('Mecánico' o 'Administrador') 
+    // lo insertará en public.roles si no existe y luego en public.usuarios
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(correo, {
+      redirectTo: `${origin}/completar-registro`,
+      data: { nombre, rol: rol_destino },
     });
 
     if (authError) throw authError;
 
     // 2. Insertar en public.empleados
-    // usuario_id apunta a public.usuarios (que el trigger ya creó)
     const { error: dbError } = await supabaseAdmin.from("empleados").insert({
       usuario_id: authData.user.id,
       nombre,
       correo,
-      telefono,
-      puesto,
-      fecha_ingreso: fecha_contratacion ?? null,
+      telefono: telefono ?? null,
+      rfc: rfc ?? null,
+      fecha_ingreso: fecha_contratacion ?? new Date().toISOString().split('T')[0],
     });
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      // Si falla la tabla, borramos el "fantasma" que Auth creó para limpiar el error
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      throw dbError;
+    }
 
     return new Response(
       JSON.stringify({ success: true }),
