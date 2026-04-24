@@ -25,6 +25,24 @@ const C_RED  = "#db3c1c";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// ─── Text Normalization (SAT Compliance) ──────────────────────────────────────
+const normalizeForSAT = (str) => {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remueve acentos
+    .toUpperCase()
+    .trim();
+};
+
+const normalizeUI = (str) => {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+};
+
 // ─── Logo ─────────────────────────────
 const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
   <svg className={className} viewBox="0 0 6000 3375" xmlns="http://www.w3.org/2000/svg"
@@ -639,22 +657,29 @@ const ClientesModule = ({ darkMode }) => {
   const handleSave = async () => {
     if (!form.nombre.trim()) { setFormError("Nombre es obligatorio."); return; }
     setSaving(true); setFormError("");
+
+    const normalizedForm = {
+      ...form,
+      nombre: normalizeForSAT(form.nombre),
+      direccion: normalizeForSAT(form.direccion),
+      rfc: normalizeForSAT(form.rfc),
+    };
     
     let resultError = null;
 
     if (editTarget) {
-      const { error } = await supabase.from("clientes").update({ ...form, updated_at: new Date().toISOString() }).eq("id", editTarget.id);
+      const { error } = await supabase.from("clientes").update({ ...normalizedForm, updated_at: new Date().toISOString() }).eq("id", editTarget.id);
       resultError = error?.message;
     } else {
       if (!form.correo?.trim()) { setFormError("El correo es obligatorio para invitar al cliente."); setSaving(false); return; }
       
       const { data, error } = await supabase.functions.invoke('crear-cliente', {
         body: {
-          nombre: form.nombre,
-          correo: form.correo,
-          telefono: form.telefono,
-          rfc: form.rfc,
-          direccion: form.direccion
+          nombre: normalizedForm.nombre,
+          correo: form.correo.trim().toLowerCase(),
+          telefono: form.telefono.trim(),
+          rfc: normalizedForm.rfc,
+          direccion: normalizedForm.direccion
         }
       });
       console.log("Respuesta de la función:", data);
@@ -774,11 +799,11 @@ const ClientesModule = ({ darkMode }) => {
       {/* Create/Edit modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? "Editar Cliente" : "Nuevo Cliente"} darkMode={darkMode}>
         <div className="flex flex-col gap-4">
-          <Field label="Nombre" required darkMode={darkMode}><Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} placeholder="Juan García" /></Field>
+          <Field label="Nombre" required darkMode={darkMode}><Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({...form, nombre: normalizeUI(e.target.value)})} placeholder="JUAN GARCIA" /></Field>
           <Field label="Teléfono" required darkMode={darkMode}><Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} placeholder="311 123 4567" /></Field>
           <Field label="Correo" darkMode={darkMode}><Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({...form, correo: e.target.value})} placeholder="juan@correo.com" /></Field>
-          <Field label="Dirección" darkMode={darkMode}><Textarea darkMode={darkMode} rows={2} value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} placeholder="Calle, Colonia, Ciudad" /></Field>
-          <Field label="RFC" darkMode={darkMode}><Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({...form, rfc: e.target.value.toUpperCase()})} placeholder="GARC800101ABC" className="font-mono" /></Field>
+          <Field label="Dirección" darkMode={darkMode}><Textarea darkMode={darkMode} rows={2} value={form.direccion} onChange={(e) => setForm({...form, direccion: normalizeUI(e.target.value)})} placeholder="CALLE, COLONIA, CIUDAD" /></Field>
+          <Field label="RFC" darkMode={darkMode}><Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({...form, rfc: normalizeUI(e.target.value)})} placeholder="GARC800101ABC" className="font-mono" /></Field>
           <Field label="Estado" darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.activo ? "true" : "false"} onChange={(e) => setForm({...form, activo: e.target.value === "true"})}>
               <option value="true">Activo</option><option value="false">Inactivo</option>
@@ -889,10 +914,10 @@ const EmpleadosModule = ({ darkMode }) => {
       }
       
       const payload = {
-        nombre: form.nombre.trim(),
+        nombre: normalizeForSAT(form.nombre),
         telefono: form.telefono.trim() || null,
         correo: form.correo.trim().toLowerCase(),
-        rfc: form.rfc.trim().toUpperCase() || null,
+        rfc: normalizeForSAT(form.rfc) || null,
         fecha_ingreso: form.fecha_ingreso || null,
         disponible: form.disponible,
         activo: form.activo,
@@ -909,10 +934,10 @@ const EmpleadosModule = ({ darkMode }) => {
 
       const { data, error } = await supabase.functions.invoke('crear-empleado', {
         body: {
-          nombre: form.nombre.trim(),
+          nombre: normalizeForSAT(form.nombre),
           correo: form.correo.trim().toLowerCase(),
           telefono: form.telefono.trim() || null,
-          rfc: form.rfc.trim().toUpperCase() || null,
+          rfc: normalizeForSAT(form.rfc) || null,
           rol_destino: form.rol_destino,
           fecha_contratacion: form.fecha_ingreso || null,
         }
@@ -1065,19 +1090,19 @@ const EmpleadosModule = ({ darkMode }) => {
           )}
 
           <Field label="Nombre" required darkMode={darkMode}>
-            <Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Nombre del empleado" />
+            <Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: normalizeUI(e.target.value) })} placeholder="NOMBRE DEL EMPLEADO" />
           </Field>
-
+          
           <Field label="Teléfono" darkMode={darkMode}>
             <Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="311 123 4567" />
           </Field>
-
+          
           <Field label="Correo" required darkMode={darkMode}>
             <Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} placeholder="empleado@stathmos.mx" />
           </Field>
-
+          
           <Field label="RFC" darkMode={darkMode}>
-            <Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} placeholder="GARC800101ABC" className="font-mono" />
+            <Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({ ...form, rfc: normalizeUI(e.target.value) })} placeholder="GARC800101ABC" className="font-mono" />
           </Field>
 
           <Field label="Fecha de ingreso" darkMode={darkMode}>
@@ -1157,7 +1182,17 @@ const VehiculosModule = ({ darkMode }) => {
       setFormError("Año inválido."); return;
     }
     setSaving(true); setFormError("");
-    const payload = { cliente_id: form.cliente_id, marca: form.marca, modelo: form.modelo, anio: form.anio ? parseInt(form.anio) : null, placas: form.placas.toUpperCase(), vin: form.vin || null, color: form.color || null, activo: form.activo, updated_at: new Date().toISOString() };
+    const payload = {
+      cliente_id: form.cliente_id,
+      marca: normalizeForSAT(form.marca),
+      modelo: normalizeForSAT(form.modelo),
+      anio: form.anio ? parseInt(form.anio) : null,
+      placas: normalizeForSAT(form.placas),
+      vin: normalizeForSAT(form.vin) || null,
+      color: normalizeForSAT(form.color) || null,
+      activo: form.activo,
+      updated_at: new Date().toISOString()
+    };
     const { error } = editTarget
       ? await supabase.from("vehiculos").update(payload).eq("id", editTarget.id)
       : await supabase.from("vehiculos").insert([payload]);
@@ -1287,18 +1322,18 @@ const VehiculosModule = ({ darkMode }) => {
             </Select>
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Marca" required darkMode={darkMode}><Input darkMode={darkMode} value={form.marca} onChange={(e) => setForm({...form, marca: e.target.value})} placeholder="Toyota" /></Field>
-            <Field label="Modelo" required darkMode={darkMode}><Input darkMode={darkMode} value={form.modelo} onChange={(e) => setForm({...form, modelo: e.target.value})} placeholder="Corolla" /></Field>
+            <Field label="Marca" required darkMode={darkMode}><Input darkMode={darkMode} value={form.marca} onChange={(e) => setForm({...form, marca: normalizeUI(e.target.value)})} placeholder="TOYOTA" /></Field>
+            <Field label="Modelo" required darkMode={darkMode}><Input darkMode={darkMode} value={form.modelo} onChange={(e) => setForm({...form, modelo: normalizeUI(e.target.value)})} placeholder="COROLLA" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Año" darkMode={darkMode}><Input darkMode={darkMode} type="number" value={form.anio} onChange={(e) => setForm({...form, anio: e.target.value})} placeholder="2018" /></Field>
-            <Field label="Color" darkMode={darkMode}><Input darkMode={darkMode} value={form.color} onChange={(e) => setForm({...form, color: e.target.value})} placeholder="Blanco" /></Field>
+            <Field label="Color" darkMode={darkMode}><Input darkMode={darkMode} value={form.color} onChange={(e) => setForm({...form, color: normalizeUI(e.target.value)})} placeholder="BLANCO" /></Field>
           </div>
           <Field label="Placas" required darkMode={darkMode}>
-            <Input darkMode={darkMode} value={form.placas} onChange={(e) => setForm({...form, placas: e.target.value.toUpperCase()})} placeholder="ABC-123-D" className="font-mono" />
+            <Input darkMode={darkMode} value={form.placas} onChange={(e) => setForm({...form, placas: normalizeUI(e.target.value)})} placeholder="ABC-123-D" className="font-mono" />
           </Field>
           <Field label="VIN" darkMode={darkMode}>
-            <Input darkMode={darkMode} value={form.vin} onChange={(e) => setForm({...form, vin: e.target.value.toUpperCase()})} placeholder="1HGCM82633A123456" className="font-mono" />
+            <Input darkMode={darkMode} value={form.vin} onChange={(e) => setForm({...form, vin: normalizeUI(e.target.value)})} placeholder="1HGCM82633A123456" className="font-mono" />
           </Field>
           <Field label="Estado" darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.activo ? "true" : "false"} onChange={(e) => setForm({...form, activo: e.target.value === "true"})}>
@@ -1591,7 +1626,16 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       return null;
     };
 
-    const payload = { titulo: form.titulo, descripcion: form.descripcion||null, cliente_id: form.cliente_id, vehiculo_id: form.vehiculo_id, mecanico_id: form.mecanico_id||null, estado: form.estado, bloqueado: form.bloqueado, updated_at: new Date().toISOString() };
+    const payload = {
+      titulo: normalizeForSAT(form.titulo),
+      descripcion: form.descripcion || null,
+      cliente_id: form.cliente_id,
+      vehiculo_id: form.vehiculo_id,
+      mecanico_id: form.mecanico_id || null,
+      estado: form.estado,
+      bloqueado: form.bloqueado,
+      updated_at: new Date().toISOString()
+    };
     let error = null;
 
     if (editTarget) {
@@ -1842,7 +1886,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       {/* Create/Edit modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? "Editar Proyecto" : "Nuevo Proyecto"} darkMode={darkMode}>
         <div className="flex flex-col gap-4">
-          <Field label="Título del Proyecto" required darkMode={darkMode}><Input darkMode={darkMode} value={form.titulo} onChange={(e) => setForm({...form, titulo: e.target.value})} placeholder="Diagnóstico general / Cambio de frenos…" /></Field>
+          <Field label="Título del Proyecto" required darkMode={darkMode}><Input darkMode={darkMode} value={form.titulo} onChange={(e) => setForm({...form, titulo: normalizeUI(e.target.value)})} placeholder="DIAGNOSTICO GENERAL" /></Field>
           <Field label="Descripción" darkMode={darkMode}><Textarea darkMode={darkMode} rows={3} value={form.descripcion} onChange={(e) => setForm({...form, descripcion: e.target.value})} placeholder="Detalles del servicio…" /></Field>
           <Field label="Cliente" required darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.cliente_id} onChange={(e) => setForm({...form, cliente_id: e.target.value, vehiculo_id: ""})}>
