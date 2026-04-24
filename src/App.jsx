@@ -4240,10 +4240,6 @@ export default function App() {
   }
 
   const rol = getRoleFromSession(session);
-  const authHashParams = new URLSearchParams(window.location.hash.replace("#", ""));
-  const authFlowType = authHashParams.get("type");
-  const isInviteFlow = authFlowType === "invite" || authFlowType === "signup";
-  const isRecoveryFlow = authFlowType === "recovery";
 
   const renderDashboard = () => {
     if (rol === "mecanico")       return <DashboardMecanico session={session} darkMode={darkMode} />;
@@ -4254,21 +4250,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/login"
-          element={
-            isInviteFlow
-              ? <Navigate to={{ pathname: "/completar-registro", hash: window.location.hash }} replace />
-              : isRecoveryFlow
-              ? <Navigate to={{ pathname: "/cambiar-contrasena", hash: window.location.hash }} replace />
-              : session
-              ? <Navigate to="/dashboard" replace />
-              : <Login />
-          }
-        />
+        <Route path="/login"              element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route path="/completar-registro" element={<CompletarRegistro />} />
         <Route path="/cambiar-contrasena" element={<CambiarContrasena />} />
-        <Route path="/actualizar-password" element={<CambiarContrasena />} />
         <Route path="/dashboard"          element={<ProtectedRoute session={session}><ErrorBoundary>{renderDashboard()}</ErrorBoundary></ProtectedRoute>} />
         <Route path="/ticket/:proyectoId" element={<ProtectedRoute session={session}><TicketWrapper darkMode={darkMode} /></ProtectedRoute>} />
         <Route path="*"                   element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
