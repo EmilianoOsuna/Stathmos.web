@@ -16,29 +16,32 @@ const fmtMoney = (value) => {
 export default function CompraRefacciones({ darkMode }) {
   const [refacciones, setRefacciones] = useState([]);
   const [proveedores, setProveedores] = useState([]);
+  const [proyectos, setProyectos] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
   const [proveedorId, setProveedorId] = useState("");
+  const [proyectoId, setProyectoId] = useState(""); 
   const [status, setStatus] = useState({ type: "", message: "" });
   const [saving, setSaving] = useState(false);
 
+  // ÚNICA declaración de fetchAll corregida
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: refData }, { data: provData }] = await Promise.all([
-      supabase
-        .from("refacciones")
-        .select("id, nombre, numero_parte, precio_compra, stock")
-        .order("nombre"),
-      supabase
-        .from("proveedores")
-        .select("id, nombre")
-        .eq("activo", true)
-        .order("nombre"),
-    ]);
-    setRefacciones(refData || []);
-    setProveedores(provData || []);
-    setLoading(false);
+    try {
+      const [{ data: refData }, { data: provData }, { data: projData }] = await Promise.all([
+        supabase.from("refacciones").select("id, nombre, numero_parte, precio_compra, stock").order("nombre"),
+        supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre"),
+        supabase.from("proyectos").select("id, titulo").neq("estado", "cancelado").neq("estado", "entregado").order("titulo")
+      ]);
+      setRefacciones(refData || []);
+      setProveedores(provData || []);
+      setProyectos(projData || []);
+    } catch (err) {
+      console.error("Error cargando datos:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -59,21 +62,16 @@ export default function CompraRefacciones({ darkMode }) {
       const existing = prev.find((item) => item.id === refaccion.id);
       if (existing) {
         return prev.map((item) =>
-          item.id === refaccion.id
-            ? { ...item, cantidad: item.cantidad + 1 }
-            : item
+          item.id === refaccion.id ? { ...item, cantidad: item.cantidad + 1 } : item
         );
       }
-      return [
-        ...prev,
-        {
-          id: refaccion.id,
-          nombre: refaccion.nombre,
-          numero_parte: refaccion.numero_parte,
-          cantidad: 1,
-          precio_unit: Number(refaccion.precio_compra || 0),
-        },
-      ];
+      return [...prev, {
+        id: refaccion.id,
+        nombre: refaccion.nombre,
+        numero_parte: refaccion.numero_parte,
+        cantidad: 1,
+        precio_unit: Number(refaccion.precio_compra || 0),
+      }];
     });
   };
 
@@ -95,20 +93,14 @@ export default function CompraRefacciones({ darkMode }) {
     setSaving(true);
     try {
       for (const item of cart) {
-        const cantidadNum = Number(item.cantidad);
-        const precioUnitNum = Number(item.precio_unit);
-
-        if (!Number.isFinite(cantidadNum) || cantidadNum <= 0 || !Number.isFinite(precioUnitNum) || precioUnitNum < 0) {
-          throw new Error("Cantidad o precio unitario invalido.");
-        }
-
         const { data, error } = await supabase.functions.invoke("gestionar-inventario", {
           body: {
             tipo_operacion: "COMPRA",
             refaccion_id: item.id,
-            cantidad: cantidadNum,
-            precio_unit: precioUnitNum,
+            cantidad: Number(item.cantidad),
+            precio_unit: Number(item.precio_unit),
             proveedor_id: proveedorId || null,
+            proyecto_id: proyectoId || null, 
           },
         });
 
@@ -120,6 +112,7 @@ export default function CompraRefacciones({ darkMode }) {
       showStatus("success", "Compra registrada y stock actualizado.");
       setCart([]);
       setProveedorId("");
+      setProyectoId("");
       await fetchAll();
     } catch (err) {
       showStatus("error", err?.message || "Error al registrar la compra.");
@@ -143,53 +136,27 @@ export default function CompraRefacciones({ darkMode }) {
       </div>
 
       {status.message && (
-        <div
-          className={`mb-4 rounded-md border px-4 py-3 text-sm ${
-            status.type === "success"
-              ? darkMode
-                ? "border-emerald-900/50 bg-emerald-900/20 text-emerald-300"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : darkMode
-              ? "border-red-900/50 bg-red-900/20 text-red-300"
-              : "border-red-200 bg-red-50 text-red-700"
-          }`}
-        >
+        <div className={`mb-4 rounded-md border px-4 py-3 text-sm ${status.type === "success" ? "bg-emerald-900/20 text-emerald-300" : "bg-red-900/20 text-red-300"}`}>
           {status.message}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
         <div className={`rounded-xl border p-4 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
-          <div className="mb-3">
-            <input
-              className={inputCls(darkMode)}
-              placeholder="Buscar refaccion por nombre o numero de parte..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
+          <input className={inputCls(darkMode)} placeholder="Buscar refaccion..." value={search} onChange={(e) => setSearch(e.target.value)} />
           {loading ? (
             <div className={`p-12 text-center ${st} text-sm`}>Cargando...</div>
-          ) : filtered.length === 0 ? (
-            <div className={`p-12 text-center ${st} text-sm`}>Sin resultados</div>
           ) : (
-            <div className={`divide-y ${divider}`}>
+            <div className={`divide-y ${divider} mt-3`}>
               {filtered.map((r) => (
                 <div key={r.id} className={`py-3 flex items-center justify-between gap-3 ${rowH}`}>
                   <div>
                     <p className={`font-medium ${t}`}>{r.nombre}</p>
                     <p className={`text-xs ${st}`}>{r.numero_parte || "—"}</p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <p className={`text-sm ${st}`}>${fmtMoney(r.precio_compra)}</p>
-                    <button
-                      onClick={() => addToCart(r)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
-                    >
-                      Agregar
-                    </button>
-                  </div>
+                  <button onClick={() => addToCart(r)} className="px-3 py-1.5 rounded-md text-xs font-medium border bg-zinc-800 text-white">
+                    Agregar
+                  </button>
                 </div>
               ))}
             </div>
@@ -198,74 +165,38 @@ export default function CompraRefacciones({ darkMode }) {
 
         <div className={`rounded-xl border p-4 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
           <h3 className={`text-sm font-semibold mb-3 ${t}`}>Carrito</h3>
-          <div className="mb-3">
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Proveedor (opcional)</label>
-            <select className={inputCls(darkMode)} value={proveedorId} onChange={(e) => setProveedorId(e.target.value)}>
-              <option value="">Sin proveedor</option>
-              {proveedores.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre}</option>
-              ))}
-            </select>
-          </div>
-
-          {cart.length === 0 ? (
-            <div className={`py-12 text-center ${st} text-sm`}>Agrega refacciones desde la lista.</div>
-          ) : (
-            <div className={`divide-y ${divider}`}>
-              {cart.map((item) => (
-                <div key={item.id} className="py-3 flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className={`font-medium ${t}`}>{item.nombre}</p>
-                      <p className={`text-xs ${st}`}>{item.numero_parte || "—"}</p>
-                    </div>
-                    <button
-                      onClick={() => removeCartItem(item.id)}
-                      className={`text-xs px-2 py-1 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-red-300" : "border-gray-200 text-gray-500 hover:text-red-500"}`}
-                    >
-                      Quitar
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Cantidad</label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        className={inputCls(darkMode)}
-                        value={item.cantidad}
-                        onChange={(e) => updateCartItem(item.id, { cantidad: Number(e.target.value) })}
-                      />
-                    </div>
-                    <div>
-                      <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Costo</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className={inputCls(darkMode)}
-                        value={item.precio_unit}
-                        onChange={(e) => updateCartItem(item.id, { precio_unit: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+          
+          <div className="space-y-3 mb-4">
+            <div>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Proveedor</label>
+              <select className={inputCls(darkMode)} value={proveedorId} onChange={(e) => setProveedorId(e.target.value)}>
+                <option value="">Sin proveedor</option>
+                {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
             </div>
-          )}
-
-          <div className="mt-4 flex items-center justify-between">
-            <p className={`text-sm ${st}`}>Total</p>
-            <p className={`text-base font-semibold ${t}`}>${fmtMoney(total)}</p>
           </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={saving || cart.length === 0}
-            className="mt-4 w-full px-4 py-2 rounded-lg text-white text-sm font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: C_BLUE, boxShadow: `0 2px 8px ${C_BLUE}40` }}
-          >
+          <div className={`divide-y ${divider}`}>
+            {cart.map((item) => (
+              <div key={item.id} className="py-3 flex flex-col gap-2">
+                <div className="flex justify-between">
+                  <p className={`text-sm font-medium ${t}`}>{item.nombre}</p>
+                  <button onClick={() => removeCartItem(item.id)} className="text-xs text-red-400">Quitar</button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="number" className={inputCls(darkMode)} value={item.cantidad} onChange={(e) => updateCartItem(item.id, { cantidad: Number(e.target.value) })} />
+                  <input type="number" className={inputCls(darkMode)} value={item.precio_unit} onChange={(e) => updateCartItem(item.id, { precio_unit: e.target.value })} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-between items-center">
+            <p className={st}>Total</p>
+            <p className={`text-lg font-bold ${t}`}>${fmtMoney(total)}</p>
+          </div>
+
+          <button onClick={handleSubmit} disabled={saving || cart.length === 0} className="mt-4 w-full py-2 bg-sky-600 rounded-lg text-white font-medium">
             {saving ? "Registrando..." : "Registrar Compra"}
           </button>
         </div>

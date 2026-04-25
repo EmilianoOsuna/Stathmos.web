@@ -16,6 +16,7 @@ import RefaccionesModule from "./components/RefaccionesModule";
 import ProveedoresModule from "./components/ProveedoresModule";
 import CompraRefacciones from "./components/CompraRefacciones";
 import VentaRefacciones from "./components/VentaRefacciones";
+import HistorialRefacciones from "./components/HistorialRefacciones";
 import { loadStripe } from '@stripe/stripe-js';
 import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
 
@@ -655,41 +656,123 @@ const ClientesModule = ({ darkMode }) => {
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
   const handleSave = async () => {
-    if (!form.nombre.trim()) { setFormError("Nombre es obligatorio."); return; }
-    setSaving(true); setFormError("");
-
-    const normalizedForm = {
-      ...form,
-      nombre: normalizeForSAT(form.nombre),
-      direccion: normalizeForSAT(form.direccion),
-      rfc: normalizeForSAT(form.rfc),
-    };
-    
-    let resultError = null;
-
-    if (editTarget) {
-      const { error } = await supabase.from("clientes").update({ ...normalizedForm, updated_at: new Date().toISOString() }).eq("id", editTarget.id);
-      resultError = error?.message;
-    } else {
-      if (!form.correo?.trim()) { setFormError("El correo es obligatorio para invitar al cliente."); setSaving(false); return; }
-      
-      const { data, error } = await supabase.functions.invoke('crear-cliente', {
-        body: {
-          nombre: normalizedForm.nombre,
-          correo: form.correo.trim().toLowerCase(),
-          telefono: form.telefono.trim(),
-          rfc: normalizedForm.rfc,
-          direccion: normalizedForm.direccion
-        }
-      });
-      console.log("Respuesta de la función:", data);
-      console.log("Error de conexión:", error);
-      resultError = error?.message || (data && !data.success ? data.error : null);
+    if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { 
+      setFormError("Título, cliente y vehículo son obligatorios."); 
+      return; 
     }
+    
+    setSaving(true);
+    setFormError("");
 
-    setSaving(false);
-    if (resultError) { setFormError(resultError); return; }
-    setModalOpen(false); fetchClientes();
+    const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
+    const itemsTotal = cotizacionItems.length ? calcItemsTotal(cotizacionItems) : null;
+    const refacc = itemsTotal != null ? itemsTotal : (form.monto_refacc === "" ? 0 : Number(form.monto_refacc));
+
+    try {
+      const payload = { 
+        titulo: form.titulo, 
+        descripcion: form.descripcion || null, 
+        cliente_id: form.cliente_id, 
+        vehiculo_id: form.vehiculo_id, 
+        mecanico_id: form.mecanico_id || null, 
+        estado: form.estado, 
+        bloqueado: form.bloqueado, 
+        updated_at: new Date().toISOString() 
+      };
+
+      let proyectoIdFinal = editTarget?.id;
+
+      // 1. Guardar o Actualizar Proyecto
+      if (editTarget) {
+        await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
+      } else {
+        const { data: newProj, error: pErr } = await supabase
+          .from("proyectos")
+          .insert([{ ...payload, fecha_ingreso: new Date().toISOString() }])
+          .select("id")
+          .single();
+        if (pErr) throw pErr;
+        proyectoIdFinal = newProj.id;
+      }
+
+      // 2. Manejo de Cotización
+      const { data: currentCot } = await supabase
+        .from("cotizaciones")
+        .select("id")
+        .eq("proyecto_id", proyectoIdFinal)
+        .maybeSingle();
+
+      let cotizacionId;
+      const cotPayload = { 
+        proyecto_id: proyectoIdFinal, 
+        monto_mano_obra: manoObra, 
+        monto_refacc: refacc, 
+        monto_total: manoObra + refacc,
+        estado: "pendiente" 
+      };
+
+      if (currentCot) {
+        cotizacionId = currentCot.id;
+        await supabase.from("cotizaciones").update(cotPayload).eq("id", cotizacionId);
+        
+        // REINTEGRO: Antes de meter los nuevos, devolvemos lo anterior al stock para no duplicar
+        await supabase.functions.invoke("gestionar-inventario", {
+          body: { tipo_operacion: 'REINTEGRAR', cotizacion_id: cotizacionId }
+        });
+      } else {
+        const { data: newCot, error: cErr } = await supabase
+          .from("cotizaciones")
+          .insert([cotPayload])
+          .select("id")
+          .single();
+        if (cErr) throw cErr;
+        cotizacionId = newCot.id;
+      }
+
+    // 3. Sincronizar Items y Disparar Inventario Automático
+      await supabase.from("cotizacion_items").delete().eq("cotizacion_id", cotizacionId);
+
+      if (cotizacionItems.length > 0) {
+        const itemsPayload = cotizacionItems.map((item) => ({
+          cotizacion_id: cotizacionId,
+          descripcion: item.descripcion || item.refaccion?.nombre || "Refacción",
+          tipo: "refaccion",
+          // BUSCAMOS EL ID: Puede venir como refaccion_id, item.refaccion.id o item.id
+          refaccion_id: item.refaccion_id || item.refaccion?.id || item.id,
+          cantidad: Number(item.cantidad || 0),
+          precio_unit: Number(item.precio_unit || 0),
+        }));
+
+        // Guardamos los items en la cotización para que se vean en el modal
+        await supabase.from("cotizacion_items").insert(itemsPayload);
+
+        // 🚀 AQUÍ GENERAMOS LA VENTA AUTOMÁTICA
+        for (const item of itemsPayload) {
+          // Solo si es una refacción válida y tiene cantidad
+          if (item.refaccion_id && item.cantidad > 0) {
+            
+            // Llamamos a la MISMA función que ya usas en el módulo de Ventas
+            await supabase.functions.invoke("gestionar-inventario", {
+              body: {
+                tipo_operacion: "VENTA",
+                refaccion_id: item.refaccion_id,
+                cantidad: item.cantidad,
+                precio_unit: item.precio_unit,
+                proyecto_id: proyectoIdFinal, // <--- VINCULAMOS LA VENTA AL PROYECTO
+                cotizacion_id: cotizacionId,
+              },
+            });
+          }
+        }
+      }
+
+      setModalOpen(false);
+      fetchAll();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleToggle = async () => {
@@ -853,16 +936,17 @@ const EmpleadosModule = ({ darkMode }) => {
     activo: true,
   });
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const [e, u] = await Promise.all([
-      supabase.from("empleados").select("*, usuarios(nombre,correo)").order("created_at", { ascending: false }),
-      supabase.from("usuarios").select("id,nombre,correo,activo").eq("activo", true).order("nombre"),
-    ]);
-    setEmpleados(e.data || []);
-    setUsuarios(u.data || []);
-    setLoading(false);
-  }, []);
+const fetchAll = useCallback(async () => {
+  setLoading(true);
+  const [p, c, v, e, r, ci] = await Promise.all([
+    supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
+    supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
+    supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
+    supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
+    supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
+  ]);
+  setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);
+}, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useSupabaseRealtime("empleados", fetchAll);
@@ -1367,6 +1451,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [clientes,   setClientes]   = useState([]);
   const [vehiculos,  setVehiculos]  = useState([]);
   const [empleados,  setEmpleados]  = useState([]);
+  const [citas,         setCitas]         = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState("");
   const [filterEstado, setFilterEstado] = useState("todos");
@@ -1394,14 +1479,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [p, c, v, e, r] = await Promise.all([
+    const [p, c, v, e, r, ci] = await Promise.all([  // ← agrega ci
       supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
+      supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
     ]);
-    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setLoading(false);
+    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);  // ← agrega setCitas
   }, []);
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -1516,6 +1602,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       bloqueado: p.bloqueado ?? false,
       monto_mano_obra: cotizacion?.monto_mano_obra != null ? String(cotizacion.monto_mano_obra) : "",
       monto_refacc: cotizacion?.monto_refacc != null ? String(cotizacion.monto_refacc) : "",
+      cita_id: p.cita_id || "",
     });
     setFormError("");
     setRefSearch("");
@@ -1603,28 +1690,51 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     }
 
     const syncRefaccionItems = async (cotizacionId) => {
-      if (!refCartTouched || !cotizacionId) return null;
-      const deleteRes = await supabase
-        .from("cotizacion_items")
-        .delete()
-        .eq("cotizacion_id", cotizacionId)
-        .eq("tipo", "refaccion");
-      if (deleteRes.error) return deleteRes.error;
+        if (!refCartTouched || !cotizacionId) return null;
 
-      if (refCart.length > 0) {
-        const rows = refCart.map((item) => ({
-          cotizacion_id: cotizacionId,
-          descripcion: item.nombre || "Refaccion",
-          tipo: "refaccion",
-          refaccion_id: item.id,
-          cantidad: Number(item.cantidad || 1),
-          precio_unit: Number(item.precio_unit || 0),
-        }));
-        const insertRes = await supabase.from("cotizacion_items").insert(rows);
-        if (insertRes.error) return insertRes.error;
-      }
-      return null;
-    };
+        // REINTEGRO: devolver stock anterior antes de reemplazar
+        await supabase.functions.invoke("gestionar-inventario", {
+          body: { tipo_operacion: "REINTEGRAR", cotizacion_id: cotizacionId }
+        });
+
+        const deleteRes = await supabase
+          .from("cotizacion_items")
+          .delete()
+          .eq("cotizacion_id", cotizacionId)
+          .eq("tipo", "refaccion");
+        if (deleteRes.error) return deleteRes.error;
+
+        if (refCart.length > 0) {
+          const rows = refCart.map((item) => ({
+            cotizacion_id: cotizacionId,
+            descripcion: item.nombre || "Refaccion",
+            tipo: "refaccion",
+            refaccion_id: item.id,
+            cantidad: Number(item.cantidad || 1),
+            precio_unit: Number(item.precio_unit || 0),
+          }));
+
+          const insertRes = await supabase.from("cotizacion_items").insert(rows);
+          if (insertRes.error) return insertRes.error;
+
+          // DESCONTAR STOCK por cada refacción agregada
+          for (const item of rows) {
+            if (item.refaccion_id && item.cantidad > 0) {
+              await supabase.functions.invoke("gestionar-inventario", {
+                body: {
+                  tipo_operacion: "VENTA",
+                  refaccion_id: item.refaccion_id,
+                  cantidad: item.cantidad,
+                  precio_unit: item.precio_unit,
+                  cotizacion_id: cotizacionId,
+                },
+              });
+            }
+          }
+        }
+
+        return null;
+      };
 
     const payload = {
       titulo: normalizeForSAT(form.titulo),
@@ -1632,6 +1742,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       cliente_id: form.cliente_id,
       vehiculo_id: form.vehiculo_id,
       mecanico_id: form.mecanico_id || null,
+      cita_id: form.cita_id || null, 
       estado: form.estado,
       bloqueado: form.bloqueado,
       updated_at: new Date().toISOString()
@@ -1657,6 +1768,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
       const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
       error = projectRes.error;
+      if (!error && form.cita_id) {  // solo si el proyecto se guardó bien
+        await supabase
+          .from("citas")
+          .update({ estado: "confirmada", updated_at: new Date().toISOString() })
+          .eq("id", form.cita_id);
+      }
       if (!error && form.mecanico_id && form.mecanico_id !== prevMecanicoId) {
         await notifyMecanicoAsignacion({
           proyectoId: editTarget.id,
@@ -1733,6 +1850,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         .select("id")
         .single();
       error = createError;
+
+      if (!error && form.cita_id) {  
+        await supabase
+          .from("citas")
+          .update({ estado: "confirmada", updated_at: new Date().toISOString() })
+          .eq("id", form.cita_id);
+      }
+
 
       if (!error && createdProject?.id && form.mecanico_id) {
         await notifyMecanicoAsignacion({
@@ -1900,6 +2025,36 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               {filteredVehiculos.map((v) => <option key={v.id} value={v.id}>{v.marca} {v.modelo} · {v.placas}</option>)}
             </Select>
           </Field>
+
+          {(() => {
+            const citasFiltradas = citas.filter(
+              (ci) => ci.cliente_id === form.cliente_id &&
+                      (!form.vehiculo_id || ci.vehiculo_id === form.vehiculo_id)
+            );
+            return (
+              <Field label="Cita Vinculada (opcional)" darkMode={darkMode}>
+                <Select
+                  darkMode={darkMode}
+                  value={form.cita_id}
+                  onChange={(e) => setForm({ ...form, cita_id: e.target.value })}
+                  disabled={!form.cliente_id}
+                >
+                  <option value="">Sin cita asociada</option>
+                  {citasFiltradas.map((ci) => (
+                    <option key={ci.id} value={ci.id}>
+                      {formatDateTimeWorkshop(ci.fecha_hora)} — {ci.motivo || "Sin motivo"}
+                    </option>
+                  ))}
+                </Select>
+                {form.cita_id && (
+                  <p className={`mt-1 text-xs ${darkMode ? "text-amber-400" : "text-amber-600"}`}>
+                    Al guardar, la cita pasará a estado <strong>confirmada</strong>.
+                  </p>
+                )}
+              </Field>
+            );
+          })()}
+
           <Field label="Mecánico Asignado" darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.mecanico_id} onChange={(e) => setForm({...form, mecanico_id: e.target.value})}>
               <option value="">Sin asignar</option>
@@ -2306,18 +2461,63 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 // ─── Shell compartido (topbar + sidebar) ─────────────────────────────────────
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
-const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, onProjectUpdated = null }) => {
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
   const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
-  const [estadoInicialProyecto, setEstadoInicialProyecto] = useState("");
+  const [citas, setCitas] = useState([]);
+  const [estadoProyectoLocal,   setEstadoProyectoLocal]   = useState(proyecto?.estado || "activo");
+  const [estadoInicialProyecto, setEstadoInicialProyecto] = useState(proyecto?.descripcion || "");
+  const [estadoInicialError,    setEstadoInicialError]    = useState("");
   const [estadoInicialGuardando, setEstadoInicialGuardando] = useState(false);
-  const [estadoInicialError, setEstadoInicialError] = useState("");
-  const [estadoProyectoLocal, setEstadoProyectoLocal] = useState(proyecto?.estado || "activo");
+  // ─── NUEVOS ESTADOS PARA REFACCIONES ───
+  const [refaccionesAsignadas, setRefaccionesAsignadas] = useState([]);
+  const [loadingRefacciones, setLoadingRefacciones] = useState(false);
+  const [refaccionesStatus, setRefaccionesStatus] = useState("");
   const fileRef = useRef(null);
+
+  // ─── NUEVA FUNCIÓN PARA TRAER REFACCIONES DEL PROYECTO ───
+  const fetchRefaccionesAsignadas = useCallback(async () => {
+    if (!proyecto?.id) return;
+    setLoadingRefacciones(true);
+    const { data, error } = await supabase
+      .from("proyecto_refacciones")
+      .select("id, refaccion_id, cantidad, precio_unitario, fue_usada, refacciones(nombre, numero_parte, stock)")
+      .eq("proyecto_id", proyecto.id);
+    
+    if (error) {
+      setRefaccionesStatus("Error al cargar piezas.");
+    } else {
+      setRefaccionesAsignadas(data || []);
+    }
+    setLoadingRefacciones(false);
+  }, [proyecto?.id]);
+
+  const fetchRefaccionesProyecto = useCallback(async () => {
+    const { data } = await supabase
+      .from("proyecto_refacciones")
+      .select("*, refacciones(nombre, numero_parte)")
+      .eq("proyecto_id", proyecto.id);
+    setRefaccionesAsignadas(data || []);
+  }, [proyecto?.id]);
+
+  useEffect(() => {
+    if (open) fetchRefaccionesProyecto();
+  }, [open, fetchRefaccionesProyecto]);
+
+  // Función para cambiar el booleano fue_usada
+  const toggleUsoRefaccion = async (id, actual) => {
+    await supabase
+      .from("proyecto_refacciones")
+      .update({ fue_usada: !actual })
+      .eq("id", id);
+    fetchRefaccionesProyecto();
+  };
+
+  
 
   const fetchFotos = useCallback(async () => {
     if (!proyecto?.id) return;
@@ -2646,6 +2846,24 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
               </div>
             </div>
           </div>
+          
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <p className={`text-xs font-semibold uppercase tracking-widest ${st} mb-3`}>Refacciones en este trabajo</p>
+            {refaccionesAsignadas.map(r => (
+              <div key={r.id} className="flex justify-between items-center py-2 text-sm">
+                <div>
+                  <p className={t}>{r.refacciones?.nombre}</p>
+                  <p className={st}>Cant: {r.cantidad}</p>
+                </div>
+                <button 
+                  onClick={() => toggleUsoRefaccion(r.id, r.fue_usada)}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.fue_usada ? 'bg-emerald-500/20 text-emerald-500' : 'bg-zinc-500/20 text-zinc-500'}`}
+                >
+                  {r.fue_usada ? 'INSTALADA' : 'NO USADA / REGRESAR'}
+                </button>
+              </div>
+            ))}
+          </div>
 
           {/* Fotografías */}
           <div className="px-6 py-4">
@@ -2841,6 +3059,7 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "proveedores", label: "Proveedores", icon: <LucideIcon name="tag" /> },
     { id: "compras-refacciones", label: "Compra Refacciones", icon: <LucideIcon name="receipt" /> },
     { id: "ventas-refacciones", label: "Venta Refacciones", icon: <LucideIcon name="shoppingcart" /> },
+    { id: "historial-refacciones", label: "Historial Refacciones", icon: <LucideIcon name="history" /> },
     { id: "historial-tickets", label: "Historial de Tickets", icon: <LucideIcon name="clipboard" /> },
     { id: "historial-servicios", label: "Historial de Servicios", icon: <LucideIcon name="scroll" /> },
     { id: "reportes", label: "Reportes Operativos", icon: <LucideIcon name="chart" /> },
@@ -2855,6 +3074,7 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
       {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
       {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
+      {activeModule === "historial-refacciones" && <HistorialRefacciones darkMode={darkMode} />}
       {activeModule === "citas" && (
         <CitasModule darkMode={darkMode} role="administrador" canManage onAppointmentCreated={(data) => {
           notifyAdminNewAppointment({
