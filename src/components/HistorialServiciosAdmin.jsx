@@ -271,34 +271,60 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
       const element = detailRef.current;
       if (!element) return;
 
-      const canvas = await html2canvas(element, { 
+      // Crear un contenedor temporal con estilos del ticket
+      const tempContainer = document.createElement("div");
+      tempContainer.style.padding = "18px";
+      tempContainer.style.borderRadius = "18px";
+      tempContainer.style.background = "linear-gradient(160deg, rgba(96,174,187,0.18), rgba(219,60,28,0.08))";
+      tempContainer.style.border = "1px solid rgba(148,163,184,0.35)";
+      tempContainer.style.margin = "16px";
+      tempContainer.style.maxWidth = "600px";
+      tempContainer.style.display = "flex";
+      tempContainer.style.justifyContent = "center";
+
+      const ticketPaper = document.createElement("div");
+      ticketPaper.style.width = "100%";
+      ticketPaper.style.maxWidth = "600px";
+      ticketPaper.style.background = "#ffffff";
+      ticketPaper.style.color = "#111111";
+      ticketPaper.style.border = "1px dashed #9ca3af";
+      ticketPaper.style.padding = "24px";
+      ticketPaper.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)";
+      ticketPaper.style.borderRadius = "12px";
+      ticketPaper.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+      // Clonar el elemento
+      const clone = element.cloneNode(true);
+      
+      // Remover todas las clases para evitar problemas con oklch colors
+      const allElements = clone.querySelectorAll('*');
+      allElements.forEach((el) => {
+        el.removeAttribute("class");
+        if (el.style && el.style.cssText) {
+          const styles = el.style.cssText.split(';').filter(style => {
+            return style.trim() && !style.includes('oklch');
+          }).join(';');
+          el.style.cssText = styles;
+        }
+      });
+      
+      ticketPaper.appendChild(clone);
+      tempContainer.appendChild(ticketPaper);
+
+      // Agregar al documento temporalmente
+      document.body.appendChild(tempContainer);
+
+      const canvas = await html2canvas(tempContainer, { 
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
         allowTaint: true,
         logging: false,
-        onclone: (clonedDocument) => {
-          // Strip all classes and problematic styles from cloned element
-          const allElements = clonedDocument.querySelectorAll('*');
-          allElements.forEach((el) => {
-            // Remove class attribute safely for both HTML and SVG elements
-            if (typeof el.removeAttribute === "function") {
-              el.removeAttribute("class");
-            }
-            
-            // Remove inline styles that might contain oklch
-            if (el.style && el.style.cssText) {
-              const styles = el.style.cssText.split(';').filter(style => {
-                return style.trim() && !style.includes('oklch');
-              }).join(';');
-              el.style.cssText = styles;
-            }
-            
-            // Reset to basic styles
-            el.setAttribute('style', '');
-          });
-        }
       });
+
+      // Remover el contenedor temporal
+      document.body.removeChild(tempContainer);
+
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -528,7 +554,24 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
               {/* Contenido expandido */}
               {expandedServicio === servicio.id && (
                 <div className={`border-t ${darkMode ? "border-zinc-700" : "border-gray-200"} p-4 space-y-6`}>
-                  <div ref={detailRef}>
+                  <style>{`
+                    @media print {
+                      .detail-ref-pdf {
+                        padding: 24px;
+                        border: 1px dashed #9ca3af;
+                        background: #ffffff;
+                        color: #111111;
+                        border-radius: 12px;
+                        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                      }
+                      body { background: #ffffff !important; }
+                      body * { visibility: hidden !important; }
+                      .detail-ref-pdf, .detail-ref-pdf * { visibility: visible !important; }
+                      .detail-ref-pdf { position: fixed; left: 0; top: 0; width: 100%; }
+                    }
+                  `}</style>
+                  <div ref={detailRef} className="detail-ref-pdf">
                     {/* Sección de Información General */}
                     <div className="mb-6">
                       <h4 className={`font-semibold ${textPrimary} mb-3`}> Información General</h4>
@@ -558,7 +601,21 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                       <div className="mb-6">
                         <h4 className={`font-semibold ${textPrimary} mb-3`}> Descripción del Servicio</h4>
                         <div className={`p-4 rounded ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
-                          <p className={textSecondary}>{servicio.descripcion}</p>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                <th className={`text-left py-2 px-2 ${textSecondary}`}>Descripción</th>
+                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Cantidad</th>
+                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Precio</th>
+                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Subtotal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                <td colSpan="4" className={`py-2 px-2 ${textPrimary}`}>{servicio.descripcion}</td>
+                              </tr>
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
@@ -733,7 +790,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                   </div>
 
                   {/* Botones de acción */}
-                  <div className={`flex flex-wrap gap-2 pt-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                  <div className={`flex flex-wrap gap-2 pt-4 px-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
                     <button
                       onClick={() => imprimirTicketServicio(servicio.id)}
                       className={`flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition ${

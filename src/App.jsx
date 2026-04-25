@@ -903,18 +903,25 @@ const EmpleadosModule = ({ darkMode }) => {
 
 const fetchAll = useCallback(async () => {
   setLoading(true);
-  const [p, c, v, e, r, ci] = await Promise.all([
-    supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
-    supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
-    supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
-    supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
-    supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
-  ]);
-  setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);
+  const { data: e, error: eErr } = await supabase
+    .from("empleados")
+    .select("id,nombre,correo,usuario_id,telefono,rfc,fecha_ingreso,disponible,activo")
+    .eq("activo", true)
+    .order("nombre");
+  
+  setEmpleados(e || []);
+  setLoading(false);
 }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useSupabaseRealtime("empleados", fetchAll);
+
+  // Validar RFC con REGEX (formato mexicano)
+  const isValidRFC = (rfc) => {
+    if (!rfc || rfc.trim() === "") return true; // RFC es opcional
+    const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
+    return rfcRegex.test(rfc.toUpperCase());
+  };
 
   const openCreate = () => {
     setEditTarget(null);
@@ -962,11 +969,17 @@ const fetchAll = useCallback(async () => {
         setSaving(false); return;
       }
       
+      // Validar RFC si se proporciona
+      if (form.rfc && !isValidRFC(form.rfc)) {
+        setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+        setSaving(false); return;
+      }
+      
       const payload = {
         nombre: normalizeForSAT(form.nombre),
         telefono: form.telefono.trim() || null,
         correo: form.correo.trim().toLowerCase(),
-        rfc: normalizeForSAT(form.rfc) || null,
+        rfc: form.rfc ? form.rfc.trim().toUpperCase() : null,
         fecha_ingreso: form.fecha_ingreso || null,
         disponible: form.disponible,
         activo: form.activo,
@@ -980,13 +993,19 @@ const fetchAll = useCallback(async () => {
         setFormError("Nombre, correo y rol son obligatorios.");
         setSaving(false); return;
       }
+      
+      // Validar RFC si se proporciona
+      if (form.rfc && !isValidRFC(form.rfc)) {
+        setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+        setSaving(false); return;
+      }
 
       const { data, error } = await supabase.functions.invoke('crear-empleado', {
         body: {
           nombre: normalizeForSAT(form.nombre),
           correo: form.correo.trim().toLowerCase(),
           telefono: form.telefono.trim() || null,
-          rfc: normalizeForSAT(form.rfc) || null,
+          rfc: form.rfc ? form.rfc.trim().toUpperCase() : null,
           rol_destino: form.rol_destino,
           fecha_contratacion: form.fecha_ingreso || null,
         }
@@ -1453,9 +1472,13 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [editandoDiag, setEditandoDiag] = useState(false);
 
   // ─── Obtener rol del usuario actual ───────────────────────────────────────────
-  const metaRole = session?.user?.user_metadata?.rol || "";
-  const isAdmin = metaRole === "Administrador";
-  const isMecanico = metaRole === "Mecánico";
+  const metaRole = (session?.user?.user_metadata?.rol || session?.user?.app_metadata?.rol || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  const isAdmin = metaRole === "administrador";
+  const isMecanico = metaRole === "mecanico";
 
   const fetchAll = useCallback(async () => {
     setLoading(true);

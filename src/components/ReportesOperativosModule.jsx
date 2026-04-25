@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
-import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity } from "lucide-react";
+import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity, FileText } from "lucide-react";
 import { formatDateWorkshop } from "../utils/datetime";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 const ACTIVE_PROJECT_STATES = ["activo", "en_progreso", "pendiente_cotizacion", "pendiente_refaccion"];
 
@@ -32,11 +33,13 @@ const daysSince = (from) => {
 };
 
 export default function ReportesOperativosModule({ darkMode = false }) {
+  const reportRef = useRef(null);
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
   const [loading, setLoading] = useState(false);
   const [reporteActivo, setReporteActivo] = useState("productividad");
   const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [generandoCSV, setGenerandoCSV] = useState(false);
 
   const [resumenGeneral, setResumenGeneral] = useState(null);
   const [cargaMecanicos, setCargaMecanicos] = useState([]);
@@ -279,73 +282,176 @@ export default function ReportesOperativosModule({ darkMode = false }) {
 
     setGenerandoPDF(true);
     try {
-      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const container = document.createElement("div");
+      container.style.width = "1000px";
+      container.style.padding = "20px";
+      container.style.background = "white";
+      container.style.fontFamily = "Arial, sans-serif";
+      container.style.color = "#333";
+
+      const html = `
+        <div>
+          <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 10px; text-align: center;">Reporte Operativo</h1>
+          <p style="font-size: 12px; text-align: center; margin-bottom: 20px; color: #666;">Periodo: ${resumenGeneral.periodo}</p>
+
+          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Indicadores Clave</h2>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Métrica</th>
+                <th style="text-align: right; padding: 12px; font-weight: bold;">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tiempo promedio de ciclo (días)</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tiempoPromedioCiclo}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #ddd; background-color: #fafafa;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tasa de conversión (%)</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tasaConversion}%</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Cotizaciones aprobadas</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.cotizacionesAprobadas}/${resumenGeneral.totalCotizaciones}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #ddd; background-color: #fafafa;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Carga activa total (proyectos)</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.cargaActivaTotal}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Refacciones en stock crítico</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.refaccionesCriticas}</td>
+              </tr>
+              <tr style="background-color: #fafafa;">
+                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tasa de asistencia de citas (%)</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tasaAsistencia}%</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Carga de Trabajo por Mecánico</h2>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Mecánico</th>
+                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Proyectos activos</th>
+                <th style="text-align: right; padding: 12px; font-weight: bold;">Participación (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cargaMecanicos.length === 0 ? '<tr><td colspan="3" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' : 
+                cargaMecanicos.map((row, i) => {
+                  const total = Number(resumenGeneral.cargaActivaTotal || 0);
+                  const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
+                  return `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
+                    <td style="padding: 10px; border-right: 1px solid #ddd;">${row.mecanico}</td>
+                    <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.activos}</td>
+                    <td style="padding: 10px; text-align: right;">${ratio}%</td>
+                  </tr>`;
+                }).join('')}
+            </tbody>
+          </table>
+
+          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Alertas de Stock Crítico</h2>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Refacción</th>
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Número de parte</th>
+                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Stock</th>
+                <th style="text-align: right; padding: 12px; font-weight: bold;">Mínimo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${alertasStock.length === 0 ? '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #666;">Sin alertas</td></tr>' :
+                alertasStock.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
+                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.nombre}</td>
+                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.numero_parte || "-"}</td>
+                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">${row.stock}</td>
+                  <td style="padding: 10px; text-align: right;">${row.stock_minimo}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+
+          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Refacciones con Mayor Rotación</h2>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Refacción</th>
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Número de parte</th>
+                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Unidades usadas</th>
+                <th style="text-align: right; padding: 12px; font-weight: bold;">Movimientos</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rotacionRefacciones.length === 0 ? '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' :
+                rotacionRefacciones.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
+                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.nombre}</td>
+                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.numero_parte}</td>
+                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.usos}</td>
+                  <td style="padding: 10px; text-align: right;">${row.movimientos}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+
+          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Cuellos de Botella por Estado</h2>
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+            <thead>
+              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
+                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Estado</th>
+                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Cantidad de proyectos</th>
+                <th style="text-align: right; padding: 12px; font-weight: bold;">Edad promedio (días)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cuellosBotella.length === 0 ? '<tr><td colspan="3" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' :
+                cuellosBotella.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
+                  <td style="padding: 10px; border-right: 1px solid #ddd;">${STATE_LABELS[row.estado] || row.estado}</td>
+                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.cantidad}</td>
+                  <td style="padding: 10px; text-align: right;">${row.edadPromedioDias}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        allowTaint: true,
+        logging: false,
+      });
+
+      document.body.removeChild(container);
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 12;
-      const maxWidth = pageWidth - margin * 2;
-      let y = margin;
+      const imgWidth = pageWidth - 10;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-      const ensureSpace = (needed = 8) => {
-        if (y + needed > pageHeight - margin) {
-          pdf.addPage();
-          y = margin;
-        }
-      };
+      let heightLeft = imgHeight;
+      let position = 5;
 
-      const addTitle = (text) => {
-        ensureSpace(10);
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(14);
-        pdf.text(text, margin, y);
-        y += 8;
-      };
+      pdf.addImage(imgData, "PNG", 5, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight - 10;
 
-      const addLine = (text) => {
-        const lines = pdf.splitTextToSize(String(text ?? ""), maxWidth);
-        lines.forEach((line) => {
-          ensureSpace(6);
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(10);
-          pdf.text(line, margin, y);
-          y += 5;
-        });
-      };
-
-      addTitle("Reporte Operativo");
-      addLine(`Periodo: ${resumenGeneral.periodo}`);
-      addLine(`Tiempo promedio de ciclo: ${resumenGeneral.tiempoPromedioCiclo} dias`);
-      addLine(`Tasa de conversion de cotizaciones: ${resumenGeneral.tasaConversion}% (${resumenGeneral.cotizacionesAprobadas}/${resumenGeneral.totalCotizaciones})`);
-      addLine(`Carga activa total: ${resumenGeneral.cargaActivaTotal}`);
-      addLine(`Refacciones en stock critico: ${resumenGeneral.refaccionesCriticas}`);
-      addLine(`Tasa de asistencia de citas: ${resumenGeneral.tasaAsistencia}%`);
-
-      y += 4;
-      addTitle("Carga de trabajo por mecanico");
-      if (!cargaMecanicos.length) {
-        addLine("Sin datos");
-      } else {
-        cargaMecanicos.forEach((row, i) => addLine(`${i + 1}. ${row.mecanico}: ${row.activos} proyectos activos`));
-      }
-
-      y += 4;
-      addTitle("Refacciones con mayor rotacion");
-      if (!rotacionRefacciones.length) {
-        addLine("Sin datos");
-      } else {
-        rotacionRefacciones.forEach((row, i) =>
-          addLine(`${i + 1}. ${row.nombre} (${row.numero_parte}) - usos: ${row.usos}, movimientos: ${row.movimientos}`)
-        );
-      }
-
-      y += 4;
-      addTitle("Cuellos de botella por estado");
-      if (!cuellosBotella.length) {
-        addLine("Sin datos");
-      } else {
-        cuellosBotella.forEach((row, i) =>
-          addLine(`${i + 1}. ${STATE_LABELS[row.estado] || row.estado}: ${row.cantidad} proyectos, edad prom. ${row.edadPromedioDias} dias`)
-        );
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 5, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight - 10;
       }
 
       pdf.save(`Reportes_Operativos_${new Date().toISOString().split("T")[0]}.pdf`);
@@ -354,6 +460,97 @@ export default function ReportesOperativosModule({ darkMode = false }) {
       alert("Error al generar PDF");
     } finally {
       setGenerandoPDF(false);
+    }
+  };
+
+  const generateCSV = () => {
+    if (!resumenGeneral) return;
+
+    setGenerandoCSV(true);
+    try {
+      const rows = [];
+      
+      // Header
+      rows.push(["REPORTE OPERATIVO"]);
+      rows.push([]);
+      rows.push(["Periodo", resumenGeneral.periodo]);
+      rows.push(["Fecha de generación", new Date().toLocaleString()]);
+      rows.push([]);
+      
+      // Resumen general
+      rows.push(["INDICADORES CLAVE"]);
+      rows.push(["Métrica", "Valor"]);
+      rows.push(["Tiempo promedio de ciclo (días)", resumenGeneral.tiempoPromedioCiclo]);
+      rows.push(["Tasa de conversión de cotizaciones (%)", resumenGeneral.tasaConversion]);
+      rows.push(["Cotizaciones aprobadas", `${resumenGeneral.cotizacionesAprobadas}/${resumenGeneral.totalCotizaciones}`]);
+      rows.push(["Carga activa total (proyectos)", resumenGeneral.cargaActivaTotal]);
+      rows.push(["Refacciones en stock crítico", resumenGeneral.refaccionesCriticas]);
+      rows.push(["Tasa de asistencia de citas (%)", resumenGeneral.tasaAsistencia]);
+      rows.push([]);
+      
+      // Carga por mecánico
+      rows.push(["CARGA DE TRABAJO POR MECÁNICO"]);
+      rows.push(["Mecánico", "Proyectos activos", "Participación (%)"]);
+      const total = Number(resumenGeneral.cargaActivaTotal || 0);
+      cargaMecanicos.forEach((row) => {
+        const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
+        rows.push([row.mecanico, row.activos, ratio]);
+      });
+      rows.push([]);
+      
+      // Stock crítico
+      rows.push(["ALERTAS DE STOCK CRÍTICO"]);
+      rows.push(["Refacción", "Número de parte", "Stock", "Mínimo"]);
+      alertasStock.forEach((row) => {
+        rows.push([row.nombre, row.numero_parte || "-", row.stock, row.stock_minimo]);
+      });
+      rows.push([]);
+      
+      // Rotación de refacciones
+      rows.push(["REFACCIONES CON MAYOR ROTACIÓN"]);
+      rows.push(["Refacción", "Número de parte", "Unidades usadas", "Movimientos"]);
+      rotacionRefacciones.forEach((row) => {
+        rows.push([row.nombre, row.numero_parte, row.usos, row.movimientos]);
+      });
+      rows.push([]);
+      
+      // Flujo de citas
+      if (flujoCitas) {
+        rows.push(["TASA DE ASISTENCIA DE CITAS"]);
+        rows.push(["Métrica", "Valor"]);
+        rows.push(["Total de citas", flujoCitas.total]);
+        rows.push(["Confirmadas", flujoCitas.confirmadas]);
+        rows.push(["Completadas", flujoCitas.completadas]);
+        rows.push(["Canceladas", flujoCitas.canceladas]);
+        rows.push(["Tasa de asistencia (%)", flujoCitas.tasaAsistencia]);
+        rows.push([]);
+      }
+      
+      // Cuellos de botella
+      rows.push(["CUELLOS DE BOTELLA POR ESTADO"]);
+      rows.push(["Estado", "Cantidad de proyectos", "Edad promedio (días)"]);
+      cuellosBotella.forEach((row) => {
+        rows.push([STATE_LABELS[row.estado] || row.estado, row.cantidad, row.edadPromedioDias]);
+      });
+      
+      // Convertir a CSV
+      const csv = rows.map(row => row.map(cell => `"${String(cell || "").replace(/"/g, '""')}"`).join(",")).join("\n");
+      
+      // Descargar
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Reportes_Operativos_${new Date().toISOString().split("T")[0]}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error al generar CSV:", error);
+      alert("Error al generar CSV");
+    } finally {
+      setGenerandoCSV(false);
     }
   };
 
@@ -373,7 +570,7 @@ export default function ReportesOperativosModule({ darkMode = false }) {
       </div>
 
       <div className={`rounded-lg p-4 mb-6 border ${bgCard}`}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className={`block text-xs font-medium mb-2 ${textSecondary}`}>Fecha Inicio</label>
             <input
@@ -426,6 +623,24 @@ export default function ReportesOperativosModule({ darkMode = false }) {
             >
               <Download className="w-4 h-4" />
               {generandoPDF ? "Generando..." : "PDF"}
+            </button>
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={generateCSV}
+              disabled={!resumenGeneral || generandoCSV}
+              className={`w-full px-4 py-2 rounded font-medium text-sm transition flex items-center justify-center gap-2 ${
+                !resumenGeneral || generandoCSV
+                  ? darkMode
+                    ? "bg-amber-900 text-amber-400 cursor-not-allowed"
+                    : "bg-amber-300 text-amber-600 cursor-not-allowed"
+                  : darkMode
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
+                  : "bg-amber-500 hover:bg-amber-600 text-white"
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              {generandoCSV ? "Generando..." : "CSV"}
             </button>
           </div>
         </div>
