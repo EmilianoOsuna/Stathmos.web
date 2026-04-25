@@ -62,25 +62,31 @@ const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ESTADOS_PROYECTO = ["activo","pendiente_cotizacion","en_progreso","terminado","entregado","cancelado"];
+const ESTADOS_PROYECTO = ["activo","pendiente_diagnostico","pendiente_cotizacion","pendiente_aprobacion","en_progreso","pendiente_refaccion","terminado","entregado","cancelado"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const estadoBadge = (estado, darkMode) => {
   const dark = {
-    activo:               "bg-sky-900/50 text-sky-300 border-sky-800",
-    pendiente_cotizacion: "bg-amber-900/50 text-amber-300 border-amber-800",
-    en_progreso:          "bg-blue-900/50 text-blue-300 border-blue-800",
-    terminado:            "bg-emerald-900/50 text-emerald-300 border-emerald-800",
-    entregado:            "bg-teal-900/50 text-teal-300 border-teal-800",
-    cancelado:            "bg-zinc-800 text-zinc-400 border-zinc-700",
+    activo:                "bg-sky-900/50 text-sky-300 border-sky-800",
+    pendiente_diagnostico: "bg-red-900/50 text-red-300 border-red-800",
+    pendiente_cotizacion:  "bg-amber-900/50 text-amber-300 border-amber-800",
+    pendiente_aprobacion:  "bg-orange-900/50 text-orange-300 border-orange-800",
+    en_progreso:           "bg-blue-900/50 text-blue-300 border-blue-800",
+    pendiente_refaccion:   "bg-purple-900/50 text-purple-300 border-purple-800",
+    terminado:             "bg-emerald-900/50 text-emerald-300 border-emerald-800",
+    entregado:             "bg-teal-900/50 text-teal-300 border-teal-800",
+    cancelado:             "bg-zinc-800 text-zinc-400 border-zinc-700",
   };
   const light = {
-    activo:               "bg-sky-50 text-sky-700 border-sky-200",
-    pendiente_cotizacion: "bg-amber-50 text-amber-700 border-amber-200",
-    en_progreso:          "bg-blue-50 text-blue-700 border-blue-200",
-    terminado:            "bg-emerald-50 text-emerald-700 border-emerald-200",
-    entregado:            "bg-teal-50 text-teal-700 border-teal-200",
-    cancelado:            "bg-gray-100 text-gray-500 border-gray-200",
+    activo:                "bg-sky-50 text-sky-700 border-sky-200",
+    pendiente_diagnostico: "bg-red-50 text-red-700 border-red-200",
+    pendiente_cotizacion:  "bg-amber-50 text-amber-700 border-amber-200",
+    pendiente_aprobacion:  "bg-orange-50 text-orange-700 border-orange-200",
+    en_progreso:           "bg-blue-50 text-blue-700 border-blue-200",
+    pendiente_refaccion:   "bg-purple-50 text-purple-700 border-purple-200",
+    terminado:             "bg-emerald-50 text-emerald-700 border-emerald-200",
+    entregado:             "bg-teal-50 text-teal-700 border-teal-200",
+    cancelado:             "bg-gray-100 text-gray-500 border-gray-200",
   };
   const m = darkMode ? dark : light;
   return m[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-500 border-gray-200");
@@ -90,7 +96,9 @@ const fmtDate = (d) => formatDateWorkshop(d, { dateStyle: "medium" });
 
 const ESTADO_LABELS = {
   activo: "Activo",
+  pendiente_diagnostico: "Pendiente de diagnóstico",
   pendiente_cotizacion: "Pendiente de cotización",
+  pendiente_aprobacion: "Pendiente de aprobación",
   en_progreso: "En progreso",
   pendiente_refaccion: "Pendiente (refacción)",
   terminado: "Terminado",
@@ -655,121 +663,78 @@ const ClientesModule = ({ darkMode }) => {
   const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true }); setFormError(""); setModalOpen(true); };
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
+  // Validar RFC con REGEX (formato mexicano)
+  const isValidRFC = (rfc) => {
+    if (!rfc || rfc.trim() === "") return true; // RFC es opcional
+    const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
+    return rfcRegex.test(rfc.toUpperCase());
+  };
+
+  // Validar email básico
+  const isValidEmail = (email) => {
+    if (!email || email.trim() === "") return true; // Email es opcional
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email.toLowerCase());
+  };
+
   const handleSave = async () => {
-    if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { 
-      setFormError("Título, cliente y vehículo son obligatorios."); 
-      return; 
+    // Validaciones de campos obligatorios
+    if (!form.nombre || !form.nombre.trim()) {
+      setFormError("El nombre es obligatorio.");
+      return;
     }
-    
+
+    if (!form.telefono || !form.telefono.trim()) {
+      setFormError("El teléfono es obligatorio.");
+      return;
+    }
+
+    if (!form.correo || !form.correo.trim()) {
+      setFormError("El correo electrónico es obligatorio.");
+      return;
+    }
+
+    // Validar email
+    if (!isValidEmail(form.correo)) {
+      setFormError("El correo electrónico no es válido.");
+      return;
+    }
+
+    // Validar RFC si se proporciona
+    if (form.rfc && !isValidRFC(form.rfc)) {
+      setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+      return;
+    }
+
     setSaving(true);
     setFormError("");
 
-    const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
-    const itemsTotal = cotizacionItems.length ? calcItemsTotal(cotizacionItems) : null;
-    const refacc = itemsTotal != null ? itemsTotal : (form.monto_refacc === "" ? 0 : Number(form.monto_refacc));
-
     try {
-      const payload = { 
-        titulo: form.titulo, 
-        descripcion: form.descripcion || null, 
-        cliente_id: form.cliente_id, 
-        vehiculo_id: form.vehiculo_id, 
-        mecanico_id: form.mecanico_id || null, 
-        estado: form.estado, 
-        bloqueado: form.bloqueado, 
-        updated_at: new Date().toISOString() 
+      const payload = {
+        nombre: normalizeForSAT(form.nombre),
+        telefono: form.telefono ? form.telefono.trim() : null,
+        correo: form.correo ? form.correo.trim().toLowerCase() : null,
+        direccion: form.direccion ? form.direccion.trim() : null,
+        rfc: form.rfc ? form.rfc.trim().toUpperCase() : null,
+        activo: form.activo,
+        updated_at: new Date().toISOString(),
       };
 
-      let proyectoIdFinal = editTarget?.id;
-
-      // 1. Guardar o Actualizar Proyecto
       if (editTarget) {
-        await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
+        // Actualizar cliente existente
+        const { error } = await supabase.from("clientes").update(payload).eq("id", editTarget.id);
+        if (error) throw error;
       } else {
-        const { data: newProj, error: pErr } = await supabase
-          .from("proyectos")
-          .insert([{ ...payload, fecha_ingreso: new Date().toISOString() }])
-          .select("id")
-          .single();
-        if (pErr) throw pErr;
-        proyectoIdFinal = newProj.id;
-      }
-
-      // 2. Manejo de Cotización
-      const { data: currentCot } = await supabase
-        .from("cotizaciones")
-        .select("id")
-        .eq("proyecto_id", proyectoIdFinal)
-        .maybeSingle();
-
-      let cotizacionId;
-      const cotPayload = { 
-        proyecto_id: proyectoIdFinal, 
-        monto_mano_obra: manoObra, 
-        monto_refacc: refacc, 
-        monto_total: manoObra + refacc,
-        estado: "pendiente" 
-      };
-
-      if (currentCot) {
-        cotizacionId = currentCot.id;
-        await supabase.from("cotizaciones").update(cotPayload).eq("id", cotizacionId);
-        
-        // REINTEGRO: Antes de meter los nuevos, devolvemos lo anterior al stock para no duplicar
-        await supabase.functions.invoke("gestionar-inventario", {
-          body: { tipo_operacion: 'REINTEGRAR', cotizacion_id: cotizacionId }
-        });
-      } else {
-        const { data: newCot, error: cErr } = await supabase
-          .from("cotizaciones")
-          .insert([cotPayload])
-          .select("id")
-          .single();
-        if (cErr) throw cErr;
-        cotizacionId = newCot.id;
-      }
-
-    // 3. Sincronizar Items y Disparar Inventario Automático
-      await supabase.from("cotizacion_items").delete().eq("cotizacion_id", cotizacionId);
-
-      if (cotizacionItems.length > 0) {
-        const itemsPayload = cotizacionItems.map((item) => ({
-          cotizacion_id: cotizacionId,
-          descripcion: item.descripcion || item.refaccion?.nombre || "Refacción",
-          tipo: "refaccion",
-          // BUSCAMOS EL ID: Puede venir como refaccion_id, item.refaccion.id o item.id
-          refaccion_id: item.refaccion_id || item.refaccion?.id || item.id,
-          cantidad: Number(item.cantidad || 0),
-          precio_unit: Number(item.precio_unit || 0),
-        }));
-
-        // Guardamos los items en la cotización para que se vean en el modal
-        await supabase.from("cotizacion_items").insert(itemsPayload);
-
-        // 🚀 AQUÍ GENERAMOS LA VENTA AUTOMÁTICA
-        for (const item of itemsPayload) {
-          // Solo si es una refacción válida y tiene cantidad
-          if (item.refaccion_id && item.cantidad > 0) {
-            
-            // Llamamos a la MISMA función que ya usas en el módulo de Ventas
-            await supabase.functions.invoke("gestionar-inventario", {
-              body: {
-                tipo_operacion: "VENTA",
-                refaccion_id: item.refaccion_id,
-                cantidad: item.cantidad,
-                precio_unit: item.precio_unit,
-                proyecto_id: proyectoIdFinal, // <--- VINCULAMOS LA VENTA AL PROYECTO
-                cotizacion_id: cotizacionId,
-              },
-            });
-          }
-        }
+        // Crear nuevo cliente
+        const { error } = await supabase.from("clientes").insert([payload]);
+        if (error) throw error;
       }
 
       setModalOpen(false);
-      fetchAll();
+      setSearch(""); // Resetear búsqueda para mostrar todos los clientes
+      fetchClientes();
     } catch (err) {
-      setFormError(err.message);
+      setFormError(err.message || "Error al guardar cliente.");
     } finally {
       setSaving(false);
     }
@@ -884,7 +849,7 @@ const ClientesModule = ({ darkMode }) => {
         <div className="flex flex-col gap-4">
           <Field label="Nombre" required darkMode={darkMode}><Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({...form, nombre: normalizeUI(e.target.value)})} placeholder="JUAN GARCIA" /></Field>
           <Field label="Teléfono" required darkMode={darkMode}><Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} placeholder="311 123 4567" /></Field>
-          <Field label="Correo" darkMode={darkMode}><Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({...form, correo: e.target.value})} placeholder="juan@correo.com" /></Field>
+          <Field label="Correo" required darkMode={darkMode}><Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({...form, correo: e.target.value})} placeholder="juan@correo.com" /></Field>
           <Field label="Dirección" darkMode={darkMode}><Textarea darkMode={darkMode} rows={2} value={form.direccion} onChange={(e) => setForm({...form, direccion: normalizeUI(e.target.value)})} placeholder="CALLE, COLONIA, CIUDAD" /></Field>
           <Field label="RFC" darkMode={darkMode}><Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({...form, rfc: normalizeUI(e.target.value)})} placeholder="GARC800101ABC" className="font-mono" /></Field>
           <Field label="Estado" darkMode={darkMode}>
@@ -1477,6 +1442,21 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [refPickerOpen, setRefPickerOpen] = useState(false);
   const [refCartTouched, setRefCartTouched] = useState(false);
 
+  // ─── Diagnóstico inicial en el modal ─────────────────────────────────────────
+  const DIAG_TIPOS = ["inicial", "preventivo", "correctivo", "revision"];
+  const diagFormInit = { tipo: "inicial", sintomas: "", hallazgos: "", causa_raiz: "" };
+  const [diagForm,     setDiagForm]     = useState(diagFormInit);
+  const [diagError,    setDiagError]    = useState("");
+  // Diagnóstico existente en el proyecto que se está editando
+  const [existingDiag, setExistingDiag] = useState(null);
+  // Bandera separada: si estamos editando el diagnóstico ya guardado
+  const [editandoDiag, setEditandoDiag] = useState(false);
+
+  // ─── Obtener rol del usuario actual ───────────────────────────────────────────
+  const metaRole = session?.user?.user_metadata?.rol || "";
+  const isAdmin = metaRole === "Administrador";
+  const isMecanico = metaRole === "Mecánico";
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [p, c, v, e, r, ci] = await Promise.all([  // ← agrega ci
@@ -1579,6 +1559,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   );
 
   const openCreate = () => {
+    if (!isAdmin) {
+      setFormError("Solo administradores pueden crear nuevos proyectos.");
+      return;
+    }
     setEditTarget(null);
     setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
     setFormError("");
@@ -1587,9 +1571,19 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setRefSearch("");
     setRefPickerOpen(false);
     setRefCartTouched(false);
+    setDiagForm(diagFormInit);
+    setDiagError("");
+    setExistingDiag(null);
+    setEditandoDiag(false);
     setModalOpen(true);
   };
   const openEdit = async (p) => {
+    // Validar permisos: mecánico solo en ciertos estados
+    if (isMecanico && !["en_progreso", "pendiente_refaccion", "terminado"].includes(p.estado)) {
+      setFormError(`Mecánicos solo pueden editar proyectos en: En progreso, Pendiente (refacción), o Terminado. Este proyecto está en: ${estadoLabel(p.estado)}`);
+      return;
+    }
+    
     const cotizacion = getLatestCotizacion(p);
     setEditTarget(p);
     setForm({
@@ -1609,6 +1603,17 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setRefPickerOpen(false);
     setRefCartDraft(null);
     setRefCartTouched(false);
+    // Cargar diagnóstico inicial existente
+    const diagInicial = Array.isArray(p.diagnosticos) ? p.diagnosticos.find(d => d.tipo === "inicial") : null;
+    if (diagInicial) {
+      setExistingDiag(diagInicial);
+      setDiagForm({ tipo: diagInicial.tipo || "inicial", sintomas: diagInicial.sintomas || "", hallazgos: diagInicial.hallazgos || "", causa_raiz: diagInicial.causa_raiz || "" });
+    } else {
+      setExistingDiag(null);
+      setDiagForm(diagFormInit);
+    }
+    setDiagError("");
+    setEditandoDiag(false);
     if (cotizacion?.id) {
       const { data: items } = await supabase
         .from("cotizacion_items")
@@ -1748,6 +1753,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       updated_at: new Date().toISOString()
     };
     let error = null;
+    let proyectoIdFinal = editTarget?.id || null;
 
     if (editTarget) {
       const prevMecanicoId = editTarget.mecanico_id || null;
@@ -1850,6 +1856,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         .select("id")
         .single();
       error = createError;
+      if (!error && createdProject?.id) proyectoIdFinal = createdProject.id;
 
       if (!error && form.cita_id) {  
         await supabase
@@ -1883,6 +1890,56 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
     setSaving(false);
     if (error) { setFormError(error.message); return; }
+
+    // ── Guardar diagnóstico inicial si se llenó ───────────────────────────────
+    const diagTieneDatos = diagForm.sintomas.trim() || diagForm.hallazgos.trim() || diagForm.causa_raiz.trim();
+    if (diagTieneDatos) {
+      const mecId = form.mecanico_id || editTarget?.mecanico_id || null;
+      if (mecId) {
+        let diagSaved = false;
+        if (existingDiag?.id && editandoDiag) {
+          // Actualizar diagnóstico existente
+          await supabase.from("diagnosticos").update({
+            tipo: diagForm.tipo || "inicial",
+            sintomas: diagForm.sintomas.trim() || null,
+            hallazgos: diagForm.hallazgos.trim() || null,
+            causa_raiz: diagForm.causa_raiz.trim() || null,
+          }).eq("id", existingDiag.id);
+          diagSaved = true;
+        } else if (!existingDiag) {
+          // Insertar nuevo diagnóstico (verificar que no exista ya)
+          const { data: diagCheck } = await supabase
+            .from("diagnosticos")
+            .select("id")
+            .eq("proyecto_id", proyectoIdFinal)
+            .eq("tipo", "inicial")
+            .maybeSingle();
+          if (!diagCheck) {
+            await supabase.from("diagnosticos").insert([{
+              proyecto_id: proyectoIdFinal,
+              mecanico_id: mecId,
+              tipo: diagForm.tipo || "inicial",
+              sintomas: diagForm.sintomas.trim() || null,
+              hallazgos: diagForm.hallazgos.trim() || null,
+              causa_raiz: diagForm.causa_raiz.trim() || null,
+            }]);
+            diagSaved = true;
+          }
+        }
+        
+        // Si se guardó nuevo diagnóstico y el proyecto está en estado "activo", cambiar a "pendiente_cotización"
+        if (diagSaved) {
+          const currentProyecto = editTarget || proyectos.find(p => p.id === proyectoIdFinal);
+          if (currentProyecto && currentProyecto.estado === "activo") {
+            await supabase.from("proyectos").update({
+              estado: "pendiente_cotizacion",
+              updated_at: new Date().toISOString()
+            }).eq("id", proyectoIdFinal);
+          }
+        }
+      }
+    }
+
     setModalOpen(false); fetchAll();
   };
 
@@ -1917,7 +1974,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           <h2 className={`text-lg font-semibold ${t}`}>Proyectos</h2>
           <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} proyectos</p>
         </div>
-        <BtnAccent onClick={openCreate} color={C_RED}>+ Nuevo Proyecto</BtnAccent>
+        {isAdmin && <BtnAccent onClick={openCreate} color={C_RED}>+ Nuevo Proyecto</BtnAccent>}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -2061,15 +2118,102 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
             </Select>
           </Field>
-          <Field label="Estado" darkMode={darkMode}>
-            <Select darkMode={darkMode} value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
-              {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
-            </Select>
-          </Field>
+          
+          {isAdmin && (
+            <Field label="Estado" darkMode={darkMode}>
+              <Select darkMode={darkMode} value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
+                {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
+              </Select>
+            </Field>
+          )}
+          
+          {isMecanico && editTarget && (
+            <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Estado Actual</p>
+              <p className={`mt-1 text-sm ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{estadoLabel(form.estado)}</p>
+              {form.estado !== "terminado" && form.estado !== "entregado" && form.estado !== "cancelado" && (
+                <p className={`mt-2 text-xs ${darkMode ? "text-amber-400" : "text-amber-600"}`}>
+                  Solo puedes cambiar a <strong>Terminado</strong> cuando completes el trabajo.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Diagnóstico inicial ───────────────────────────────────────── */}
           <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+            <div className="flex items-center justify-between mb-3">
+              <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+                Diagnóstico Inicial
+              </p>
+              {existingDiag && !editandoDiag && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                  ✓ Registrado
+                </span>
+              )}
+            </div>
+            {existingDiag && !editandoDiag ? (
+              <div className="flex flex-col gap-2">
+                <div className={`rounded-md border px-3 py-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
+                  <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Síntomas</p>
+                  <p>{existingDiag.sintomas || "—"}</p>
+                  {existingDiag.hallazgos && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Hallazgos</p><p>{existingDiag.hallazgos}</p></>}
+                  {existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa raíz</p><p>{existingDiag.causa_raiz}</p></>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEditandoDiag(true); setDiagForm({ tipo: existingDiag.tipo || "inicial", sintomas: existingDiag.sintomas || "", hallazgos: existingDiag.hallazgos || "", causa_raiz: existingDiag.causa_raiz || "" }); }}
+                  className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+                >
+                  Editar diagnóstico
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <Field label="Tipo" darkMode={darkMode}>
+                  <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value})}>
+                    {DIAG_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Síntomas *" darkMode={darkMode}>
+                  <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe lo que reporta el cliente…" />
+                </Field>
+                <Field label="Hallazgos" darkMode={darkMode}>
+                  <Textarea darkMode={darkMode} rows={2} value={diagForm.hallazgos} onChange={(e) => setDiagForm({...diagForm, hallazgos: e.target.value})} placeholder="Observaciones técnicas al recibir el vehículo…" />
+                </Field>
+                <Field label="Causa Raíz" darkMode={darkMode}>
+                  <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
+                </Field>
+                {editandoDiag && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditandoDiag(false); setDiagError(""); }}
+                    className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+                  >Cancelar edición</button>
+                )}
+                {diagError && <p className="text-xs" style={{ color: C_RED }}>{diagError}</p>}
+                <p className={`text-[11px] ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
+                  El diagnóstico se guardará junto con el proyecto. Los campos de cotización están bloqueados hasta que haya un diagnóstico.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Cotización Inicial (bloqueada sin diagnóstico) ──────────────── */}
+          {(() => {
+            const diagListo = existingDiag || diagForm.sintomas.trim();
+            return (
+          <div className={`rounded-lg border p-3 relative ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
             <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
               Cotización Inicial
             </p>
+            {!diagListo && (
+              <div className={`absolute inset-0 rounded-lg flex flex-col items-center justify-center gap-2 z-10 ${darkMode ? "bg-zinc-900/80" : "bg-gray-50/90"}`}>
+                <span className="text-2xl">🔒</span>
+                <p className={`text-xs font-medium text-center px-4 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+                  Completa el diagnóstico inicial para habilitar la cotización
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Mano de Obra" darkMode={darkMode}>
                 <Input
@@ -2236,6 +2380,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               document.body
             )}
           </div>
+          );
+          })()}
+
           <div className="flex items-center gap-3">
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
             <label htmlFor="bloqueado" className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Bloqueado (entrega pendiente de pago)</label>
@@ -2459,6 +2606,167 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 };
 
 // ─── Shell compartido (topbar + sidebar) ─────────────────────────────────────
+
+// ─── Sección Diagnóstico Inicial (usada en ProyectoDetalleModal) ──────────────
+const DIAG_TIPOS_LABELS = { inicial: "Inicial", preventivo: "Preventivo", correctivo: "Correctivo", revision: "Revisión" };
+
+const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, diagnosticoInicial: diagProp }) => {
+  const [diag,       setDiag]       = useState(diagProp || null);
+  const [editMode,   setEditMode]   = useState(false);
+  const [form,       setForm]       = useState({ tipo: "inicial", sintomas: "", hallazgos: "", causa_raiz: "" });
+  const [saving,     setSaving]     = useState(false);
+  const [err,        setErr]        = useState("");
+
+  // Sync if parent re-opens modal with different project
+  useEffect(() => {
+    setDiag(diagProp || null);
+    setEditMode(false);
+    setErr("");
+  }, [proyecto?.id, diagProp]);
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+
+  const startEdit = () => {
+    setForm({
+      tipo:       diag?.tipo       || "inicial",
+      sintomas:   diag?.sintomas   || "",
+      hallazgos:  diag?.hallazgos  || "",
+      causa_raiz: diag?.causa_raiz || "",
+    });
+    setEditMode(true);
+    setErr("");
+  };
+
+  const handleSaveDiag = async () => {
+    if (!form.sintomas.trim()) { setErr("Los síntomas son obligatorios."); return; }
+    setSaving(true); setErr("");
+    try {
+      // Resolver mecanico_id del usuario autenticado
+      let mecId = proyecto?.mecanico_id || null;
+      if (session?.user?.email) {
+        const { data: emp } = await supabase.from("empleados").select("id").eq("correo", session.user.email).maybeSingle();
+        if (emp?.id) mecId = emp.id;
+      }
+      if (!mecId) { setErr("No se encontró el mecánico asociado. Asegúrate de que el proyecto tenga un mecánico asignado."); setSaving(false); return; }
+
+      const payload = {
+        tipo:       form.tipo,
+        sintomas:   form.sintomas.trim()   || null,
+        hallazgos:  form.hallazgos.trim()  || null,
+        causa_raiz: form.causa_raiz.trim() || null,
+      };
+
+      if (diag?.id) {
+        const { error } = await supabase.from("diagnosticos").update(payload).eq("id", diag.id);
+        if (error) throw error;
+        setDiag({ ...diag, ...payload });
+      } else {
+        const { data, error } = await supabase.from("diagnosticos")
+          .insert([{ proyecto_id: proyecto.id, mecanico_id: mecId, ...payload }])
+          .select("id, tipo, sintomas, hallazgos, causa_raiz, created_at")
+          .single();
+        if (error) throw error;
+        setDiag(data);
+      }
+      setEditMode(false);
+    } catch (e) {
+      setErr(e?.message || "Error al guardar diagnóstico.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Diagnóstico inicial</p>
+        {diag && !editMode && canUpload && (
+          <button onClick={startEdit} className={`text-[10px] px-2 py-1 rounded border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
+            Editar
+          </button>
+        )}
+      </div>
+
+      {editMode ? (
+        <div className={`rounded-lg border p-3 flex flex-col gap-3 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+          <div>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Tipo</label>
+            <select
+              value={form.tipo}
+              onChange={(e) => setForm({...form, tipo: e.target.value})}
+              className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            >
+              {Object.entries(DIAG_TIPOS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Síntomas *</label>
+            <textarea
+              rows={3}
+              value={form.sintomas}
+              onChange={(e) => setForm({...form, sintomas: e.target.value})}
+              placeholder="¿Qué reporta el cliente o qué se observa?"
+              className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            />
+          </div>
+          <div>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Hallazgos</label>
+            <textarea
+              rows={2}
+              value={form.hallazgos}
+              onChange={(e) => setForm({...form, hallazgos: e.target.value})}
+              placeholder="Observaciones técnicas al recibir el vehículo…"
+              className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            />
+          </div>
+          <div>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Causa raíz</label>
+            <input
+              type="text"
+              value={form.causa_raiz}
+              onChange={(e) => setForm({...form, causa_raiz: e.target.value})}
+              placeholder="Causa probable del problema…"
+              className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            />
+          </div>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setEditMode(false); setErr(""); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}
+            >Cancelar</button>
+            <button
+              onClick={handleSaveDiag}
+              disabled={saving}
+              className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+              style={{ backgroundColor: C_BLUE }}
+            >{saving ? "Guardando…" : "Guardar diagnóstico"}</button>
+          </div>
+        </div>
+      ) : diag ? (
+        <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+          <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${st}`}>{DIAG_TIPOS_LABELS[diag.tipo] || diag.tipo}</p>
+          <p className={`text-sm font-medium ${t}`}>{diag.sintomas || "Sin contenido"}</p>
+          {diag.hallazgos && <p className={`text-xs mt-1.5 ${st}`}><span className="font-semibold">Hallazgos:</span> {diag.hallazgos}</p>}
+          {diag.causa_raiz && <p className={`text-xs mt-1 ${st}`}><span className="font-semibold">Causa:</span> {diag.causa_raiz}</p>}
+          {diag.empleados?.nombre && <p className={`text-[11px] mt-2 ${st}`}>Registrado por {diag.empleados.nombre}</p>}
+        </div>
+      ) : canUpload ? (
+        <div>
+          <p className={`text-xs mb-2 ${st}`}>Aún no hay diagnóstico inicial registrado.</p>
+          <button
+            onClick={startEdit}
+            className="px-3 py-1.5 rounded-md text-xs font-medium text-white"
+            style={{ backgroundColor: C_BLUE }}
+          >+ Agregar diagnóstico inicial</button>
+        </div>
+      ) : (
+        <p className={`text-xs ${st}`}>Aún no hay diagnóstico inicial registrado.</p>
+      )}
+    </div>
+  );
+};
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
 const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
@@ -2810,22 +3118,13 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             )}
 
             <div className={`mt-4 pt-4 border-t ${divider} space-y-4`}>
-              <div>
-                <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st}`}>Diagnóstico inicial</p>
-                {diagnosticoInicial ? (
-                  <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
-                    <p className={`text-sm font-medium ${t}`}>{diagnosticoInicial.sintomas || "Sin contenido"}</p>
-                    {diagnosticoInicial.causa_raiz && (
-                      <p className={`text-xs mt-2 ${st}`}>Causa: {diagnosticoInicial.causa_raiz}</p>
-                    )}
-                    <p className={`text-[11px] mt-2 ${st}`}>
-                      {diagnosticoInicial.empleados?.nombre ? `Registrado por ${diagnosticoInicial.empleados.nombre}` : "Diagnóstico registrado"}
-                    </p>
-                  </div>
-                ) : (
-                  <p className={`text-xs ${st}`}>Aún no hay diagnóstico inicial registrado.</p>
-                )}
-              </div>
+              <DiagnosticoInicialSection
+                proyecto={proyecto}
+                darkMode={darkMode}
+                session={session}
+                canUpload={canUpload}
+                diagnosticoInicial={diagnosticoInicial}
+              />
 
               <div>
                 <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st}`}>Observaciones</p>
@@ -3055,6 +3354,7 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "empleados", label: "Empleados", icon: <LucideIcon name="wrench" /> },
     { id: "vehiculos", label: "Vehículos", icon: <LucideIcon name="car" /> },
     { id: "proyectos", label: "Proyectos", icon: <LucideIcon name="tool" /> },
+    { id: "pagos-admin", label: "Autorizar Pagos", icon: <LucideIcon name="creditcard" /> },
     { id: "refacciones", label: "Refacciones", icon: <LucideIcon name="box" /> },
     { id: "proveedores", label: "Proveedores", icon: <LucideIcon name="tag" /> },
     { id: "compras-refacciones", label: "Compra Refacciones", icon: <LucideIcon name="receipt" /> },
@@ -3088,7 +3388,331 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
       {activeModule === "historial-servicios" && <HistorialServiciosAdminWrapper darkMode={darkMode} />}
       {activeModule === "reportes" && <ReportesOperativosWrapper darkMode={darkMode} />}
+      {activeModule === "pagos-admin" && <PagosAdminModule darkMode={darkMode} session={session} />}
     </DashboardShell>
+  );
+};
+
+// ─── Módulo de Autorización de Pagos (Admin) ─
+const PagosAdminModule = ({ darkMode, session }) => {
+  const [pagos, setPagos] = useState([]);
+  const [pagosCompletados, setPagosCompletados] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("pendientes"); // "pendientes" o "completados"
+  const [selectedPago, setSelectedPago] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [cambiarAEntregado, setCambiarAEntregado] = useState(true);
+  const [authorizingPagoId, setAuthorizingPagoId] = useState(null);
+  const [authMessage, setAuthMessage] = useState(null); // "success" | "error" | null
+  const [authMessageText, setAuthMessageText] = useState("");
+
+  const fetchPagos = useCallback(async () => {
+    setLoading(true);
+    // Pagos pendientes
+    const { data: pagosPend, error: errPend } = await supabase
+      .from("pagos")
+      .select(`
+        id,
+        estado,
+        monto,
+        metodo_cobro,
+        fecha_pago,
+        proyecto_id,
+        proyectos(titulo, cliente_id, estado, clientes(nombre))
+      `)
+      .eq("estado", "pendiente")
+      .order("fecha_pago", { ascending: false });
+    
+    if (!errPend) setPagos(pagosPend || []);
+
+    // Pagos completados
+    const { data: pagosComp, error: errComp } = await supabase
+      .from("pagos")
+      .select(`
+        id,
+        estado,
+        monto,
+        metodo_cobro,
+        fecha_pago,
+        proyecto_id,
+        proyectos(titulo, cliente_id, estado, clientes(nombre))
+      `)
+      .eq("estado", "completado")
+      .order("fecha_pago", { ascending: false });
+    
+    if (!errComp) setPagosCompletados(pagosComp || []);
+    
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchPagos();
+  }, [fetchPagos]);
+
+  useSupabaseRealtime("pagos", fetchPagos);
+
+  const handleAuthorizeClick = (pago) => {
+    setSelectedPago(pago);
+    setCambiarAEntregado(true);
+    setShowAuthModal(true);
+  };
+
+  const handleConfirmAuthorize = async () => {
+    if (!selectedPago) return;
+    
+    setAuthorizingPagoId(selectedPago.id);
+    setAuthMessage(null);
+    try {
+      const response = await invokeEdgeFunction("autorizar-pago", {
+        body: {
+          pago_id: selectedPago.id,
+          cambiar_a_entregado: cambiarAEntregado,
+        },
+        userToken: session?.access_token || "",
+      });
+
+      if (response.success) {
+        setAuthMessage("success");
+        const proyectoTitle = selectedPago.proyectos?.titulo || "desconocido";
+        const clienteData = selectedPago.proyectos?.clientes;
+        setAuthMessageText(
+          `Pago autorizado exitosamente. ${cambiarAEntregado ? "Proyecto marcado como entregado." : ""}`
+        );
+        
+        // Notificar al cliente que su pago fue autorizado
+        if (clienteData?.usuario_id) {
+          try {
+            await invokeEdgeFunction("enviar-notificacion", {
+              body: {
+                usuario_id: clienteData.usuario_id,
+                proyecto_id: selectedPago.proyecto_id,
+                titulo: "Pago Autorizado",
+                mensaje: `Tu pago de $${Number(selectedPago.monto).toFixed(2)} para el proyecto "${proyectoTitle}" ha sido autorizado.${cambiarAEntregado ? " El proyecto ha sido marcado como entregado." : ""}`,
+              },
+              userToken: session?.access_token || "",
+            });
+          } catch (notificationErr) {
+            console.warn("Error notificando al cliente:", notificationErr);
+          }
+        }
+        
+        setTimeout(() => {
+          setShowAuthModal(false);
+          setSelectedPago(null);
+          setAuthMessage(null);
+          fetchPagos();
+        }, 1500);
+      } else {
+        setAuthMessage("error");
+        setAuthMessageText(response.error || "Error al autorizar el pago");
+      }
+    } catch (err) {
+      console.error("Error autorizando pago:", err);
+      setAuthMessage("error");
+      setAuthMessageText(err?.message || "Error al autorizar el pago");
+    } finally {
+      setAuthorizingPagoId(null);
+    }
+  };
+
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+  const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
+  const rowH    = darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50";
+  const headTxt = darkMode ? "text-zinc-500 border-zinc-800" : "text-gray-400 border-gray-100";
+  const tabBgActive = darkMode ? "bg-zinc-800/50" : "bg-blue-50";
+  const tabBgInactive = darkMode ? "hover:bg-zinc-800/20" : "hover:bg-gray-100";
+
+  const displayPagos = activeTab === "pendientes" ? pagos : pagosCompletados;
+
+  return (
+    <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
+      <div className="mb-6">
+        <h2 className={`text-lg font-semibold ${t}`}>Gestión de Pagos</h2>
+        <p className={`text-xs ${st} mt-0.5`}>{activeTab === "pendientes" ? pagos.length : pagosCompletados.length} pagos {activeTab === "pendientes" ? "pendientes" : "completados"}</p>
+      </div>
+
+      {/* Pestañas */}
+      <div className={`flex gap-2 mb-4 border-b ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
+        <button
+          onClick={() => setActiveTab("pendientes")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "pendientes"
+              ? `border-blue-500 ${t}`
+              : `border-transparent ${st} ${tabBgInactive}`
+          }`}
+        >
+          Pendientes ({pagos.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("completados")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "completados"
+              ? `border-blue-500 ${t}`
+              : `border-transparent ${st} ${tabBgInactive}`
+          }`}
+        >
+          Completados ({pagosCompletados.length})
+        </button>
+      </div>
+
+      <Card darkMode={darkMode} className="overflow-hidden">
+        {loading ? (
+          <div className={`p-12 text-center ${st} text-sm`}>Cargando…</div>
+        ) : displayPagos.length === 0 ? (
+          <div className={`p-12 text-center ${st} text-sm`}>
+            {activeTab === "pendientes" ? "No hay pagos pendientes de autorización" : "No hay pagos completados"}
+          </div>
+        ) : (
+          <>
+            {/* Desktop */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={`border-b text-xs uppercase tracking-wider ${headTxt}`}>
+                    {["Proyecto", "Cliente", "Monto", "Método", "Fecha", activeTab === "pendientes" ? "Acción" : "Estado"].map((h, i) => (
+                      <th key={i} className={`px-5 py-3 font-medium ${i === 5 ? "text-right" : "text-left"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${divider}`}>
+                  {displayPagos.map((p) => (
+                    <tr key={p.id} className={`transition-colors ${rowH}`}>
+                      <td className={`px-5 py-3 font-medium ${t} max-w-[200px] truncate`}>{p.proyectos?.titulo || "—"}</td>
+                      <td className={`px-5 py-3 ${st}`}>{p.proyectos?.clientes?.nombre || "—"}</td>
+                      <td className={`px-5 py-3 ${t} font-semibold`}>${Number(p.monto).toFixed(2)}</td>
+                      <td className={`px-5 py-3 ${st} capitalize`}>{p.metodo_cobro || "—"}</td>
+                      <td className={`px-5 py-3 ${st} text-xs`}>{formatDateTimeWorkshop(p.fecha_pago) || "—"}</td>
+                      <td className="px-5 py-3 text-right">
+                        {activeTab === "pendientes" ? (
+                          <BtnAccent 
+                            onClick={() => handleAuthorizeClick(p)} 
+                            disabled={authorizingPagoId === p.id}
+                            color={C_BLUE} 
+                            className="text-xs px-3 py-1"
+                          >
+                            {authorizingPagoId === p.id ? "Autorizando…" : "Autorizar"}
+                          </BtnAccent>
+                        ) : (
+                          <span className="text-xs font-medium text-green-500">Completado</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile */}
+            <div className={`md:hidden divide-y ${divider}`}>
+              {displayPagos.map((p) => (
+                <div key={p.id} className="px-4 py-4 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <p className={`font-medium ${t}`}>{p.proyectos?.titulo || "—"}</p>
+                      <p className={`text-xs ${st}`}>{p.proyectos?.clientes?.nombre || "—"}</p>
+                    </div>
+                    <p className={`text-sm font-semibold ${t} whitespace-nowrap`}>${Number(p.monto).toFixed(2)}</p>
+                  </div>
+                  <p className={`text-xs ${st}`}>Método: {p.metodo_cobro || "—"}</p>
+                  <p className={`text-xs ${st}`}>Fecha: {formatDateTimeWorkshop(p.fecha_pago) || "—"}</p>
+                  {activeTab === "pendientes" ? (
+                    <BtnAccent 
+                      onClick={() => handleAuthorizeClick(p)} 
+                      disabled={authorizingPagoId === p.id}
+                      color={C_BLUE} 
+                      className="text-xs px-3 py-2"
+                    >
+                      {authorizingPagoId === p.id ? "Autorizando…" : "Autorizar"}
+                    </BtnAccent>
+                  ) : (
+                    <span className="text-xs font-medium text-green-500">Pago Completado</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Modal de Autorización */}
+      <Modal open={showAuthModal} onClose={() => setShowAuthModal(false)} title="Autorizar Pago" darkMode={darkMode}>
+        {selectedPago && (
+          <div className="flex flex-col gap-4">
+            {authMessage && (
+              <div className={`rounded-lg border p-3 ${
+                authMessage === "success"
+                  ? darkMode ? "border-green-800/50 bg-green-900/20 text-green-400" : "border-green-200 bg-green-50 text-green-700"
+                  : darkMode ? "border-red-800/50 bg-red-900/20 text-red-400" : "border-red-200 bg-red-50 text-red-700"
+              }`}>
+                <p className="text-sm font-medium">{authMessageText}</p>
+              </div>
+            )}
+            <div className={`rounded-lg border p-4 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"} mb-2`}>Detalles del Pago</p>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className={st}>Proyecto:</span>
+                  <span className={`font-medium ${t}`}>{selectedPago.proyectos?.titulo || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={st}>Cliente:</span>
+                  <span className={`font-medium ${t}`}>{selectedPago.proyectos?.clientes?.nombre || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={st}>Monto:</span>
+                  <span className={`font-semibold ${t}`}>${Number(selectedPago.monto).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={st}>Método:</span>
+                  <span className={`capitalize ${t}`}>{selectedPago.metodo_cobro || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={st}>Estado del Proyecto:</span>
+                  <span className={`capitalize ${t}`}>{estadoLabel(selectedPago.proyectos?.estado) || "—"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className={`rounded-lg border p-4 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={cambiarAEntregado} 
+                  onChange={(e) => setCambiarAEntregado(e.target.checked)}
+                  className="mt-1"
+                />
+                <div>
+                  <p className={`text-sm font-medium ${t}`}>Cambiar proyecto a "Entregado"</p>
+                  <p className={`text-xs ${st} mt-1`}>
+                    {cambiarAEntregado 
+                      ? "El proyecto se marcará como entregado al autorizar el pago." 
+                      : "El proyecto seguirá en estado \"Terminado\" después de autorizar."}
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex gap-3 mt-2">
+              <button 
+                onClick={() => setShowAuthModal(false)} 
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+              >
+                Cancelar
+              </button>
+              <BtnAccent 
+                onClick={handleConfirmAuthorize} 
+                disabled={authorizingPagoId === selectedPago.id}
+                color={C_BLUE} 
+                className="flex-1 justify-center"
+              >
+                {authorizingPagoId === selectedPago.id ? "Autorizando…" : "Confirmar Autorización"}
+              </BtnAccent>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
   );
 };
 
@@ -3152,7 +3776,7 @@ const MisVehiculosModule = ({ darkMode, clienteId }) => {
   );
 };
 //Modulo carrito de cliente
-const MiCarritoModule = ({darkMode, clienteId}) =>{
+const MiCarritoModule = ({darkMode, clienteId, session}) =>{
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3303,12 +3927,6 @@ const MiCarritoModule = ({darkMode, clienteId}) =>{
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
-
-      // Refresca estado local para permitir imprimir el ticket de cobro.
-      setTickets((prev) => prev.map((t) =>
-        t.id === selectedTicket.id ? { ...t, estado: "entregado" } : t
-      ));
-      setSelectedTicket((prev) => (prev ? { ...prev, estado: "entregado" } : prev));
 
       setTimeout(() => {
         navigate(`/ticket/${selectedTicket.id}`);
@@ -4073,7 +4691,7 @@ const DashboardCliente = ({ session, darkMode }) => {
           session
         });
       }} />}
-      {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId}/>}
+      {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId} session={session}/>}
     </DashboardShell>
   );
 };

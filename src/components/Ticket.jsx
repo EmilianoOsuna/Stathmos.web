@@ -158,27 +158,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
         backgroundColor: "#ffffff",
         allowTaint: true,
         logging: false,
-        onclone: (clonedDocument) => {
-          // Strip all classes and problematic styles from cloned element
-          const allElements = clonedDocument.querySelectorAll('*');
-          allElements.forEach((el) => {
-            // Remove class attribute safely for both HTML and SVG elements
-            if (typeof el.removeAttribute === "function") {
-              el.removeAttribute("class");
-            }
-            
-            // Remove inline styles that might contain oklch
-            if (el.style && el.style.cssText) {
-              const styles = el.style.cssText.split(';').filter(style => {
-                return style.trim() && !style.includes('oklch');
-              }).join(';');
-              el.style.cssText = styles;
-            }
-            
-            // Reset to basic styles
-            el.setAttribute('style', '');
-          });
-        }
+        removeContainer: true,
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -191,17 +171,20 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
 
       const imgWidth = 210;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= 297;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= 297;
+      const maxHeight = 297; // Altura máxima de una página A4
+      
+      // Si la imagen es más larga que una página, la escalamos
+      let finalHeight = imgHeight;
+      let finalWidth = imgWidth;
+      
+      if (imgHeight > maxHeight) {
+        finalHeight = maxHeight;
+        finalWidth = (canvas.width * maxHeight) / canvas.height;
+        // Recentrar si es necesario
+        const xOffset = (imgWidth - finalWidth) / 2;
+        pdf.addImage(imgData, "PNG", xOffset, 0, finalWidth, finalHeight);
+      } else {
+        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
       }
 
       const nombreArchivo = `Ticket_${ticket.id.slice(0, 8).toUpperCase()}_${new Date().getTime()}.pdf`;

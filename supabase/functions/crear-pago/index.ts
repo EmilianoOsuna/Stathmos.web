@@ -87,9 +87,9 @@ serve(async (req) => {
     }
 
     const estadoProyecto = String(proyecto.estado || "").toLowerCase().trim();
-    if (estadoProyecto !== "en_progreso") {
+    if (estadoProyecto !== "en_progreso" && estadoProyecto !== "terminado") {
       return new Response(
-        JSON.stringify({ success: false, error: "Proyecto no disponible para pago: estado inválido." }),
+        JSON.stringify({ success: false, error: "Proyecto no disponible para pago: debe estar en 'En progreso' o 'Terminado'." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
       );
     }
@@ -168,7 +168,7 @@ serve(async (req) => {
           proyecto_id,
           monto: montoNum,
           metodo_cobro: metodoNormalizado,
-          estado: "completado",
+          estado: "pendiente",
           referencia: referencia ?? `PAGO-${String(proyecto_id).slice(0, 8).toUpperCase()}-${Date.now()}`,
         },
       ])
@@ -202,17 +202,27 @@ serve(async (req) => {
         },
       ]);
 
-    // Actualizar el estado del proyecto a entregado
-    const { error: proyectoUpdateErr } = await supabaseAdmin
-      .from("proyectos")
-      .update({
-        estado: "entregado",
-        fecha_cierre: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", proyecto_id);
+    // Notificar al admin que hay un pago pendiente de autorización
+    const { data: admins } = await supabaseAdmin
+      .from("usuarios")
+      .select("id")
+      .eq("rol_id", (await supabaseAdmin.from("roles").select("id").eq("nombre", "Administrador").maybeSingle()).data?.id || null);
 
-    if (proyectoUpdateErr) throw proyectoUpdateErr;
+    if (admins && admins.length > 0) {
+      for (const admin of admins) {
+        await supabaseAdmin
+          .from("notificaciones")
+          .insert([
+            {
+              usuario_id: admin.id,
+              proyecto_id,
+              titulo: "Pago pendiente de autorización",
+              mensaje: `Se ha registrado un pago de $${montoNum} para el proyecto. Por favor, revisa y autoriza el pago.`,
+              leida: false,
+            },
+          ]);
+      }
+    }
 
     return new Response(
       JSON.stringify({ success: true, pago, factura_id: facturaId, factura_folio: facturaFolio }),

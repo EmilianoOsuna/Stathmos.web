@@ -71,7 +71,7 @@ DROP FUNCTION IF EXISTS public.fn_liberar_bloqueo_al_pagar() CASCADE;
 
 CREATE TYPE public.tipo_operacion       AS ENUM ('INSERT', 'UPDATE', 'DELETE');
 CREATE TYPE public.estado_cita          AS ENUM ('pendiente', 'confirmada', 'cancelada', 'completada');
-CREATE TYPE public.estado_proyecto      AS ENUM ('activo', 'pendiente_cotizacion', 'en_progreso', 'pendiente_refaccion',
+CREATE TYPE public.estado_proyecto      AS ENUM ('activo', 'pendiente_diagnostico', 'pendiente_cotizacion', 'pendiente_aprobacion', 'en_progreso', 'pendiente_refaccion',
   'terminado','entregado', 'cancelado');
 CREATE TYPE public.estado_cotizacion    AS ENUM ('pendiente', 'aprobada', 'rechazada', 'modificada');
 CREATE TYPE public.estado_factura       AS ENUM ('emitida', 'pagada', 'cancelada');
