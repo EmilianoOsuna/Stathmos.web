@@ -1507,8 +1507,22 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   }, [initialProjectId, proyectos]);
 
   useEffect(() => {
-    setFilteredVehiculos(form.cliente_id ? vehiculos.filter((v) => v.cliente_id === form.cliente_id) : []);
-  }, [form.cliente_id, vehiculos]);
+    const vehiculoEnProyectoActivo = new Set(
+      proyectos
+        .filter((p) => p.vehiculo_id && !["entregado", "cancelado"].includes(p.estado) && p.id !== editTarget?.id)
+        .map((p) => p.vehiculo_id)
+    );
+
+    const disponibles = form.cliente_id
+      ? vehiculos.filter((v) => v.cliente_id === form.cliente_id && (!vehiculoEnProyectoActivo.has(v.id) || v.id === editTarget?.vehiculo_id))
+      : [];
+
+    setFilteredVehiculos(disponibles);
+
+    if (form.vehiculo_id && !disponibles.some((v) => v.id === form.vehiculo_id)) {
+      setForm((prev) => (prev.vehiculo_id ? { ...prev, vehiculo_id: "" } : prev));
+    }
+  }, [form.cliente_id, form.vehiculo_id, vehiculos, proyectos, editTarget?.id, editTarget?.vehiculo_id]);
 
   const refCartTotal = useMemo(() => (
     refCart.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0)
@@ -1707,6 +1721,18 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const handleSave = async () => {
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
+
+    const vehiculoOcupado = proyectos.some((p) =>
+      p.vehiculo_id === form.vehiculo_id &&
+      !["entregado", "cancelado"].includes(p.estado) &&
+      (!editTarget || p.id !== editTarget.id)
+    );
+
+    if (vehiculoOcupado) {
+      setFormError("Ese vehículo cuenta con un proyecto activo.");
+      return;
+    }
+
     setSaving(true); setFormError("");
     const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
     const refacc = Number(refCartTotal || 0);
@@ -2162,68 +2188,68 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </div>
           )}
 
-          {/* ── Diagnóstico inicial ───────────────────────────────────────── */}
-          <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
-            <div className="flex items-center justify-between mb-3">
-              <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
-                Diagnóstico Inicial
-              </p>
-              {existingDiag && !editandoDiag && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
-                  ✓ Registrado
-                </span>
-              )}
-            </div>
-            {existingDiag && !editandoDiag ? (
-              <div className="flex flex-col gap-2">
-                <div className={`rounded-md border px-3 py-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
-                  <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Síntomas</p>
-                  <p>{existingDiag.sintomas || "—"}</p>
-                  {existingDiag.hallazgos && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Hallazgos</p><p>{existingDiag.hallazgos}</p></>}
-                  {existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa raíz</p><p>{existingDiag.causa_raiz}</p></>}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setEditandoDiag(true); setDiagForm({ tipo: existingDiag.tipo || "inicial", sintomas: existingDiag.sintomas || "", hallazgos: existingDiag.hallazgos || "", causa_raiz: existingDiag.causa_raiz || "" }); }}
-                  className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
-                >
-                  Editar diagnóstico
-                </button>
+          {editTarget && (
+            /* ── Diagnóstico inicial ───────────────────────────────────────── */
+            <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+                  Diagnóstico Inicial
+                </p>
+                {existingDiag && !editandoDiag && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                    ✓ Registrado
+                  </span>
+                )}
               </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <Field label="Tipo" darkMode={darkMode}>
-                  <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value})}>
-                    {DIAG_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                  </Select>
-                </Field>
-                <Field label="Síntomas *" darkMode={darkMode}>
-                  <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe lo que reporta el cliente…" />
-                </Field>
-                <Field label="Hallazgos" darkMode={darkMode}>
-                  <Textarea darkMode={darkMode} rows={2} value={diagForm.hallazgos} onChange={(e) => setDiagForm({...diagForm, hallazgos: e.target.value})} placeholder="Observaciones técnicas al recibir el vehículo…" />
-                </Field>
-                <Field label="Causa Raíz" darkMode={darkMode}>
-                  <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
-                </Field>
-                {editandoDiag && (
+              {existingDiag && !editandoDiag ? (
+                <div className="flex flex-col gap-2">
+                  <div className={`rounded-md border px-3 py-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
+                    <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Tipo</p>
+                    <p>{existingDiag.tipo || "—"}</p>
+                    <p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Diagnóstico inicial</p>
+                    <p>{existingDiag.sintomas || "—"}</p>
+                    {existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa del problema</p><p>{existingDiag.causa_raiz}</p></>}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => { setEditandoDiag(false); setDiagError(""); }}
+                    onClick={() => { setEditandoDiag(true); setDiagForm({ tipo: existingDiag.tipo || "inicial", sintomas: existingDiag.sintomas || "", hallazgos: existingDiag.hallazgos || "", causa_raiz: existingDiag.causa_raiz || "" }); }}
                     className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
-                  >Cancelar edición</button>
-                )}
-                {diagError && <p className="text-xs" style={{ color: C_RED }}>{diagError}</p>}
-                <p className={`text-[11px] ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
-                  El diagnóstico se guardará junto con el proyecto. Los campos de cotización están bloqueados hasta que haya un diagnóstico.
-                </p>
-              </div>
-            )}
-          </div>
+                  >
+                    Editar diagnóstico
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <Field label="Tipo" darkMode={darkMode}>
+                    <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value})}>
+                      {DIAG_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Diagnóstico inicial *" darkMode={darkMode}>
+                    <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe el diagnóstico inicial del vehículo…" />
+                  </Field>
+                  <Field label="Causa del problema" darkMode={darkMode}>
+                    <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
+                  </Field>
+                  {editandoDiag && (
+                    <button
+                      type="button"
+                      onClick={() => { setEditandoDiag(false); setDiagError(""); }}
+                      className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+                    >Cancelar edición</button>
+                  )}
+                  {diagError && <p className="text-xs" style={{ color: C_RED }}>{diagError}</p>}
+                  <p className={`text-[11px] ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
+                    El diagnóstico se guardará junto con el proyecto. Los campos de cotización están bloqueados hasta que haya un diagnóstico.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Cotización Inicial (bloqueada sin diagnóstico) ──────────────── */}
           {(() => {
-            const diagListo = existingDiag || diagForm.sintomas.trim();
+            const diagListo = editTarget ? (existingDiag || diagForm.sintomas.trim()) : true;
             return (
           <div className={`rounded-lg border p-3 relative ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
             <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
@@ -2633,7 +2659,7 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
 // ─── Sección Diagnóstico Inicial (usada en ProyectoDetalleModal) ──────────────
 const DIAG_TIPOS_LABELS = { inicial: "Inicial", preventivo: "Preventivo", correctivo: "Correctivo", revision: "Revisión" };
 
-const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, diagnosticoInicial: diagProp }) => {
+const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, diagnosticoInicial: diagProp, formatoBasico = false }) => {
   const [diag,       setDiag]       = useState(diagProp || null);
   const [editMode,   setEditMode]   = useState(false);
   const [form,       setForm]       = useState({ tipo: "inicial", sintomas: "", hallazgos: "", causa_raiz: "" });
@@ -2654,7 +2680,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
     setForm({
       tipo:       diag?.tipo       || "inicial",
       sintomas:   diag?.sintomas   || "",
-      hallazgos:  diag?.hallazgos  || "",
+      hallazgos:  formatoBasico ? "" : (diag?.hallazgos || ""),
       causa_raiz: diag?.causa_raiz || "",
     });
     setEditMode(true);
@@ -2676,7 +2702,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
       const payload = {
         tipo:       form.tipo,
         sintomas:   form.sintomas.trim()   || null,
-        hallazgos:  form.hallazgos.trim()  || null,
+        hallazgos:  formatoBasico ? null : (form.hallazgos.trim() || null),
         causa_raiz: form.causa_raiz.trim() || null,
       };
 
@@ -2724,15 +2750,16 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
             </select>
           </div>
           <div>
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Síntomas *</label>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Diagnóstico inicial *</label>
             <textarea
               rows={3}
               value={form.sintomas}
               onChange={(e) => setForm({...form, sintomas: e.target.value})}
-              placeholder="¿Qué reporta el cliente o qué se observa?"
+              placeholder="Describe el diagnóstico inicial del vehículo…"
               className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
             />
           </div>
+          {!formatoBasico && (
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Hallazgos</label>
             <textarea
@@ -2743,8 +2770,9 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
               className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
             />
           </div>
+          )}
           <div>
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Causa raíz</label>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Causa del problema</label>
             <input
               type="text"
               value={form.causa_raiz}
@@ -2771,7 +2799,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
         <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
           <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${st}`}>{DIAG_TIPOS_LABELS[diag.tipo] || diag.tipo}</p>
           <p className={`text-sm font-medium ${t}`}>{diag.sintomas || "Sin contenido"}</p>
-          {diag.hallazgos && <p className={`text-xs mt-1.5 ${st}`}><span className="font-semibold">Hallazgos:</span> {diag.hallazgos}</p>}
+          {!formatoBasico && diag.hallazgos && <p className={`text-xs mt-1.5 ${st}`}><span className="font-semibold">Hallazgos:</span> {diag.hallazgos}</p>}
           {diag.causa_raiz && <p className={`text-xs mt-1 ${st}`}><span className="font-semibold">Causa:</span> {diag.causa_raiz}</p>}
           {diag.empleados?.nombre && <p className={`text-[11px] mt-2 ${st}`}>Registrado por {diag.empleados.nombre}</p>}
         </div>
@@ -2792,7 +2820,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
 };
 
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
-const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session }) => {
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, diagnosticoFormatoBasico = false }) => {
   const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
@@ -3100,15 +3128,8 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
                 <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Estado inicial del proyecto</p>
-                <p className={`text-xs mt-0.5 ${st}`}>
-                  {puedeEditarEstadoInicial
-                    ? "Registra aquí el estado inicial antes de pasar el proyecto a En progreso."
-                    : "Este texto queda en solo lectura cuando el proyecto ya está En progreso."}
-                </p>
+                
               </div>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(estadoProyectoLocal, darkMode)}`}>
-                {estadoProyectoLocal?.replace(/_/g, " ")}
-              </span>
             </div>
 
             <textarea
@@ -3121,19 +3142,8 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             />
 
             <div className="mt-3 flex items-center justify-between gap-3">
-              <p className={`text-xs ${st}`}>
-                {puedeEditarEstadoInicial ? "Al guardar, el proyecto pasará automáticamente a En progreso." : "El texto queda bloqueado para edición."}
-              </p>
-              {puedeEditarEstadoInicial && (
-                <button
-                  type="button"
-                  onClick={handleGuardarEstadoInicial}
-                  disabled={estadoInicialGuardando}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50"
-                >
-                  {estadoInicialGuardando ? "Guardando..." : "Guardar y pasar a En progreso"}
-                </button>
-              )}
+              
+              
             </div>
 
             {estadoInicialError && (
@@ -3147,6 +3157,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                 session={session}
                 canUpload={canUpload}
                 diagnosticoInicial={diagnosticoInicial}
+                formatoBasico={diagnosticoFormatoBasico}
               />
 
               <div>
@@ -3165,8 +3176,10 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                     ))}
                   </div>
                 )}
+                
               </div>
             </div>
+            
           </div>
           
           <div className={`px-6 py-4 border-b ${divider}`}>
@@ -3217,6 +3230,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                   <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handleUpload} />
                 </div>
               )}
+              
             </div>
             {uploadError && <p className="text-xs mb-2" style={{ color: C_RED }}>{uploadError}</p>}
             {loadingFotos ? (
@@ -3247,12 +3261,29 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                     </div>
                   </div>
                 ))}
+                
               </div>
+
+              
             )}
+            
           </div>
+          
+              {puedeEditarEstadoInicial && (
+  <div className="flex justify-end px-6 py-4">
+    <button
+      type="button"
+      onClick={handleGuardarEstadoInicial}
+      disabled={estadoInicialGuardando}
+      className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50"
+    >
+      {estadoInicialGuardando ? "Guardando..." : "Guardar y pasar a en progreso"}
+    </button>
+  </div>
+)}
         </div>
       </div>
-
+            
       {lightbox && createPortal(
         <div className="fixed inset-0 z-[999] bg-black/90 flex items-center justify-center p-4 anim-fadeIn" onClick={() => setLightbox(null)}>
           <img
@@ -4876,7 +4907,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
       <ProyectoDetalleModal
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
-        canUpload={true} session={session}
+        canUpload={true} session={session} diagnosticoFormatoBasico={true}
       />
     </div>
   );

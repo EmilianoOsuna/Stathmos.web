@@ -231,7 +231,7 @@ export default function CitasModule({
 
         const { data, error: citasError } = await supabase
           .from("citas")
-          .select("id, fecha_hora, motivo, estado, notas, vehiculo_id, vehiculos(marca, modelo, placas)")
+          .select("id, fecha_hora, motivo, estado, notas, cliente_id, vehiculo_id, clientes(nombre), vehiculos(marca, modelo, placas)")
           .eq("cliente_id", clienteId)
           .order("fecha_hora", { ascending: true });
 
@@ -251,7 +251,7 @@ export default function CitasModule({
       } else {
         const { data, error: citasError } = await supabase
           .from("citas")
-          .select("id, fecha_hora, motivo, estado, notas, clientes(nombre, correo), vehiculos(marca, modelo, placas)")
+          .select("id, fecha_hora, motivo, estado, notas, cliente_id, vehiculo_id, clientes(nombre, correo), vehiculos(marca, modelo, placas)")
           .order("fecha_hora", { ascending: true });
 
         if (citasError) throw citasError;
@@ -343,6 +343,12 @@ export default function CitasModule({
   const upcomingCitas = useMemo(() => {
     const now = new Date();
     return (citas || []).filter((c) => new Date(c.fecha_hora) >= now && c.estado !== "cancelada");
+  }, [citas]);
+
+  const availableCitas = useMemo(() => {
+    return (citas || [])
+      .filter((c) => c.estado !== "cancelada" && c.estado !== "completada")
+      .sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
   }, [citas]);
 
   const citasPorDia = useMemo(() => {
@@ -552,6 +558,34 @@ export default function CitasModule({
         throw new Error("Ya existe una cita registrada para ese horario.");
       }
 
+      const clienteObjetivoId = role === "administrador" ? form.cliente_id : clienteId;
+      const duplicatedVehiculoCliente = (citas || []).some((cita) => (
+        cita.cliente_id === clienteObjetivoId &&
+        cita.vehiculo_id === form.vehiculo_id &&
+        !["cancelada", "completada"].includes(cita.estado)
+      ));
+
+      if (duplicatedVehiculoCliente) {
+        throw new Error("Ese vehículo ya tiene una cita activa.");
+      }
+
+      const { data: proyectosVehiculo, error: proyectosErr } = await supabase
+        .from("proyectos")
+        .select("id, estado")
+        .eq("vehiculo_id", form.vehiculo_id);
+
+      if (proyectosErr) {
+        throw new Error(proyectosErr.message || "No se pudo validar el estado del vehículo en proyectos.");
+      }
+
+      const tieneProyectoActivo = (proyectosVehiculo || []).some(
+        (proyecto) => !["entregado", "cancelado"].includes(proyecto.estado)
+      );
+
+      if (tieneProyectoActivo) {
+        throw new Error("No se puede solicitar cita: este vehículo ya se encuentra en un proyecto activo.");
+      }
+
       const { data, error: invokeError } = await supabase.functions.invoke("agendar-cita", {
         body: {
           fecha: form.fecha,
@@ -668,7 +702,7 @@ export default function CitasModule({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h2 className={`text-lg font-semibold ${t}`}>Citas</h2>
-          <p className={`text-xs ${st}`}>{upcomingCitas.length} próximas</p>
+          <p className={`text-xs ${st}`}>{availableCitas.length} disponibles</p>
         </div>
         <div className="flex gap-2">
           {(role === "cliente" || role === "administrador") && (
@@ -818,19 +852,25 @@ export default function CitasModule({
 
         <div className={`rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
           <div className={`px-4 py-3 border-b ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
-            <h3 className={`text-sm font-semibold ${t}`}>Próximas citas</h3>
+            <h3 className={`text-sm font-semibold ${t}`}>Citas próximas</h3>
           </div>
           <div className="p-3 max-h-[380px] overflow-y-auto">
             {loading ? (
               <p className={`text-sm ${st}`}>Cargando…</p>
-            ) : upcomingCitas.length === 0 ? (
+            ) : availableCitas.length === 0 ? (
               <p className={`text-sm ${st}`}>Sin citas próximas.</p>
             ) : (
               <div className="space-y-2">
-                {upcomingCitas.slice(0, 8).map((c) => (
+                {availableCitas.map((c) => (
                   <div key={c.id} className={`rounded-lg border p-2 ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
                     <p className={`text-sm font-semibold ${t}`}>{c.motivo || "Servicio"}</p>
                     <p className={`text-xs ${st}`}>{formatDateTimeWorkshop(c.fecha_hora)}</p>
+                    <p className={`text-xs ${st}`}>
+                      Cliente: {c.clientes?.nombre || "—"}
+                    </p>
+                    <p className={`text-xs ${st}`}>
+                      Vehículo: {c.vehiculos ? `${c.vehiculos.marca} ${c.vehiculos.modelo} · ${c.vehiculos.placas}` : "—"}
+                    </p>
                     <span className={`mt-1 inline-block px-2 py-0.5 text-xs rounded border ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
                     {canManage && c.estado === "pendiente" && (
                       <div className="mt-2 flex gap-2">
