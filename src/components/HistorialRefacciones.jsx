@@ -19,7 +19,7 @@ export default function HistorialRefacciones({
     try {
       // Consultamos ambas tablas en paralelo para mayor velocidad
       const [ventasRes, comprasRes] = await Promise.all([
-        supabase.from("ventas_refacciones").select("*, refacciones(nombre), proyectos(titulo)"),
+        supabase.from("ventas_refacciones").select("*, refacciones(nombre), proyectos:proyecto_id(titulo)"),
         supabase.from("compras_refacciones").select("*, refacciones(nombre), proyectos(titulo), proveedores(nombre)")
       ]);
 
@@ -147,7 +147,7 @@ export default function HistorialRefacciones({
                       ) : m.proveedores?.nombre ? (
                         <span className="flex items-center gap-1"> {m.proveedores.nombre}</span>
                       ) : (
-                        <span className="italic opacity-60">Mostrador / Directo</span>
+                        <span className="italic opacity-60">Venta de Mostrador</span>
                       )}
                     </td>
                     <td className={`px-4 py-3 font-bold ${t}`}>${(Number(m.precio_unit) * m.cantidad).toFixed(2)}</td>
