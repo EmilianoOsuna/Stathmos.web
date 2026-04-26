@@ -1306,7 +1306,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [p, c, v, e, r, ci] = await Promise.all([  // ← agrega ci
-      supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
+      supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
