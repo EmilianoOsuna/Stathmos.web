@@ -2056,12 +2056,16 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
+                  
+                  {/* Tipo de diagnóstico no necesario
                   <Field label="Tipo" darkMode={darkMode}>
                     <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value})}>
                       {DIAG_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Diagnóstico inicial *" darkMode={darkMode}>
+                  */}
+
+                  <Field label="Descripción" darkMode={darkMode}>
                     <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe el diagnóstico inicial del vehículo…" />
                   </Field>
                   <Field label="Causa del problema" darkMode={darkMode}>
@@ -2141,7 +2145,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
             </p>
             {refPickerOpen && createPortal(
-              <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-10 bg-black/60 anim-fadeIn" onClick={cancelRefPicker}>
+              <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-10 bg-black/60 anim-fadeIn" onClick={cancelRefPicker}>
                 <div
                   className={`anim-fadeUp relative w-full max-w-5xl rounded-xl ${darkMode ? "bg-[#1e1e26] text-white" : "bg-white text-gray-800"}`}
                   style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
