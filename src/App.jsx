@@ -492,15 +492,17 @@ const Card = ({ darkMode, className = "", style = {}, children }) => (
 );
 
 const Modal = ({ open, onClose, title, children, darkMode }) => {
-  if (!open) return null;
-  const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
-  const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
   const bodyRef = useRef(null);
   useEffect(() => {
     if (open && bodyRef.current) {
       bodyRef.current.scrollTop = 0;
     }
   }, [open, title]);
+
+  if (!open) return null;
+
+  const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
+  const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
   const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
       <div
@@ -641,7 +643,7 @@ const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, 
 );
 
 // ─── CLIENTES MODULE ──────────────────────────────────────────────────────────
-const ClientesModule = ({ darkMode }) => {
+const ClientesModule = ({ darkMode, session }) => {
   const [clientes,     setClientes]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState("");
@@ -725,9 +727,17 @@ const ClientesModule = ({ darkMode }) => {
         const { error } = await supabase.from("clientes").update(payload).eq("id", editTarget.id);
         if (error) throw error;
       } else {
-        // Crear nuevo cliente
-        const { error } = await supabase.from("clientes").insert([payload]);
-        if (error) throw error;
+        // Crear nuevo cliente y enviar invitación por correo desde Edge Function
+        await invokeEdgeFunction("crear-cliente", {
+          body: {
+            nombre: payload.nombre,
+            correo: payload.correo,
+            telefono: payload.telefono,
+            rfc: payload.rfc,
+            direccion: payload.direccion,
+          },
+          userToken: session?.access_token || "",
+        });
       }
 
       setModalOpen(false);
@@ -3420,7 +3430,7 @@ const Dashboard = ({ session, darkMode }) => {
   ];
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador" onNotificationClick={handleNotificationClick}>
-      {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} />}
+      {activeModule === "clientes"  && <ClientesModule  darkMode={darkMode} session={session} />}
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} initialProjectId={notifProjectId} />}
