@@ -6,6 +6,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const getInviteRedirectTo = (req: Request): string => {
+  const appUrl = Deno.env.get("APP_URL")?.trim();
+  if (appUrl) {
+    return `${appUrl.replace(/\/$/, "")}/completar-registro`;
+  }
+
+  const origin = req.headers.get("origin") || "https://stathmos.online";
+  return `${origin.replace(/\/$/, "")}/completar-registro`;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -41,14 +51,14 @@ serve(async (req) => {
       );
     }
 
-    // Determinamos el origen para el redireccionamiento
-    const origin = req.headers.get("origin") || "https://stathmos.online";
+    // Determinamos la URL de redirección para la invitación
+    const redirectTo = getInviteRedirectTo(req);
 
     // 1. Crear y enviar invite por correo 
     // El trigger `tr_crear_perfil_usuario` leerá el rol ('Mecánico' o 'Administrador') 
     // lo insertará en public.roles si no existe y luego en public.usuarios
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(correo, {
-      redirectTo: `${origin}/completar-registro`,
+      redirectTo,
       data: { nombre, rol: rol_destino },
     });
 

@@ -6,6 +6,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const getInviteRedirectTo = (req: Request): string => {
+  const appUrl = Deno.env.get("APP_URL")?.trim();
+  if (appUrl) {
+    return `${appUrl.replace(/\/$/, "")}/completar-registro`;
+  }
+
+  const origin = req.headers.get("origin") || "https://stathmos.online";
+  return `${origin.replace(/\/$/, "")}/completar-registro`;
+};
+
 // Validar RFC con REGEX (formato mexicano)
 const isValidRFC = (rfc: string): boolean => {
   if (!rfc || rfc.trim() === "") return true; // RFC es opcional
@@ -82,14 +92,13 @@ serve(async (req) => {
     if (dbError) throw dbError;
 
     // 2. Enviar invite por correo
-    // Obtenemos el origen para que funcione tanto en local (http://localhost:5173) como en prod
-    const origin = req.headers.get("origin") || "https://stathmos.online";
+    const redirectTo = getInviteRedirectTo(req);
     
     // El trigger en la base de datos crea public.usuarios y vincula el public.clientes automáticamente
     // al ser llamado o por el RPC desde el cliente.
     const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(correo.trim().toLowerCase(), {
       data: { rol: "cliente", nombre: nombre.trim() },
-      redirectTo: `${origin}/completar-registro`,
+      redirectTo,
     });
 
     if (inviteError) throw inviteError;

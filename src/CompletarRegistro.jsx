@@ -87,6 +87,42 @@ const SuccessScreen = ({ darkMode, nombre }) => (
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CompletarRegistro() {
   const navigate = useNavigate();
+  const INVITE_FLOW_KEY = "completar_registro_invite_flow";
+
+  const toFirstName = (value) => {
+    if (!value || typeof value !== "string") return "";
+    return value.trim().split(/\s+/)[0] || "";
+  };
+
+  const debugNombre = (step, details = {}) => {
+    const search = window.location.search || "";
+    const debugByQuery = search.includes("debug_nombre=1");
+    const debugByStorage = window.localStorage?.getItem("debug_nombre") === "1";
+    if (import.meta.env.DEV || debugByQuery || debugByStorage) {
+      console.log("[CompletarRegistro:nombre]", step, details);
+    }
+  };
+
+  const getNameFromAccessToken = (token) => {
+    try {
+      if (!token) return "";
+      const [, payloadPart] = token.split(".");
+      if (!payloadPart) return "";
+
+      const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+      const payload = JSON.parse(atob(padded));
+
+      return (
+        payload?.user_metadata?.nombre ||
+        payload?.user_metadata?.name ||
+        payload?.user_metadata?.full_name ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  };
 
   const [phase,        setPhase]        = useState("loading"); // loading | form | success | error
   const [password,     setPassword]     = useState("");
@@ -109,8 +145,31 @@ export default function CompletarRegistro() {
       const accessToken = params.get("access_token");
       const refreshToken = params.get("refresh_token");
       const type = params.get("type"); // "invite" o "recovery"
+      const hashError = params.get("error");
+      const hashErrorCode = params.get("error_code");
+      const hashErrorDescription = params.get("error_description");
+
+      // Si el enlace trae error (ej: otp_expired), mostrar pantalla de enlace inválido
+      // y no reutilizar una sesión activa previa por accidente.
+      if (hashError || hashErrorCode) {
+        debugNombre("invite_hash_error", {
+          hashError,
+          hashErrorCode,
+          hashErrorDescription,
+        });
+        window.sessionStorage.removeItem(INVITE_FLOW_KEY);
+        await supabase.auth.signOut();
+        setPhase("error");
+        return;
+      }
 
       if (accessToken && (type === "invite" || type === "signup")) {
+        debugNombre("init_token_detected", {
+          type,
+          hasAccessToken: Boolean(accessToken),
+          accessTokenPreview: `${accessToken.slice(0, 16)}...`,
+        });
+
         // 2. Cerrar sesión del admin sin tocar la URL
         await supabase.auth.signOut();
 
@@ -121,11 +180,14 @@ export default function CompletarRegistro() {
         });
 
         if (error || !data.session) {
+          debugNombre("set_session_failed", { error: error?.message || "Sin sesión" });
+          window.sessionStorage.removeItem(INVITE_FLOW_KEY);
           setPhase("error");
           return;
         }
 
-        await loadClienteNombre(data.session);
+        await loadClienteNombre(data.session, accessToken);
+        window.sessionStorage.setItem(INVITE_FLOW_KEY, "1");
         setSessionReady(true);
         setPhase("form");
 
@@ -136,11 +198,22 @@ export default function CompletarRegistro() {
 
       // Si no hay token en la URL, verificar si ya hay sesión activa
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
+      const hasInviteFlow = window.sessionStorage.getItem(INVITE_FLOW_KEY) === "1";
+
+      if (session?.user && hasInviteFlow) {
+        debugNombre("existing_session_found", {
+          userId: session.user.id,
+          email: session.user.email,
+        });
         await loadClienteNombre(session);
         setSessionReady(true);
         setPhase("form");
       } else {
+        debugNombre("no_valid_invite_flow", {
+          hasSession: Boolean(session?.user),
+          hasInviteFlow,
+        });
+        window.sessionStorage.removeItem(INVITE_FLOW_KEY);
         setPhase("error");
       }
     };
@@ -148,14 +221,60 @@ export default function CompletarRegistro() {
     init();
   }, []);
 
-  const loadClienteNombre = async (session) => {
-    // Buscar el nombre del cliente por correo
-    const { data } = await supabase
+  const loadClienteNombre = async (session, accessToken = "") => {
+    debugNombre("load_start", {
+      userId: session?.user?.id,
+      email: session?.user?.email,
+      hasAccessToken: Boolean(accessToken),
+      metadata: session?.user?.user_metadata || null,
+    });
+
+    const authName =
+      session?.user?.user_metadata?.nombre ||
+      session?.user?.user_metadata?.name ||
+      session?.user?.user_metadata?.full_name ||
+      getNameFromAccessToken(accessToken);
+
+    if (authName && String(authName).trim()) {
+      const nombre = toFirstName(String(authName));
+      debugNombre("resolved_from_auth_metadata_or_token", { raw: authName, firstName: nombre });
+      setClienteNombre(nombre);
+      return;
+    }
+
+    // Para invitados empleados/mecánicos, el nombre suele existir en public.usuarios.
+    const { data: usuarioData } = await supabase
+      .from("usuarios")
+      .select("nombre")
+      .eq("id", session.user.id)
+      .maybeSingle();
+
+    debugNombre("usuarios_lookup", { result: usuarioData || null });
+
+    if (usuarioData?.nombre) {
+      const nombre = toFirstName(usuarioData.nombre);
+      debugNombre("resolved_from_usuarios", { raw: usuarioData.nombre, firstName: nombre });
+      setClienteNombre(nombre);
+      return;
+    }
+
+    // Fallback para clientes por correo.
+    const { data: clienteData } = await supabase
       .from("clientes")
       .select("nombre")
       .eq("correo", session.user.email)
       .maybeSingle();
-    if (data?.nombre) setClienteNombre(data.nombre.split(" ")[0]); // Solo primer nombre
+
+    debugNombre("clientes_lookup", { result: clienteData || null });
+
+    if (clienteData?.nombre) {
+      const nombre = toFirstName(clienteData.nombre);
+      debugNombre("resolved_from_clientes", { raw: clienteData.nombre, firstName: nombre });
+      setClienteNombre(nombre);
+      return;
+    }
+
+    debugNombre("name_not_resolved");
   };
 
   // ── Guardar contraseña y completar registro ───────────────────────────────
@@ -186,6 +305,7 @@ export default function CompletarRegistro() {
     }
 
     setPhase("success");
+    window.sessionStorage.removeItem(INVITE_FLOW_KEY);
     setTimeout(() => navigate("/login", { replace: true }), 2200);
   };
 
@@ -275,7 +395,7 @@ export default function CompletarRegistro() {
           <div className="w-full flex flex-col gap-5">
             <div className="text-center">
               <p className={`text-sm font-medium ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>
-                {clienteNombre ? `Hola, ${clienteNombre}` : "Bienvenido"} 👋
+                {clienteNombre ? `Hola, ${clienteNombre}` : "Bienvenido"}
               </p>
               <p className={`text-xs mt-1 ${label}`}>
                 Elige una contraseña para acceder a tu portal
