@@ -90,9 +90,9 @@ export default function HistorialRefacciones({ darkMode }) {
                     <td className={`px-4 py-3 ${t}`}>{m.cantidad}</td>
                     <td className={`px-4 py-3 ${st}`}>
                       {m.proyectos?.titulo ? (
-                        <span className="flex items-center gap-1">📂 {m.proyectos.titulo}</span>
+                        <span className="flex items-center gap-1"> {m.proyectos.titulo}</span>
                       ) : m.proveedores?.nombre ? (
-                        <span className="flex items-center gap-1">🚚 {m.proveedores.nombre}</span>
+                        <span className="flex items-center gap-1"> {m.proveedores.nombre}</span>
                       ) : (
                         <span className="italic opacity-60">Mostrador / Directo</span>
                       )}
