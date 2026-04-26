@@ -4414,7 +4414,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
     setLoading(true);
     const { data } = await supabase
       .from("proyectos")
-      .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
+      .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre),  diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
       .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false });
 
@@ -4680,7 +4680,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
     setLoading(true);
     const { data } = await supabase
       .from("proyectos")
-      .select("*, clientes(nombre,telefono,usuario_id), vehiculos(marca,modelo,placas,anio), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
+      .select("*, clientes(nombre,telefono,usuario_id), vehiculos(marca,modelo,placas,anio), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
       .eq("mecanico_id", empleadoId)
       .order("created_at", { ascending: false });
     setProyectos(data || []);
