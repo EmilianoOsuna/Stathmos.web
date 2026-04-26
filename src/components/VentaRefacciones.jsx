@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
+import { Icon, Input, Button } from "./UIPrimitives";
 
 const C_RED = "#db3c1c";
-
-const inputCls = (darkMode) =>
-  `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
-    darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-  }`;
 
 const fmtMoney = (value) => {
   const n = Number(value || 0);
@@ -157,11 +153,11 @@ export default function VentaRefacciones({ darkMode }) {
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
         {/* Catálogo */}
         <div className={`rounded-xl border p-4 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
-          <input 
-            className={inputCls(darkMode)} 
+          <Input 
             placeholder="Buscar por nombre o número de parte..." 
             value={search} 
             onChange={(e) => setSearch(e.target.value)} 
+            darkMode={darkMode}
           />
           
           {loading ? (
@@ -179,13 +175,13 @@ export default function VentaRefacciones({ darkMode }) {
                   </div>
                   <div className="flex items-center gap-4">
                     <p className={`text-sm font-semibold ${t}`}>${fmtMoney(r.precio_venta)}</p>
-                    <button 
+                    <Button 
                       onClick={() => addToCart(r)} 
                       disabled={r.stock <= 0}
-                      className="px-3 py-1.5 rounded-md text-xs font-medium border bg-zinc-800 text-white disabled:opacity-20 hover:bg-zinc-700 transition-colors"
+                      variant="secondary"
                     >
                       Agregar
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -196,7 +192,7 @@ export default function VentaRefacciones({ darkMode }) {
         {/* Carrito */}
         <div className={`rounded-xl border p-5 h-fit ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
           <h3 className={`text-base font-semibold mb-4 ${t} flex items-center gap-2`}>
-            <span>🛒</span> Resumen de Venta
+            <Icon name="shoppingcart" className="w-4 h-4 text-blue-500" /> Resumen de Venta
           </h3>
 
           {cart.length === 0 ? (
@@ -220,11 +216,11 @@ export default function VentaRefacciones({ darkMode }) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={`text-[9px] font-bold uppercase tracking-tighter ${st}`}>Cantidad</label>
-                        <input 
+                        <Input 
                           type="number" 
-                          className={inputCls(darkMode)} 
                           value={item.cantidad} 
                           onChange={(e) => updateCartItem(item.id, { cantidad: Number(e.target.value) })}
+                          darkMode={darkMode}
                         />
                       </div>
                       <div>
@@ -244,13 +240,14 @@ export default function VentaRefacciones({ darkMode }) {
                   <p className="text-2xl font-bold text-emerald-500">${fmtMoney(total)}</p>
                 </div>
 
-                <button 
+                <Button 
                   onClick={handleSubmit} 
                   disabled={saving || cart.length === 0}
-                  className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-lg shadow-red-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  variant="destructive"
+                  className="w-full py-3"
                 >
                   {saving ? "Procesando venta..." : "FINALIZAR VENTA"}
-                </button>
+                </Button>
               </div>
             </div>
           )}

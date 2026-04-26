@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import supabase from '../supabase';
+import { Input, Button } from './UIPrimitives';
 
-export default function RegistroCliente() {
+export default function RegistroCliente({ darkMode = false }) {
   const [formData, setFormData] = useState({
     nombre: '', correo: '', telefono: '', rfc: '', direccion: ''
   });
@@ -63,7 +64,7 @@ export default function RegistroCliente() {
   };
 
   return (
-    <div className="max-w-md mx-auto bg-white p-8 border border-gray-200 rounded-lg shadow-sm">
+    <div className={`max-w-md mx-auto p-8 border rounded-lg shadow-sm ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
       <h2 className="text-2xl font-bold text-[#60aebb] mb-6">Registrar Cliente</h2>
 
       {status.success && (
@@ -78,57 +79,59 @@ export default function RegistroCliente() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <input 
+        <Input 
           required 
           type="text" 
           name="nombre" 
           placeholder="Nombre completo"
           value={formData.nombre} 
           onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" 
+          darkMode={darkMode}
         />
-        <input 
+        <Input 
           required 
           type="email" 
           name="correo" 
           placeholder="Correo electrónico"
           value={formData.correo} 
           onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" 
+          darkMode={darkMode}
         />
-        <input 
+        <Input 
           required 
           type="text" 
           name="telefono" 
           placeholder="Teléfono"
           value={formData.telefono} 
           onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" 
+          darkMode={darkMode}
         />
-        <input 
+        <Input 
           type="text" 
           name="rfc" 
           placeholder="RFC (opcional)"
           value={formData.rfc} 
           onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none uppercase font-mono" 
+          darkMode={darkMode}
+          className="uppercase font-mono" 
         />
-        <input 
+        <Input 
           type="text" 
           name="direccion" 
           placeholder="Dirección (opcional)"
           value={formData.direccion} 
           onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" 
+          darkMode={darkMode}
         />
 
-        <button 
+        <Button 
           disabled={status.loading} 
           type="submit"
-          className="w-full bg-[#db3c1c] hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50"
+          variant="destructive"
+          className="w-full mt-2"
         >
           {status.loading ? 'Registrando...' : 'Registrar Cliente'}
-        </button>
+        </Button>
       </form>
     </div>
   );

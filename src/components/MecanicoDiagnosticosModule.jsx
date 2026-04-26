@@ -5,13 +5,14 @@ import DiagnosticoModal from "./DiagnosticoModal";
 import DiagnosticoView from "./DiagnosticoView";
 import { Plus, Search, AlertCircle } from "lucide-react";
 import { formatDateWorkshop } from "../utils/datetime";
+import { Select, Input, Field, Card, ModuleHeader, Button, Icon } from "./UIPrimitives";
 
 export default function MecanicoDiagnosticosModule({ darkMode = false, session = null }) {
   const [proyectos, setProyectos] = useState([]);
   const [mecanicosAsignados, setMecanicosAsignados] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterEstado, setFilterEstado] = useState("activo");
+  const [filterEstado, setFilterEstado] = useState("todos");
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedProyecto, setSelectedProyecto] = useState(null);
   const [mecanico_id, setMecanico_id] = useState(null);
@@ -147,47 +148,52 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       {/* Encabezado */}
-      <div className="mb-6">
-        <h1 className={`text-2xl font-bold ${textPrimary}`}> Diagnósticos de Vehículos</h1>
-        <p className={`text-sm ${textSecondary} mt-1`}>Registra y gestiona diagnósticos iniciales de fallas</p>
-        <p className={`text-xs ${textSecondary} mt-2`}>
+      <ModuleHeader
+        title="Diagnósticos de Vehículos"
+        count={proyectos.length}
+        countLabel="proyectos asignados"
+        darkMode={darkMode}
+      />
+      <div className="mb-6 -mt-4">
+        <p className={`text-sm ${textSecondary}`}>Registra y gestiona diagnósticos iniciales de fallas</p>
+        <p className={`text-xs ${textSecondary} mt-1`}>
           {diagnosticoInitialCount} de {proyectos.length} proyectos con diagnóstico inicial
         </p>
       </div>
 
       {/* Búsqueda y Filtros */}
-      <div className={`rounded-lg p-4 mb-6 border ${bgCard}`}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <Card darkMode={darkMode} className="p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Buscar</label>
-            <div className="relative">
-              <Search className={`absolute left-3 top-2.5 w-4 h-4 ${textSecondary}`} />
-              <input
-                type="text"
+            <Field label="Buscar" darkMode={darkMode}>
+              <Input
+                darkMode={darkMode}
+                icon="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Proyecto, cliente, placas..."
-                className={`w-full pl-9 pr-3 py-2 rounded border text-sm ${bgInput}`}
               />
-            </div>
+            </Field>
           </div>
           <div>
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Estado</label>
-            <select
-              value={filterEstado}
-              onChange={(e) => setFilterEstado(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
-            >
-              <option value="todos">Todos</option>
-              <option value="activo">Activo</option>
-              <option value="en_progreso">En Progreso</option>
-              <option value="terminado">Terminado</option>
-              <option value="entregado">Entregado</option>
-              <option value="cancelado">Cancelado</option>
-            </select>
+            <Field label="Estado" darkMode={darkMode}>
+              <Select
+                darkMode={darkMode}
+                value={filterEstado}
+                onChange={(e) => setFilterEstado(e.target.value)}
+                options={[
+                  { value: "todos", label: "Todos" },
+                  { value: "activo", label: "Activo" },
+                  { value: "en_progreso", label: "En Progreso" },
+                  { value: "terminado", label: "Terminado" },
+                  { value: "entregado", label: "Entregado" },
+                  { value: "cancelado", label: "Cancelado" },
+                ]}
+              />
+            </Field>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Lista de Proyectos */}
       <div className="space-y-4">
@@ -243,34 +249,16 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
                         </p>
                       </div>
                     </div>
-                    <button
+                    <Button
                       onClick={() => handleOpenModal(proyecto)}
                       disabled={!puedeCapturar}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
-                        !puedeCapturar
-                          ? darkMode
-                            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                          : esActivo
-                          ? darkMode
-                            ? "bg-orange-600 hover:bg-orange-700 text-white"
-                            : "bg-orange-500 hover:bg-orange-600 text-white"
-                          : esEnProgreso
-                          ? darkMode
-                            ? "bg-sky-600 hover:bg-sky-700 text-white"
-                            : "bg-sky-500 hover:bg-sky-600 text-white"
-                          : tieneDiagInitial
-                          ? darkMode
-                            ? "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
-                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                          : darkMode
-                            ? "bg-orange-600 hover:bg-orange-700 text-white"
-                            : "bg-orange-500 hover:bg-orange-600 text-white"
-                      }`}
+                      darkMode={darkMode}
+                      variant={!puedeCapturar ? "ghost" : (esActivo ? "accent" : "primary")}
+                      color={esActivo ? "#f97316" : (esEnProgreso ? "#0ea5e9" : undefined)}
                     >
                       <Plus className="w-4 h-4" />
                       {accionLabel}
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Descripción */}
@@ -281,7 +269,9 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
 
                 {/* Diagnósticos Registrados */}
                 <div className="p-4">
-                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-3`}>📋 Diagnósticos</p>
+                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-3 flex items-center gap-1.5`}>
+                    <Icon name="clipboard" className="w-3.5 h-3.5 text-blue-500" /> Diagnósticos
+                  </p>
                   <DiagnosticoView 
                     proyectoId={proyecto.id}
                     mecanico_id={mecanico_id}

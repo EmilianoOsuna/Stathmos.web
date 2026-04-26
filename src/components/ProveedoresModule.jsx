@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
+import { Icon, Input, Select, Textarea, Button } from "./UIPrimitives";
 
 const C_BLUE = "#60aebb";
-
-const inputCls = (darkMode) =>
-  `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
-    darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-  }`;
 
 export default function ProveedoresModule({ darkMode }) {
   const [proveedores, setProveedores] = useState([]);
@@ -140,12 +136,12 @@ export default function ProveedoresModule({ darkMode }) {
           <h2 className={`text-lg font-semibold ${t}`}>Proveedores</h2>
           <p className={`text-xs ${st} mt-0.5`}>{proveedores.length} proveedores</p>
         </div>
-        <button
+        <Button
           onClick={openCreate}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:border-zinc-500" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+          variant="secondary"
         >
           + Agregar proveedor
-        </button>
+        </Button>
       </div>
 
       {status.message && (
@@ -168,67 +164,67 @@ export default function ProveedoresModule({ darkMode }) {
         <div className={`rounded-xl border p-4 mb-5 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className={`text-sm font-semibold ${t}`}>{editTarget ? "Editar Proveedor" : "Nuevo Proveedor"}</h3>
-          <button
+          <Button
             onClick={() => { setShowForm(false); setEditTarget(null); }}
-            className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+            variant="outline"
           >
             Cerrar
-          </button>
+          </Button>
           {editTarget && (
-            <button
+            <Button
               onClick={openCreate}
-              className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+              variant="outline"
             >
               Cancelar
-            </button>
+            </Button>
           )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Nombre</label>
-            <input className={inputCls(darkMode)} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+            <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} darkMode={darkMode} />
           </div>
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Telefono</label>
-            <input className={inputCls(darkMode)} value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} darkMode={darkMode} />
           </div>
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Correo</label>
-            <input type="email" className={inputCls(darkMode)} value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} />
+            <Input type="email" value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} darkMode={darkMode} />
           </div>
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>RFC</label>
-            <input className={`${inputCls(darkMode)} font-mono`} value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} />
+            <Input className="font-mono" value={form.rfc} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} darkMode={darkMode} />
           </div>
           <div className="md:col-span-2">
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Direccion</label>
-            <textarea rows={2} className={inputCls(darkMode)} value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} />
+            <Textarea rows={2} value={form.direccion} onChange={(e) => setForm({ ...form, direccion: e.target.value })} darkMode={darkMode} />
           </div>
           <div>
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Activo</label>
-            <select className={inputCls(darkMode)} value={form.activo ? "true" : "false"} onChange={(e) => setForm({ ...form, activo: e.target.value === "true" })}>
+            <Select value={form.activo ? "true" : "false"} onChange={(e) => setForm({ ...form, activo: e.target.value === "true" })} darkMode={darkMode}>
               <option value="true">Activo</option>
               <option value="false">Inactivo</option>
-            </select>
+            </Select>
           </div>
         </div>
-        <button
+        <Button
           onClick={saveProveedor}
           disabled={saving}
-          className="mt-4 px-4 py-2 rounded-lg text-white text-sm font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: C_BLUE, boxShadow: `0 2px 8px ${C_BLUE}40` }}
+          className="mt-4 px-4 py-2"
+          variant="primary"
         >
           {saving ? "Guardando..." : editTarget ? "Actualizar" : "Crear"}
-        </button>
+        </Button>
       </div>
       )}
 
       <div className="mb-4">
-        <input
-          className={inputCls(darkMode)}
+        <Input
           placeholder="Buscar por nombre, correo o RFC..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          darkMode={darkMode}
         />
       </div>
 
@@ -264,22 +260,18 @@ export default function ProveedoresModule({ darkMode }) {
                     <td className={`px-5 py-3 ${st}`}>{p.activo ? "Activo" : "Inactivo"}</td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
+                        <Button
                           onClick={() => openEdit(p)}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"}`}
+                          variant="secondary"
                         >
                           Editar
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           onClick={() => toggleActivo(p)}
-                          className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
-                            p.activo
-                              ? darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-                              : darkMode ? "border-zinc-700 text-zinc-400 hover:border-emerald-800 hover:text-emerald-400" : "border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600"
-                          }`}
+                          variant={p.activo ? "destructive" : "primary"}
                         >
                           {p.activo ? "Desactivar" : "Activar"}
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -304,22 +296,18 @@ export default function ProveedoresModule({ darkMode }) {
                 </div>
                 <p className={`text-xs ${st}`}>{p.correo || "—"} {p.rfc ? `· ${p.rfc}` : ""}</p>
                 <div className="flex gap-2">
-                  <button
+                  <Button
                     onClick={() => openEdit(p)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"}`}
+                    variant="secondary"
                   >
                     Editar
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => toggleActivo(p)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
-                      p.activo
-                        ? darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-                        : darkMode ? "border-zinc-700 text-zinc-400 hover:border-emerald-800 hover:text-emerald-400" : "border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600"
-                    }`}
+                    variant={p.activo ? "destructive" : "primary"}
                   >
                     {p.activo ? "Desactivar" : "Activar"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

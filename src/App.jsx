@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import useSupabaseRealtime from "./hooks/useSupabaseRealtime";
 import { createPortal } from "react-dom";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
@@ -12,13 +12,13 @@ import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdmin
 import MecanicoDiagnosticosModule from "./components/MecanicoDiagnosticosModule";
 import ReportesOperativosWrapper from "./components/ReportesOperativosWrapper";
 import CitasModule from "./components/CitasModule";
-import RefaccionesModule from "./components/RefaccionesModule";
-import ProveedoresModule from "./components/ProveedoresModule";
-import CompraRefacciones from "./components/CompraRefacciones";
-import VentaRefacciones from "./components/VentaRefacciones";
+import GestionInventario from "./components/GestionInventario";
 import HistorialRefacciones from "./components/HistorialRefacciones";
+import HistorialesModule from "./components/HistorialesModule";
+import CentroReportes from "./components/CentroReportes";
 import { loadStripe } from '@stripe/stripe-js';
 import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
+import { Card, Select, Input, Field, Textarea, ModuleHeader, Button, Modal, Icon as LucideIcon, DatePicker } from "./components/UIPrimitives";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 const C_BLUE = "#60aebb";
@@ -42,6 +42,25 @@ const normalizeUI = (str) => {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase();
+};
+
+// ─── Validation Helpers ──────────────────────────────────────────────────────
+const isValidEmail = (email) => {
+  if (!email || !email.trim()) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.toLowerCase());
+};
+
+const isValidRFC = (rfc) => {
+  if (!rfc || !rfc.trim()) return false;
+  const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
+  return rfcRegex.test(rfc.toUpperCase());
+};
+
+const isValidPhone = (tel) => {
+  const clean = String(tel || "").replace(/\D/g, "");
+  const phoneRegex = /^\d{10}$/;
+  return phoneRegex.test(clean);
 };
 
 // ─── Logo ─────────────────────────────
@@ -358,171 +377,15 @@ const GlobalStyles = () => (
   `}</style>
 );
 
-const LucideIcon = ({ name, className = "w-4 h-4" }) => {
-  const icons = {
-    calendar: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8" y1="2" x2="8" y2="6" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-      </svg>
-    ),
-    users: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-    tool: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.77 3.77z" />
-      </svg>
-    ),
-    wrench: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.77 3.77z" />
-      </svg>
-    ),
-    car: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
-        <circle cx="7" cy="17" r="2" />
-        <circle cx="17" cy="17" r="2" />
-      </svg>
-    ),
-    box: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-        <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-        <line x1="12" y1="22.08" x2="12" y2="12" />
-      </svg>
-    ),
-    tag: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-        <line x1="7" y1="7" x2="7.01" y2="7" />
-      </svg>
-    ),
-    receipt: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z" />
-        <path d="M16 8h-6" />
-        <path d="M16 12H8" />
-        <path d="M13 16H8" />
-      </svg>
-    ),
-    shoppingcart: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="9" cy="21" r="1" />
-        <circle cx="20" cy="21" r="1" />
-        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-      </svg>
-    ),
-    clipboard: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-        <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-      </svg>
-    ),
-    scroll: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
-    ),
-    chart: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
-      </svg>
-    ),
-    bell: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      </svg>
-    ),
-    checkcircle: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-        <polyline points="22 4 12 14.01 9 11.01" />
-      </svg>
-    ),
-    dollar: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="1" x2="12" y2="23" />
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-      </svg>
-    ),
-    creditcard: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-        <line x1="1" y1="10" x2="23" y2="10" />
-      </svg>
-    ),
-    filetext: (
-      <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
-    ),
-  };
-  return icons[name] || null;
-};
+// UI components are now imported from UIPrimitives.jsx
 
-// ─── Shared UI primitives ─────────────────────────────────────────────────────
+// UI components are now imported from UIPrimitives.jsx
 
-const Card = ({ darkMode, className = "", style = {}, children }) => (
-  <div
-    className={`rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"} ${className}`}
-    style={{ boxShadow: darkMode ? "0 4px 16px rgba(0,0,0,0.35)" : "0 2px 12px rgba(0,0,0,0.07)", ...style }}
-  >
-    {children}
-  </div>
-);
 
-const Modal = ({ open, onClose, title, children, darkMode }) => {
-  const bodyRef = useRef(null);
-  useEffect(() => {
-    if (open && bodyRef.current) {
-      bodyRef.current.scrollTop = 0;
-    }
-  }, [open, title]);
+// UI components are now imported from UIPrimitives.jsx
 
-  if (!open) return null;
-
-  const card   = darkMode ? "bg-[#1e1e26] text-white"  : "bg-white text-gray-800";
-  const border = darkMode ? "border-zinc-700/60"        : "border-gray-200";
-  const modalContent = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 anim-fadeIn" onClick={onClose}>
-      <div
-        className={`anim-fadeUp relative w-full max-w-lg rounded-xl ${card} max-h-[90vh] overflow-y-auto`}
-        style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={`flex items-center justify-between px-6 py-4 border-b ${border}`}>
-          <h2 className="font-semibold text-base">{title}</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-current transition-colors text-xl leading-none">×</button>
-        </div>
-        <div ref={bodyRef} className="px-6 py-5 max-h-[70vh] overflow-y-auto">{children}</div>
-      </div>
-    </div>
-  );
-  return createPortal(modalContent, document.body);
-};
 
 // ─── Error Boundary (captura errores de render en UI) ───────────────────────
-import React from "react";
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -551,82 +414,30 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-const Field = ({ label, required, children, darkMode }) => (
-  <div className="flex flex-col gap-1.5">
-    <label className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
-      {label}{required && <span className="ml-0.5" style={{ color: C_RED }}>*</span>}
-    </label>
-    {children}
-  </div>
+// UI primitives are now imported from UIPrimitives.jsx
+
+
+// UI buttons are now using the Button component from UIPrimitives.jsx
+const BtnAccent = ({ onClick, disabled, color, children, className = "" }) => (
+  <Button onClick={onClick} disabled={disabled} color={color} className={className}>{children}</Button>
 );
 
-const inputCls = (darkMode) =>
-  `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
-    darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-  }`;
-
-const Input = ({ darkMode, ...props }) => (
-  <input {...props}
-    className={`${inputCls(darkMode)} ${props.className || ""}`}
-    onFocus={(e) => { e.target.style.borderColor = C_BLUE; props.onFocus?.(e); }}
-    onBlur={(e)  => { e.target.style.borderColor = ""; props.onBlur?.(e); }}
-  />
-);
-
-const Select = ({ darkMode, children, ...props }) => (
-  <select {...props}
-    className={inputCls(darkMode)}
-    onFocus={(e) => (e.target.style.borderColor = C_BLUE)}
-    onBlur={(e)  => (e.target.style.borderColor = "")}
-  >{children}</select>
-);
-
-const Textarea = ({ darkMode, ...props }) => (
-  <textarea {...props}
-    className={`${inputCls(darkMode)} resize-none`}
-    onFocus={(e) => (e.target.style.borderColor = C_BLUE)}
-    onBlur={(e)  => (e.target.style.borderColor = "")}
-  />
-);
-
-// Accent button (blue or red)
-const BtnAccent = ({ onClick, disabled, color = C_BLUE, children, className = "" }) => (
-  <button onClick={onClick} disabled={disabled}
-    className={`px-4 py-2 rounded-lg text-white text-sm font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-    style={{ backgroundColor: color, boxShadow: `0 2px 8px ${color}40` }}
-    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-  >{children}</button>
-);
-
-// Ghost/outline buttons for table rows
 const BtnEdit = ({ onClick, darkMode }) => (
-  <button onClick={onClick}
-    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-      darkMode ? "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"
-    }`}
-    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }}
-  >Editar</button>
+  <Button variant="ghost" darkMode={darkMode} onClick={onClick}>Editar</Button>
 );
 
 const BtnToggleActive = ({ onClick, isActive, darkMode }) => (
-  <button onClick={onClick}
-    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-      isActive
-        ? darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-        : darkMode ? "border-zinc-700 text-zinc-400 hover:border-emerald-800 hover:text-emerald-400" : "border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600"
-    }`}
-    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }}
-  >{isActive ? "Desactivar" : "Activar"}</button>
+  <Button variant="ghost" darkMode={darkMode} onClick={onClick} 
+    className={isActive ? "hover:border-red-800 hover:text-red-400" : "hover:border-emerald-800 hover:text-emerald-400"}
+  >
+    {isActive ? "Desactivar" : "Activar"}
+  </Button>
 );
 
 const BtnCancelProject = ({ onClick, darkMode }) => (
-  <button onClick={onClick}
-    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-      darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-    }`}
-    style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }}
-  >Cancelar</button>
+  <Button variant="ghost" darkMode={darkMode} onClick={onClick} className="hover:border-red-800 hover:text-red-400">
+    Cancelar
+  </Button>
 );
 
 // ─── ConfirmModal shorthand ────────────────────────────────────────────────────
@@ -665,19 +476,7 @@ const ClientesModule = ({ darkMode, session }) => {
   const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true }); setFormError(""); setModalOpen(true); };
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
-  // Validar RFC con REGEX (formato mexicano)
-  const isValidRFC = (rfc) => {
-    if (!rfc || rfc.trim() === "") return true; // RFC es opcional
-    const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
-    return rfcRegex.test(rfc.toUpperCase());
-  };
-
-  // Validar email básico
-  const isValidEmail = (email) => {
-    if (!email || email.trim() === "") return true; // Email es opcional
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email.toLowerCase());
-  };
+// ClientesModule helpers consolidated at top level
 
   const handleSave = async () => {
     // Validaciones de campos obligatorios
@@ -688,6 +487,10 @@ const ClientesModule = ({ darkMode, session }) => {
 
     if (!form.telefono || !form.telefono.trim()) {
       setFormError("El teléfono es obligatorio.");
+      return;
+    }
+    if (!isValidPhone(form.telefono)) {
+      setFormError("El teléfono debe tener 10 dígitos numéricos.");
       return;
     }
 
@@ -775,16 +578,16 @@ const ClientesModule = ({ darkMode, session }) => {
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className={`text-lg font-semibold ${t}`}>Clientes</h2>
-          <p className={`text-xs ${st} mt-0.5`}>{clientes.length} registros</p>
-        </div>
-        <BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Cliente</BtnAccent>
-      </div>
+      <ModuleHeader
+        title="Clientes"
+        count={clientes.length}
+        countLabel="registros"
+        darkMode={darkMode}
+        action={<BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Cliente</BtnAccent>}
+      />
 
       <div className="mb-4">
-        <Input darkMode={darkMode} placeholder="Buscar por nombre, teléfono o correo…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input darkMode={darkMode} icon="search" placeholder="Buscar por nombre, teléfono o correo…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <Card darkMode={darkMode} className="overflow-hidden">
@@ -927,11 +730,8 @@ const fetchAll = useCallback(async () => {
   useSupabaseRealtime("empleados", fetchAll);
 
   // Validar RFC con REGEX (formato mexicano)
-  const isValidRFC = (rfc) => {
-    if (!rfc || rfc.trim() === "") return true; // RFC es opcional
-    const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
-    return rfcRegex.test(rfc.toUpperCase());
-  };
+// EmpleadosModule helpers consolidated at top level
+
 
   const openCreate = () => {
     setEditTarget(null);
@@ -974,14 +774,18 @@ const fetchAll = useCallback(async () => {
     let resultError = null;
 
     if (editTarget) {
-      if (!form.nombre.trim() || !form.correo.trim()) {
-        setFormError("Nombre y correo son obligatorios.");
+      if (!form.nombre.trim() || !form.correo.trim() || !form.rfc.trim() || !form.telefono.trim()) {
+        setFormError("Nombre, correo, RFC y teléfono son obligatorios.");
         setSaving(false); return;
       }
       
-      // Validar RFC si se proporciona
-      if (form.rfc && !isValidRFC(form.rfc)) {
+      if (!isValidRFC(form.rfc)) {
         setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+        setSaving(false); return;
+      }
+
+      if (!isValidPhone(form.telefono)) {
+        setFormError("El teléfono debe tener 10 dígitos numéricos.");
         setSaving(false); return;
       }
       
@@ -999,14 +803,18 @@ const fetchAll = useCallback(async () => {
       const { error } = await supabase.from("empleados").update(payload).eq("id", editTarget.id);
       resultError = error?.message;
     } else {
-      if (!form.nombre.trim() || !form.correo.trim() || !form.rol_destino) {
-        setFormError("Nombre, correo y rol son obligatorios.");
+      if (!form.nombre.trim() || !form.correo.trim() || !form.rol_destino || !form.rfc.trim() || !form.telefono.trim()) {
+        setFormError("Nombre, correo, rol, RFC y teléfono son obligatorios.");
         setSaving(false); return;
       }
       
-      // Validar RFC si se proporciona
-      if (form.rfc && !isValidRFC(form.rfc)) {
+      if (!isValidRFC(form.rfc)) {
         setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+        setSaving(false); return;
+      }
+
+      if (!isValidPhone(form.telefono)) {
+        setFormError("El teléfono debe tener 10 dígitos numéricos.");
         setSaving(false); return;
       }
 
@@ -1065,16 +873,16 @@ const fetchAll = useCallback(async () => {
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className={`text-lg font-semibold ${t}`}>Empleados</h2>
-          <p className={`text-xs ${st} mt-0.5`}>{empleados.length} registros</p>
-        </div>
-        <BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Empleado</BtnAccent>
-      </div>
+      <ModuleHeader
+        title="Personal"
+        count={empleados.length}
+        countLabel="registros"
+        darkMode={darkMode}
+        action={<BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Empleado</BtnAccent>}
+      />
 
       <div className="mb-4">
-        <Input darkMode={darkMode} placeholder="Buscar por nombre, correo, teléfono o RFC…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input darkMode={darkMode} icon="search" placeholder="Buscar por nombre, correo, teléfono o RFC…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <Card darkMode={darkMode} className="overflow-hidden">
@@ -1171,7 +979,7 @@ const fetchAll = useCallback(async () => {
             <Input darkMode={darkMode} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: normalizeUI(e.target.value) })} placeholder="NOMBRE DEL EMPLEADO" />
           </Field>
           
-          <Field label="Teléfono" darkMode={darkMode}>
+          <Field label="Teléfono" required darkMode={darkMode}>
             <Input darkMode={darkMode} value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="311 123 4567" />
           </Field>
           
@@ -1179,12 +987,17 @@ const fetchAll = useCallback(async () => {
             <Input darkMode={darkMode} type="email" value={form.correo} onChange={(e) => setForm({ ...form, correo: e.target.value })} placeholder="empleado@stathmos.mx" />
           </Field>
           
-          <Field label="RFC" darkMode={darkMode}>
+          <Field label="RFC" required darkMode={darkMode}>
             <Input darkMode={darkMode} value={form.rfc} onChange={(e) => setForm({ ...form, rfc: normalizeUI(e.target.value) })} placeholder="GARC800101ABC" className="font-mono" />
           </Field>
 
           <Field label="Fecha de ingreso" darkMode={darkMode}>
-            <Input darkMode={darkMode} type="date" value={form.fecha_ingreso || ""} onChange={(e) => setForm({ ...form, fecha_ingreso: e.target.value })} />
+            <DatePicker
+              value={form.fecha_ingreso || ""}
+              onChange={(val) => setForm({ ...form, fecha_ingreso: val })}
+              darkMode={darkMode}
+              placeholder="Fecha de ingreso..."
+            />
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1308,16 +1121,16 @@ const VehiculosModule = ({ darkMode }) => {
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className={`text-lg font-semibold ${t}`}>Vehículos</h2>
-          <p className={`text-xs ${st} mt-0.5`}>{vehiculos.length} registros</p>
-        </div>
-        <BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Vehículo</BtnAccent>
-      </div>
+      <ModuleHeader
+        title="Vehículos"
+        count={vehiculos.length}
+        countLabel="registros"
+        darkMode={darkMode}
+        action={<BtnAccent onClick={openCreate} color={C_BLUE}>+ Nuevo Vehículo</BtnAccent>}
+      />
 
       <div className="mb-4">
-        <Input darkMode={darkMode} placeholder="Buscar por marca, modelo, placas o cliente…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input darkMode={darkMode} icon="search" placeholder="Buscar por marca, modelo, placas o cliente…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <Card darkMode={darkMode} className="overflow-hidden">
@@ -1994,6 +1807,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               estado: "pendiente_cotizacion",
               updated_at: new Date().toISOString()
             }).eq("id", proyectoIdFinal);
+
+            await notifyClientStateChange({
+              proyectoId: proyectoIdFinal,
+              clienteId: currentProyecto.cliente_id,
+              tituloProyecto: currentProyecto.titulo,
+              nuevoEstado: "pendiente_cotizacion",
+              session,
+            });
           }
         }
       }
@@ -2005,6 +1826,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await supabase.from("proyectos").update({ estado: "cancelado" }).eq("id", deleteTarget.id);
+
+    await notifyClientStateChange({
+      proyectoId: deleteTarget.id,
+      clienteId: deleteTarget.cliente_id,
+      tituloProyecto: deleteTarget.titulo,
+      nuevoEstado: "cancelado",
+      session,
+    });
+
     setDeleteTarget(null); fetchAll();
   };
 
@@ -2020,45 +1850,45 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const rowH    = darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50";
   const headTxt = darkMode ? "text-zinc-500 border-zinc-800" : "text-gray-400 border-gray-100";
 
-  const filterBtnCls = (active) => active
-    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-600 text-zinc-200 bg-zinc-700"
-    : darkMode
-    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
-    : "border text-xs font-medium px-3 py-1.5 rounded-md border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600";
+
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className={`text-lg font-semibold ${t}`}>Proyectos</h2>
-          <p className={`text-xs ${st} mt-0.5`}>{proyectos.length} proyectos</p>
-        </div>
-        {isAdmin && <BtnAccent onClick={openCreate} color={C_RED}>+ Nuevo Proyecto</BtnAccent>}
-      </div>
+      <ModuleHeader
+        title="Proyectos"
+        count={proyectos.length}
+        countLabel="proyectos"
+        darkMode={darkMode}
+        action={isAdmin && <BtnAccent onClick={openCreate} color={C_RED}>+ Nuevo Proyecto</BtnAccent>}
+      />
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="flex-1"><Input darkMode={darkMode} placeholder="Buscar por título, cliente o placas…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-        <div className="flex gap-1.5 flex-wrap items-center">
-          {["todos", ...ESTADOS_PROYECTO].map((e) => (
-            <button key={e} onClick={() => setFilterEstado(e)} className={`capitalize ${filterBtnCls(filterEstado === e)}`}>
-              {e === "todos" ? "Todos" : e.replace(/_/g, " ")}
-            </button>
-          ))}
-        </div>
+        <div className="flex-1"><Input darkMode={darkMode} icon="search" placeholder="Buscar por título, cliente o placas…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-4 no-scrollbar pr-4">
+        {/* Card Todos */}
+        <Card key="todos" darkMode={darkMode}
+          className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${filterEstado === "todos" ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
+          onClick={() => setFilterEstado("todos")}
+        >
+          <p className={`text-base font-bold ${t}`}>{proyectos.length}</p>
+          <p className={`text-[10px] uppercase tracking-wider font-semibold ${st} mt-1`}>Todos</p>
+        </Card>
+
         {ESTADOS_PROYECTO.map((e) => {
           const count = proyectos.filter((p) => p.estado === e).length;
+          const isActive = filterEstado === e;
+          const badgeColors = estadoBadge(e, darkMode).split(" ")[1];
+          
           return (
             <Card key={e} darkMode={darkMode}
-              className={`px-3 py-2.5 text-center cursor-pointer transition-opacity hover:opacity-80 ${filterEstado === e ? "ring-1 ring-inset" : ""}`}
-              style={{ ringColor: C_BLUE }}
+              className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${isActive ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
               onClick={() => setFilterEstado(e === filterEstado ? "todos" : e)}
             >
-              <p className={`text-base font-semibold ${estadoBadge(e, darkMode).split(" ")[1]}`}>{count}</p>
-              <p className={`text-[9px] uppercase tracking-wider ${st} mt-0.5`}>{e.replace(/_/g, " ")}</p>
+              <p className={`text-base font-bold ${badgeColors}`}>{count}</p>
+              <p className={`text-[9px] uppercase tracking-wider font-semibold ${st} mt-1 truncate w-full px-1`}>{e.replace(/_/g, " ")}</p>
             </Card>
           );
         })}
@@ -2084,7 +1914,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 <tbody className={`divide-y ${divider}`}>
                   {filtered.map((p) => (
                     <tr key={p.id} className={`transition-colors ${rowH}`}>
-                      <td className={`px-5 py-3 font-medium ${t} max-w-[160px] truncate cursor-pointer`} onClick={() => setDetalle(p)}>{p.bloqueado && <span className="mr-1 text-amber-500 text-xs">🔒</span>}{p.titulo}</td>
+                      <td className={`px-5 py-3 font-medium ${t} max-w-[160px] truncate cursor-pointer`} onClick={() => setDetalle(p)}>
+                        <div className="flex items-center gap-1">
+                          {p.bloqueado && <Icon name="lock" className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+                          <span className="truncate">{p.titulo}</span>
+                        </div>
+                      </td>
                       <td className={`px-5 py-3 ${st}`}>{p.clientes?.nombre || "—"}</td>
                       <td className={`px-5 py-3 ${st} text-xs`}>{p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo} · ${p.vehiculos.placas}` : "—"}</td>
                       <td className={`px-5 py-3 ${st}`}>{p.empleados?.nombre || "—"}</td>
@@ -2108,7 +1943,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               {filtered.map((p) => (
                 <div key={p.id} className="px-4 py-4 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
-                    <p className={`font-medium ${t}`}>{p.bloqueado && "🔒 "}{p.titulo}</p>
+                    <p className={`font-medium ${t} flex items-center gap-1`}>
+                      {p.bloqueado && <Icon name="lock" className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                      {p.titulo}
+                    </p>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 capitalize ${estadoBadge(p.estado, darkMode)}`}>{p.estado.replace(/_/g, " ")}</span>
                   </div>
                   <p className={`text-xs ${st}`}>{p.clientes?.nombre} · {p.vehiculos ? `${p.vehiculos.marca} ${p.vehiculos.modelo}` : "—"}</p>
@@ -2206,8 +2044,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                   Diagnóstico Inicial
                 </p>
                 {existingDiag && !editandoDiag && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
-                    ✓ Registrado
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex items-center gap-1 ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                    <Icon name="check" className="w-2.5 h-2.5" /> Registrado
                   </span>
                 )}
               </div>
@@ -2267,7 +2105,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </p>
             {!diagListo && (
               <div className={`absolute inset-0 rounded-lg flex flex-col items-center justify-center gap-2 z-10 ${darkMode ? "bg-zinc-900/80" : "bg-gray-50/90"}`}>
-                <span className="text-2xl">🔒</span>
+                <Icon name="lock" className="w-8 h-8 text-amber-500/50" />
                 <p className={`text-xs font-medium text-center px-4 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
                   Completa el diagnóstico inicial para habilitar la cotización
                 </p>
@@ -2477,57 +2315,7 @@ const ProtectedRoute = ({ session, children }) => {
 };
 
 // ─── User menu (top-right avatar + dropdown) ──────────────────────────────────
-const UserMenu = ({ session, onLogout, darkMode }) => {
-  const [open, setOpen] = useClickOutside();
-  const email = session?.user?.email || "";
-  const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
-  const initials = email.slice(0, 2).toUpperCase();
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-2 py-1 rounded-lg transition-colors"
-        style={{ background: open ? (darkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)") : "transparent" }}
-      >
-        {/* Avatar circle */}
-        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
-          style={{ backgroundColor: C_BLUE, boxShadow: "0 1px 6px rgba(96,174,187,0.35)" }}
-        >
-          {initials}
-        </div>
-        <span className={`text-xs font-medium hidden sm:block max-w-[120px] truncate ${darkMode ? "text-zinc-300" : "text-gray-600"}`}>{email}</span>
-        {/* Chevron */}
-        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className={`transition-transform ${open ? "rotate-180" : ""}`}>
-          <path d="M1 1l4 4 4-4" stroke={darkMode ? "#71717a" : "#9ca3af"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          className={`anim-slideDown absolute right-0 top-full mt-1.5 w-52 rounded-xl border py-1 z-50 ${darkMode ? "bg-[#1e1e28] border-zinc-700" : "bg-white border-gray-200"}`}
-          style={{ boxShadow: darkMode ? "0 12px 32px rgba(0,0,0,0.5)" : "0 8px 24px rgba(0,0,0,0.12)" }}
-        >
-          {/* User info header */}
-          <div className={`px-4 py-2.5 border-b ${darkMode ? "border-zinc-800" : "border-gray-100"}`}>
-            <p className={`text-xs font-medium truncate ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{email}</p>
-            {displayName && (
-              <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
-            )}
-            <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
-          </div>
-          {/* Actions */}
-          <button
-            onClick={() => { setOpen(false); onLogout(); }}
-            className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${darkMode ? "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
+// UserMenuWithRef is used instead to handle click-outside properly.
 
 // Hook: close dropdown when clicking outside
 function useClickOutside() {
@@ -2620,11 +2408,11 @@ const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
 };
 
 // Override UserMenu to use the ref properly
-const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
+const UserMenuWithRef = ({ session, onLogout, darkMode, rolLabel }) => {
   const [open, setOpen, ref] = useClickOutside();
   const email = session?.user?.email || "";
   const displayName = session?.user?.user_metadata?.nombre || session?.user?.user_metadata?.name || "";
-  const initials = email.slice(0, 2).toUpperCase();
+  const initials = (displayName || email).split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || email.slice(0, 2).toUpperCase();
 
   return (
     <div className="relative" ref={ref}>
@@ -2636,7 +2424,7 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
           style={{ backgroundColor: C_BLUE, boxShadow: "0 1px 6px rgba(96,174,187,0.3)" }}
         >{initials}</div>
-        <span className={`text-xs font-medium hidden sm:block max-w-[120px] truncate ${darkMode ? "text-zinc-300" : "text-gray-600"}`}>{email}</span>
+        <span className={`text-xs font-medium hidden sm:block max-w-[140px] truncate ${darkMode ? "text-zinc-300" : "text-gray-600"}`}>{displayName || email}</span>
         <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}>
           <path d="M1 1l4 4 4-4" stroke={darkMode ? "#71717a" : "#9ca3af"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
@@ -2652,7 +2440,7 @@ const UserMenuWithRef = ({ session, onLogout, darkMode }) => {
             {displayName && (
               <p className={`text-[11px] font-semibold ${darkMode ? "text-zinc-300" : "text-gray-800"} mt-1`}>{displayName}</p>
             )}
-            <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>Administrador</p>
+            <p className={`text-[10px] ${darkMode ? "text-zinc-500" : "text-gray-400"} mt-0.5`}>{rolLabel || "Usuario"}</p>
           </div>
           <button
             onClick={() => { setOpen(false); onLogout(); }}
@@ -2846,6 +2634,11 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const [refaccionesAsignadas, setRefaccionesAsignadas] = useState([]);
   const [loadingRefacciones, setLoadingRefacciones] = useState(false);
   const [refaccionesStatus, setRefaccionesStatus] = useState("");
+  const [refCatalog, setRefCatalog] = useState([]);
+  const [refNuevaId, setRefNuevaId] = useState("");
+  const [refNuevaCantidad, setRefNuevaCantidad] = useState("1");
+  const [refSaveError, setRefSaveError] = useState("");
+  const [addingRefaccion, setAddingRefaccion] = useState(false);
   const fileRef = useRef(null);
 
   // ─── NUEVA FUNCIÓN PARA TRAER REFACCIONES DEL PROYECTO ───
@@ -2873,9 +2666,96 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     setRefaccionesAsignadas(data || []);
   }, [proyecto?.id]);
 
+  const fetchRefCatalog = useCallback(async () => {
+    if (!proyecto?.id) return;
+    const { data } = await supabase
+      .from("refacciones")
+      .select("id, nombre, numero_parte, precio_venta, stock")
+      .eq("activo", true)
+      .order("nombre");
+    setRefCatalog(data || []);
+  }, [proyecto?.id]);
+
   useEffect(() => {
     if (open) fetchRefaccionesProyecto();
   }, [open, fetchRefaccionesProyecto]);
+
+  useEffect(() => {
+    if (open && diagnosticoFormatoBasico && canUpload) {
+      fetchRefCatalog();
+      setRefSaveError("");
+    }
+  }, [open, diagnosticoFormatoBasico, canUpload, fetchRefCatalog]);
+
+  const handleAgregarRefaccion = async () => {
+    if (!proyecto?.id || !refNuevaId) {
+      setRefSaveError("Selecciona una refacción.");
+      return;
+    }
+
+    const cantidad = Number.parseInt(refNuevaCantidad, 10);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      setRefSaveError("La cantidad debe ser mayor a 0.");
+      return;
+    }
+
+    const refSeleccionada = refCatalog.find((r) => r.id === refNuevaId);
+    if (!refSeleccionada) {
+      setRefSaveError("No se encontró la refacción seleccionada.");
+      return;
+    }
+
+    if (Number(refSeleccionada.stock || 0) < cantidad) {
+      setRefSaveError("No hay stock suficiente para esa cantidad.");
+      return;
+    }
+
+    setAddingRefaccion(true);
+    setRefSaveError("");
+
+    try {
+      const { data: existente, error: existenteErr } = await supabase
+        .from("proyecto_refacciones")
+        .select("id, cantidad")
+        .eq("proyecto_id", proyecto.id)
+        .eq("refaccion_id", refNuevaId)
+        .maybeSingle();
+
+      if (existenteErr) throw existenteErr;
+
+      if (existente?.id) {
+        const { error: updateErr } = await supabase
+          .from("proyecto_refacciones")
+          .update({
+            cantidad: Number(existente.cantidad || 0) + cantidad,
+            precio_unitario: Number(refSeleccionada.precio_venta || 0),
+          })
+          .eq("id", existente.id);
+
+        if (updateErr) throw updateErr;
+      } else {
+        const { error: insertErr } = await supabase
+          .from("proyecto_refacciones")
+          .insert({
+            proyecto_id: proyecto.id,
+            refaccion_id: refNuevaId,
+            cantidad,
+            precio_unitario: Number(refSeleccionada.precio_venta || 0),
+            fue_usada: false,
+          });
+
+        if (insertErr) throw insertErr;
+      }
+
+      setRefNuevaId("");
+      setRefNuevaCantidad("1");
+      await fetchRefaccionesProyecto();
+    } catch (e) {
+      setRefSaveError(e?.message || "No se pudo agregar la refacción.");
+    } finally {
+      setAddingRefaccion(false);
+    }
+  };
 
   // Función para cambiar el booleano fue_usada
   const toggleUsoRefaccion = async (id, actual) => {
@@ -3026,6 +2906,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
 
   const handleGuardarEstadoInicial = async () => {
     if (!proyecto?.id) return;
+    if (!canUpload) return;
     if (estadoProyectoLocal !== "activo") return;
     if (!estadoInicialProyecto.trim()) {
       setEstadoInicialError("Ingresa el estado inicial del proyecto antes de guardarlo.");
@@ -3052,6 +2933,14 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
       if (onProjectUpdated) {
         onProjectUpdated({ id: proyecto.id, descripcion: nuevoValor, estado: "en_progreso" });
       }
+
+      await notifyClientStateChange({
+        proyectoId: proyecto.id,
+        clienteId: proyecto.cliente_id,
+        tituloProyecto: proyecto.titulo,
+        nuevoEstado: "en_progreso",
+        session,
+      });
     } catch (error) {
       setEstadoInicialError(error?.message || "No se pudo guardar el estado inicial del proyecto.");
     } finally {
@@ -3065,7 +2954,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
   const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
-  const puedeEditarEstadoInicial = estadoProyectoLocal === "activo";
+  const puedeEditarEstadoInicial = canUpload && estadoProyectoLocal === "activo";
   const momentoLabel = (value) => {
     if (value === "antes") return "Antes";
     if (value === "durante") return "Durante";
@@ -3106,7 +2995,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
           <div className={`flex items-start justify-between px-6 py-4 border-b ${divider}`}>
             <div className="flex-1 min-w-0 pr-4">
               <div className="flex items-center gap-2 flex-wrap">
-                {proyecto.bloqueado && <span className="text-amber-500 text-sm">🔒</span>}
+                {proyecto.bloqueado && <Icon name="lock" className="w-4 h-4 text-amber-500" />}
                 <h2 className={`font-semibold text-base ${t}`}>{proyecto.titulo}</h2>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(proyecto.estado, darkMode)}`}>
                   {proyecto.estado?.replace(/_/g, " ")}
@@ -3194,20 +3083,64 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
           
           <div className={`px-6 py-4 border-b ${divider}`}>
             <p className={`text-xs font-semibold uppercase tracking-widest ${st} mb-3`}>Refacciones en este trabajo</p>
-            {refaccionesAsignadas.map(r => (
-              <div key={r.id} className="flex justify-between items-center py-2 text-sm">
+
+            {diagnosticoFormatoBasico && canUpload && (
+              <div className="mb-3 grid grid-cols-1 sm:grid-cols-[1fr_120px_auto] gap-2 items-end">
                 <div>
-                  <p className={t}>{r.refacciones?.nombre}</p>
-                  <p className={st}>Cant: {r.cantidad}</p>
+                  <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Refacción</label>
+                  <Select darkMode={darkMode} value={refNuevaId} onChange={(e) => setRefNuevaId(e.target.value)}>
+                    <option value="">Seleccionar refacción…</option>
+                    {refCatalog.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nombre} ({r.numero_parte || "SIN NUMERO"}) · Stock: {r.stock}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-                <button 
-                  onClick={() => toggleUsoRefaccion(r.id, r.fue_usada)}
-                  className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.fue_usada ? 'bg-emerald-500/20 text-emerald-500' : 'bg-zinc-500/20 text-zinc-500'}`}
+                <div>
+                  <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Cantidad</label>
+                  <Input
+                    darkMode={darkMode}
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={refNuevaCantidad}
+                    onChange={(e) => setRefNuevaCantidad(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAgregarRefaccion}
+                  disabled={addingRefaccion}
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                  style={{ backgroundColor: C_BLUE }}
                 >
-                  {r.fue_usada ? 'INSTALADA' : 'NO USADA / REGRESAR'}
+                  {addingRefaccion ? "Agregando..." : "Agregar"}
                 </button>
               </div>
-            ))}
+            )}
+
+            {refSaveError && <p className="text-xs mb-2" style={{ color: C_RED }}>{refSaveError}</p>}
+            {loadingRefacciones ? (
+              <p className={`text-xs ${st}`}>Cargando refacciones…</p>
+            ) : refaccionesAsignadas.length === 0 ? (
+              <p className={`text-xs ${st}`}>Aún no hay refacciones asignadas a este proyecto.</p>
+            ) : (
+              refaccionesAsignadas.map(r => (
+                <div key={r.id} className="flex justify-between items-center py-2 text-sm">
+                  <div>
+                    <p className={t}>{r.refacciones?.nombre}</p>
+                    <p className={st}>Cant: {r.cantidad}</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleUsoRefaccion(r.id, r.fue_usada)}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.fue_usada ? 'bg-emerald-500/20 text-emerald-500' : 'bg-zinc-500/20 text-zinc-500'}`}
+                  >
+                    {r.fue_usada ? 'INSTALADA' : 'NO USADA / REGRESAR'}
+                  </button>
+                </div>
+              ))
+            )}
           </div>
 
           {/* Fotografías */}
@@ -3279,7 +3212,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             
           </div>
           
-              {puedeEditarEstadoInicial && (
+              {puedeEditarEstadoInicial && canUpload && (
   <div className="flex justify-end px-6 py-4">
     <button
       type="button"
@@ -3419,14 +3352,9 @@ const Dashboard = ({ session, darkMode }) => {
     { id: "vehiculos", label: "Vehículos", icon: <LucideIcon name="car" /> },
     { id: "proyectos", label: "Proyectos", icon: <LucideIcon name="tool" /> },
     { id: "pagos-admin", label: "Autorizar Pagos", icon: <LucideIcon name="creditcard" /> },
-    { id: "refacciones", label: "Refacciones", icon: <LucideIcon name="box" /> },
-    { id: "proveedores", label: "Proveedores", icon: <LucideIcon name="tag" /> },
-    { id: "compras-refacciones", label: "Compra Refacciones", icon: <LucideIcon name="receipt" /> },
-    { id: "ventas-refacciones", label: "Venta Refacciones", icon: <LucideIcon name="shoppingcart" /> },
-    { id: "historial-refacciones", label: "Historial Refacciones", icon: <LucideIcon name="history" /> },
-    { id: "historial-tickets", label: "Historial de Tickets", icon: <LucideIcon name="clipboard" /> },
-    { id: "historial-servicios", label: "Historial de Servicios", icon: <LucideIcon name="scroll" /> },
-    { id: "reportes", label: "Reportes Operativos", icon: <LucideIcon name="chart" /> },
+    { id: "inventario", label: "Inventario", icon: <LucideIcon name="box" /> },
+    { id: "historiales", label: "Historiales", icon: <LucideIcon name="history" /> },
+    { id: "reportes", label: "Reportes", icon: <LucideIcon name="chart" /> },
   ];
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Administrador" onNotificationClick={handleNotificationClick}>
@@ -3434,11 +3362,8 @@ const Dashboard = ({ session, darkMode }) => {
       {activeModule === "empleados" && <EmpleadosModule darkMode={darkMode} />}
       {activeModule === "vehiculos" && <VehiculosModule darkMode={darkMode} />}
       {activeModule === "proyectos" && <ProyectosModule darkMode={darkMode} session={session} initialProjectId={notifProjectId} />}
-      {activeModule === "refacciones" && <RefaccionesModule darkMode={darkMode} readOnly={false} />}
-      {activeModule === "proveedores" && <ProveedoresModule darkMode={darkMode} />}
-      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
-      {activeModule === "ventas-refacciones" && <VentaRefacciones darkMode={darkMode} />}
-      {activeModule === "historial-refacciones" && <HistorialRefacciones darkMode={darkMode} />}
+      {activeModule === "inventario" && <GestionInventario darkMode={darkMode} role="administrador" />}
+      {activeModule === "historiales" && <HistorialesModule darkMode={darkMode} />}
       {activeModule === "citas" && (
         <CitasModule darkMode={darkMode} role="administrador" canManage onAppointmentCreated={(data) => {
           notifyAdminNewAppointment({
@@ -3449,9 +3374,7 @@ const Dashboard = ({ session, darkMode }) => {
           });
         }} />
       )}
-      {activeModule === "historial-tickets" && <HistorialTicketsWrapper darkMode={darkMode} />}
-      {activeModule === "historial-servicios" && <HistorialServiciosAdminWrapper darkMode={darkMode} />}
-      {activeModule === "reportes" && <ReportesOperativosWrapper darkMode={darkMode} />}
+      {activeModule === "reportes" && <CentroReportes darkMode={darkMode} />}
       {activeModule === "pagos-admin" && <PagosAdminModule darkMode={darkMode} session={session} />}
     </DashboardShell>
   );
@@ -4155,7 +4078,9 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
 
                 {paymentSuccess && (
                   <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-4 mb-4">
-                    <p className="text-emerald-300 font-semibold">✓ Pago completado. El auto está listo para recoger!</p>
+                    <p className="text-emerald-300 font-semibold flex items-center gap-2">
+                      <Icon name="check" className="w-4 h-4" /> Pago completado. El auto está listo para recoger!
+                    </p>
                     <button
                       onClick={() => navigate(`/ticket/${selectedTicket.id}`)}
                       className="mt-3 px-3 py-1.5 rounded text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700"
@@ -4188,7 +4113,9 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                           : "border-gray-300 bg-gray-50 hover:border-blue-500"
                       }`}
                     >
-                      <p className="text-2xl mb-2">💳</p>
+                      <div className="flex justify-center mb-2">
+                        <Icon name="creditcard" className="w-8 h-8 text-blue-500" />
+                      </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Tarjeta</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Débito o Crédito</p>
                     </button>
@@ -4208,7 +4135,9 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                           : "border-gray-300 bg-gray-50 hover:border-green-500"
                       }`}
                     >
-                      <p className="text-2xl mb-2">💵</p>
+                      <div className="flex justify-center mb-2">
+                        <Icon name="dollar" className="w-8 h-8 text-emerald-500" />
+                      </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Efectivo</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en caja</p>
                     </button>
@@ -4228,7 +4157,9 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                           : "border-gray-300 bg-gray-50 hover:border-purple-500"
                       }`}
                     >
-                      <p className="text-2xl mb-2">🔐</p>
+                      <div className="flex justify-center mb-2">
+                        <Icon name="lock" className="w-8 h-8 text-purple-500" />
+                      </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Stripe</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en línea</p>
                     </button>
@@ -4481,20 +4412,31 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   const [decisionError, setDecisionError] = useState("");
   const [decisionSuccess, setDecisionSuccess] = useState("");
 
-  useEffect(() => {
-    if (!clienteId) return;
-    const fetch = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("proyectos")
-        .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
-        .eq("cliente_id", clienteId)
-        .order("created_at", { ascending: false });
-      setProyectos(data || []);
+  const fetch = useCallback(async () => {
+    if (!clienteId) {
+      setProyectos([]);
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
+
+    setLoading(true);
+    const { data } = await supabase
+      .from("proyectos")
+      .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,hallazgos,causa_raiz,created_at,empleados(nombre)), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
+      .eq("cliente_id", clienteId)
+      .order("created_at", { ascending: false });
+
+    setProyectos(data || []);
+    setLoading(false);
   }, [clienteId]);
+
+  useEffect(() => {
+    fetch();
+  }, [fetch]);
+
+  useSupabaseRealtime("proyectos", fetch);
+  useSupabaseRealtime("cotizaciones", fetch);
+  useSupabaseRealtime("diagnosticos", fetch);
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
@@ -4503,36 +4445,11 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
     }
   }, [initialProjectId, proyectos]);
 
-  // Escuchar cambios en proyectos y cotizaciones en tiempo real
   useEffect(() => {
-    const subscription = supabase
-      .channel("proyectos-cliente-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "proyectos" }, (payload) => {
-        const { new: updatedProyecto } = payload;
-        if (updatedProyecto && updatedProyecto.cliente_id === clienteId) {
-          setProyectos((prev) => {
-            const idx = prev.findIndex((p) => p.id === updatedProyecto.id);
-            if (idx === -1) return prev;
-            const updated = [...prev];
-            updated[idx] = { ...updated[idx], ...updatedProyecto };
-            return updated;
-          });
-        }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "cotizaciones" }, (payload) => {
-        const { new: updatedCotizacion } = payload;
-        if (updatedCotizacion) {
-          setProyectos((prev) => prev.map((p) => ({
-            ...p,
-            cotizaciones: (p.cotizaciones || []).map((c) => c.id === updatedCotizacion.id ? updatedCotizacion : c)
-          })));
-        }
-      })
-      .subscribe();
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [clienteId]);
+    if (!detalle?.id) return;
+    const updated = proyectos.find((p) => p.id === detalle.id);
+    if (updated) setDetalle(updated);
+  }, [proyectos, detalle?.id]);
 
   const handleCotizacionDecision = async (proyecto, decision) => {
     if (!clienteId) return;
@@ -4680,7 +4597,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
                     );
                   })()}
                   <div className="flex items-center gap-2 mb-1">
-                    {p.bloqueado && <span className="text-amber-500 text-xs">🔒</span>}
+                    {p.bloqueado && <Icon name="lock" className="w-3.5 h-3.5 text-amber-500" />}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
                   </div>
                   {p.descripcion && <p className={`text-xs ${st} mb-1`}>{p.descripcion}</p>}
@@ -4796,11 +4713,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
   const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
 
-  const filterBtnCls = (active) => active
-    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-600 text-zinc-200 bg-zinc-700"
-    : darkMode
-    ? "border text-xs font-medium px-3 py-1.5 rounded-md border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
-    : "border text-xs font-medium px-3 py-1.5 rounded-md border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600";
+
 
   const handleEstadoChange = async (proyecto, nuevoEstado) => {
     setActionError("");
@@ -4839,28 +4752,31 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
       {actionError && <p className="mb-3 text-sm" style={{ color: C_RED }}>{actionError}</p>}
 
       {/* Stats strip */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-4 no-scrollbar pr-4">
+        {/* Card Todos */}
+        <Card key="todos" darkMode={darkMode}
+          className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${filterEstado === "todos" ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
+          onClick={() => setFilterEstado("todos")}
+        >
+          <p className={`text-base font-bold ${t}`}>{proyectos.length}</p>
+          <p className={`text-[10px] uppercase tracking-wider font-semibold ${st} mt-1`}>Todos</p>
+        </Card>
+
         {ESTADOS_PROYECTO.map((e) => {
           const count = proyectos.filter((p) => p.estado === e).length;
+          const isActive = filterEstado === e;
+          const badgeColors = estadoBadge(e, darkMode).split(" ")[1];
+          
           return (
             <Card key={e} darkMode={darkMode}
-              className="px-3 py-2.5 text-center cursor-pointer transition-opacity hover:opacity-80"
+              className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${isActive ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
               onClick={() => setFilterEstado(e === filterEstado ? "todos" : e)}
             >
-              <p className={`text-base font-semibold ${estadoBadge(e, darkMode).split(" ")[1]}`}>{count}</p>
-              <p className={`text-[9px] uppercase tracking-wider ${st} mt-0.5`}>{e.replace(/_/g, " ")}</p>
+              <p className={`text-base font-bold ${badgeColors}`}>{count}</p>
+              <p className={`text-[9px] uppercase tracking-wider font-semibold ${st} mt-1 truncate w-full px-1`}>{e.replace(/_/g, " ")}</p>
             </Card>
           );
         })}
-      </div>
-
-      {/* Filtros */}
-      <div className="flex gap-1.5 flex-wrap mb-4">
-        {["todos", ...ESTADOS_PROYECTO].map((e) => (
-          <button key={e} onClick={() => setFilterEstado(e)} className={`capitalize ${filterBtnCls(filterEstado === e)}`}>
-            {e === "todos" ? "Todos" : e.replace(/_/g, " ")}
-          </button>
-        ))}
       </div>
 
       <Card darkMode={darkMode} className="overflow-hidden">
@@ -4965,7 +4881,7 @@ const RefaccionesMecanicoModule = ({ darkMode }) => {
         <p className={`text-xs ${st} mt-0.5`}>{refacciones.length} refacciones</p>
       </div>
       <div className="mb-4">
-        <Input darkMode={darkMode} placeholder="Buscar por nombre o número de parte…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input darkMode={darkMode} icon="search" placeholder="Buscar por nombre o número de parte…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <Card darkMode={darkMode} className="overflow-hidden">
         {loading ? (
@@ -5095,9 +5011,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
     { id: "citas",              label: "Citas",          icon: <LucideIcon name="calendar" /> },
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: <LucideIcon name="tool" /> },
     { id: "diagnosticos",       label: "Diagnósticos",   icon: <LucideIcon name="clipboard" /> },
-    { id: "refacciones",        label: "Refacciones",    icon: <LucideIcon name="box" /> },
-    { id: "compras-refacciones", label: "Compra Refacciones", icon: <LucideIcon name="filetext" /> },
-    { id: "ventas-refacciones",  label: "Venta Refacciones",  icon: <LucideIcon name="shoppingcart" /> },
+    { id: "inventario", label: "Inventario", icon: <LucideIcon name="box" /> },
   ];
 
   return (
@@ -5105,9 +5019,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} initialProjectId={notifProjectId} />}
       {activeModule === "diagnosticos" && <MecanicoDiagnosticosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
-      {activeModule === "refacciones"         && <RefaccionesModule darkMode={darkMode} readOnly allowStockEdit={false} />}
-      {activeModule === "compras-refacciones" && <CompraRefacciones darkMode={darkMode} />}
-      {activeModule === "ventas-refacciones"  && <VentaRefacciones darkMode={darkMode} />}
+      {activeModule === "inventario" && <GestionInventario darkMode={darkMode} role="mecanico" />}
     </DashboardShell>
   );
 };

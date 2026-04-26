@@ -3,14 +3,25 @@ import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import Ticket from "./Ticket";
 import { formatDateWorkshop } from "../utils/datetime";
+import { Icon, Button } from "./UIPrimitives";
 
-export default function HistorialTickets({ darkMode = false }) {
+export default function HistorialTickets({
+  darkMode = false,
+  initialSearch = "",
+  initialFilter = "todos",
+  initialSort = "reciente",
+}) {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [filter, setFilter] = useState("todos");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("reciente");
+  const [filter, setFilter] = useState(initialFilter);
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+  const [sortBy, setSortBy] = useState(initialSort);
+
+  // Sync with parent filters when they change
+  useEffect(() => { setSearchTerm(initialSearch); }, [initialSearch]);
+  useEffect(() => { setFilter(initialFilter); }, [initialFilter]);
+  useEffect(() => { setSortBy(initialSort); }, [initialSort]);
 
   const [rtTick, setRtTick] = useState(0);
   useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
@@ -108,16 +119,13 @@ export default function HistorialTickets({ darkMode = false }) {
   if (selectedTicket) {
     return (
       <div className="w-full">
-        <button
+        <Button
           onClick={() => setSelectedTicket(null)}
-          className={`mb-4 px-4 py-2 rounded text-sm font-medium ${
-            darkMode
-              ? "bg-zinc-700 text-white hover:bg-zinc-600"
-              : "bg-gray-300 text-gray-900 hover:bg-gray-400"
-          }`}
+          variant="outline"
+          className="mb-4"
         >
           ← Volver a Historial
-        </button>
+        </Button>
         <Ticket proyectoId={selectedTicket.id} darkMode={darkMode} showOmit={false} />
       </div>
     );
@@ -129,61 +137,10 @@ export default function HistorialTickets({ darkMode = false }) {
 
   return (
     <div>
-      {/* Encabezado */}
-      <div className="mb-6">
-        <h2 className={`text-xl font-semibold ${t}`}>📋 Historial de Tickets</h2>
-        <p className={`text-xs ${st} mt-0.5`}>Gestiona todos los servicios completados</p>
-      </div>
 
-      {/* Filtros y Búsqueda */}
-      <div
-        className={`rounded-lg p-4 mb-6 border ${
-          darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"
-        }`}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${st}`}>Buscar</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Título, cliente, placas..."
-              className={`w-full px-3 py-2 rounded border text-sm ${inputBg} placeholder-opacity-50`}
-            />
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${st}`}>Estado</label>
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${inputBg}`}
-            >
-              <option value="todos">Todos</option>
-              <option value="entregado">Entregados</option>
-              <option value="cancelado">Cancelados</option>
-            </select>
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${st}`}>Ordenar</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${inputBg}`}
-            >
-              <option value="reciente">Más Reciente</option>
-              <option value="antiguo">Más Antiguo</option>
-            </select>
-          </div>
-
-          <div className="flex items-end">
-            <div className={`text-sm ${st}`}>
-              <span className="font-semibold">{filteredTickets.length}</span> ticket{filteredTickets.length !== 1 ? "s" : ""}
-            </div>
-          </div>
-        </div>
+      {/* Contador de resultados */}
+      <div className={`text-xs ${st} mb-4`}>
+        <span className="font-semibold">{filteredTickets.length}</span> ticket{filteredTickets.length !== 1 ? "s" : ""} encontrados
       </div>
 
       {/* Tabla de Tickets */}
@@ -210,8 +167,8 @@ export default function HistorialTickets({ darkMode = false }) {
                     #{ticket.id.slice(0, 8).toUpperCase()}
                   </p>
                   <p className={`font-semibold text-sm ${t}`}>{ticket.titulo}</p>
-                  <p className={`text-xs ${st}`}>
-                    🚗 {ticket.vehiculo?.marca} {ticket.vehiculo?.modelo}
+                  <p className={`text-xs ${st} flex items-center gap-1 mt-0.5`}>
+                    <Icon name="car" className="w-3 h-3" /> {ticket.vehiculo?.marca} {ticket.vehiculo?.modelo}
                   </p>
                 </div>
 
@@ -242,7 +199,15 @@ export default function HistorialTickets({ darkMode = false }) {
                         : "bg-red-900/30 text-red-300 border border-red-800"
                     }`}
                   >
-                    {ticket.estado === "entregado" ? "✓ Entregado" : "✗ Cancelado"}
+                    {ticket.estado === "entregado" ? (
+                      <span className="flex items-center gap-1">
+                        <Icon name="check" className="w-3 h-3" /> Entregado
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <Icon name="x" className="w-3 h-3" /> Cancelado
+                      </span>
+                    )}
                   </span>
                 </div>
 

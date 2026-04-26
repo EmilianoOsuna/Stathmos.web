@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import { Edit, AlertCircle } from "lucide-react";
 import { formatDateTimeWorkshop } from "../utils/datetime";
+import { Icon } from "./UIPrimitives";
 
 export default function DiagnosticoView({ 
   proyectoId, 
@@ -112,7 +113,9 @@ export default function DiagnosticoView({
               {/* Síntomas */}
               {diagnostico.sintomas && (
                 <div>
-                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2`}>🔧 Síntomas</p>
+                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2 flex items-center gap-1.5`}>
+                    <Icon name="wrench" className="w-3.5 h-3.5" /> Síntomas
+                  </p>
                   <p className={`text-sm ${textPrimary} leading-relaxed whitespace-pre-wrap`}>
                     {diagnostico.sintomas}
                   </p>
@@ -132,7 +135,9 @@ export default function DiagnosticoView({
               {/* Causa Raíz */}
               {diagnostico.causa_raiz && (
                 <div>
-                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2`}>⚡ Causa Raíz</p>
+                  <p className={`text-xs font-semibold ${textSecondary} uppercase mb-2 flex items-center gap-1.5`}>
+                    <Icon name="bolt" className="w-3.5 h-3.5" /> Causa Raíz
+                  </p>
                   <p className={`text-sm ${textPrimary} leading-relaxed whitespace-pre-wrap`}>
                     {diagnostico.causa_raiz}
                   </p>

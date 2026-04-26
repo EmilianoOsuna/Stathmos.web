@@ -9,6 +9,7 @@ import {
   toWorkshopYmd,
   todayWorkshopYmd,
 } from "../utils/datetime";
+import { Modal, Button, Field, Input, Select, Card, Textarea, DatePicker } from "./UIPrimitives";
 
 const SERVICIOS = [
   "Mantenimiento",
@@ -59,7 +60,7 @@ const getTimeSlotsForDate = (fecha) => {
   return slots;
 };
 
-const isCountableCalendarCita = (cita) => ["confirmada", "en_progreso"].includes(cita?.estado);
+const isCountableCalendarCita = (cita) => ["confirmada", "completada"].includes(cita?.estado);
 
 const isVisibleCalendarCita = (cita) => cita?.estado !== "cancelada";
 
@@ -147,23 +148,7 @@ const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
   }
 };
 
-const Modal = ({ open, onClose, darkMode, children, title }) => {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 p-4 flex items-center justify-center" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-xl rounded-xl border ${darkMode ? "bg-[#1e1e26] border-zinc-700" : "bg-white border-gray-200"}`}
-      >
-        <div className={`px-5 py-4 border-b flex items-center justify-between ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-          <h3 className={`text-base font-semibold ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{title}</h3>
-          <button onClick={onClose} className={darkMode ? "text-zinc-400" : "text-gray-500"}>×</button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-};
+
 
 export default function CitasModule({
   darkMode = false,
@@ -188,6 +173,9 @@ export default function CitasModule({
   const [calendarView, setCalendarView] = useState("month");
   const [monthDate, setMonthDate] = useState(new Date());
   const [inhabilForm, setInhabilForm] = useState({ fecha: ymd(new Date()), motivo: "" });
+
+  const [selectedCita, setSelectedCita] = useState(null);
+  const [selectedDayDetails, setSelectedDayDetails] = useState(null);
 
   const [form, setForm] = useState({
     fecha: ymd(new Date()),
@@ -550,12 +538,18 @@ export default function CitasModule({
       }
 
       const requestedDateTime = new Date(`${form.fecha}T${form.hora}:00${WORKSHOP_OFFSET}`);
-      const duplicatedSlot = (citas || []).some((cita) => (
-        cita.estado !== "cancelada" && new Date(cita.fecha_hora).getTime() === requestedDateTime.getTime()
-      ));
 
-      if (duplicatedSlot) {
-        throw new Error("Ya existe una cita registrada para ese horario.");
+      // Validar traslape (considerando slots de 20 min)
+      const citaSolapada = (citas || []).find((cita) => {
+        if (cita.estado === "cancelada") return false;
+        const citaTime = new Date(cita.fecha_hora).getTime();
+        const diffMinutes = Math.abs(citaTime - requestedDateTime.getTime()) / (1000 * 60);
+        return diffMinutes < 20;
+      });
+
+      if (citaSolapada) {
+        const horaCita = formatTimeWorkshop(citaSolapada.fecha_hora);
+        throw new Error(`Existe un traslape con otra cita a las ${horaCita}.`);
       }
 
       const clienteObjetivoId = role === "administrador" ? form.cliente_id : clienteId;
@@ -602,7 +596,7 @@ export default function CitasModule({
         throw new Error(message);
       }
       if (!data?.success) throw new Error(data?.error || "No se pudo agendar la cita.");
-      
+
       if (onAppointmentCreated) {
         onAppointmentCreated({
           citaId: data.cita?.id,
@@ -627,15 +621,33 @@ export default function CitasModule({
     setSaving(true);
     setError("");
     try {
+      // Intentar usar la Edge Function primero (recomendado para consistencia/notificaciones)
       const { data, error: invokeError } = await supabase.functions.invoke("resolver-cita", {
         body: { cita_id: citaId, accion },
       });
 
       if (invokeError) {
-        const message = await getFunctionErrorMessage(invokeError, "No se pudo procesar la cita.");
-        throw new Error(message);
+        // Si la función falla (ej. no soporta la acción nueva), intentamos actualización directa
+        console.warn("Edge function failed or doesn't support action, falling back to direct update", invokeError);
+        const newStatus = 
+          accion === "finalizar" ? "completada" : 
+          accion === "cancelar" ? "cancelada" : 
+          accion === "aceptar" ? "confirmada" : 
+          accion === "rechazar" ? "cancelada" : null;
+
+        if (newStatus) {
+          const { error: updateError } = await supabase
+            .from("citas")
+            .update({ estado: newStatus })
+            .eq("id", citaId);
+
+          if (updateError) throw updateError;
+        } else {
+          throw invokeError;
+        }
+      } else if (!data?.success) {
+        throw new Error(data?.error || "No se pudo procesar la cita.");
       }
-      if (!data?.success) throw new Error(data?.error || "No se pudo procesar la cita.");
 
       await fetchCitas();
     } catch (e) {
@@ -650,17 +662,34 @@ export default function CitasModule({
     setError("");
     try {
       if (!inhabilForm.fecha) throw new Error("Selecciona una fecha.");
+      
+      // Intentar vía Edge Function primero
       const { data, error: invokeError } = await supabase.functions.invoke("crear-dia-inhabil", {
         body: {
           fecha: inhabilForm.fecha,
           motivo: inhabilForm.motivo || null,
         },
       });
+
       if (invokeError) {
-        const message = await getFunctionErrorMessage(invokeError, "No se pudo guardar el día inhábil.");
-        throw new Error(message);
+        console.warn("Edge function failed or CORS issue, falling back to direct insert", invokeError);
+        // Fallback: Inserción directa
+        const { error: insertError } = await supabase
+          .from("dias_inhabiles")
+          .insert([{
+            fecha: inhabilForm.fecha,
+            motivo: inhabilForm.motivo || null,
+            activo: true
+          }]);
+
+        if (insertError) {
+          const message = await getFunctionErrorMessage(invokeError, "No se pudo guardar el día inhábil.");
+          throw new Error(message);
+        }
+      } else if (!data?.success) {
+        throw new Error(data?.error || "No se pudo guardar el día inhábil.");
       }
-      if (!data?.success) throw new Error(data?.error || "No se pudo guardar el día inhábil.");
+
       setInhabilOpen(false);
       setInhabilForm({ fecha: ymd(new Date()), motivo: "" });
       await fetchCitas();
@@ -675,16 +704,26 @@ export default function CitasModule({
     setSaving(true);
     setError("");
     try {
+      // Intentar vía Edge Function primero
       const { data, error: invokeError } = await supabase.functions.invoke("eliminar-dia-inhabil", {
         body: { dia_id: diaId },
       });
 
       if (invokeError) {
-        const message = await getFunctionErrorMessage(invokeError, "No se pudo eliminar el día inhábil.");
-        throw new Error(message);
-      }
+        console.warn("Edge function failed or CORS issue, falling back to direct update", invokeError);
+        // Fallback: Actualización directa a la base de datos
+        const { error: deleteError } = await supabase
+          .from("dias_inhabiles")
+          .update({ activo: false })
+          .eq("id", diaId);
 
-      if (!data?.success) throw new Error(data?.error || "No se pudo eliminar el día inhábil.");
+        if (deleteError) {
+          const message = await getFunctionErrorMessage(invokeError, "No se pudo eliminar el día inhábil.");
+          throw new Error(message);
+        }
+      } else if (!data?.success) {
+        throw new Error(data?.error || "No se pudo eliminar el día inhábil.");
+      }
 
       await fetchCitas();
     } catch (e) {
@@ -779,7 +818,8 @@ export default function CitasModule({
                     return (
                       <div
                         key={key}
-                        className={`min-h-24 rounded-lg border p-1.5 ${calendarDayBg(dateObj)}`}
+                        onClick={() => setSelectedDayDetails({ date: dateObj, citas: citasDelDia })}
+                        className={`min-h-24 rounded-lg border p-1.5 cursor-pointer transition-colors ${calendarDayBg(dateObj)} ${darkMode ? "hover:border-zinc-500" : "hover:border-gray-400"}`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <p className={`text-xs font-semibold ${isToday ? "text-sky-500" : t}`}>{dateObj.getDate()}</p>
@@ -787,7 +827,11 @@ export default function CitasModule({
                         </div>
                         <div className="mt-1 space-y-1">
                           {visibleItems.map((cita) => (
-                            <div key={cita.id} className={`text-[10px] leading-tight rounded px-1.5 py-1 border ${calendarStatusClasses(cita.estado, darkMode)}`}>
+                            <div
+                              key={cita.id}
+                              onClick={(e) => { e.stopPropagation(); setSelectedCita(cita); }}
+                              className={`text-[10px] leading-tight rounded px-1.5 py-1 border cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all ${calendarStatusClasses(cita.estado, darkMode)}`}
+                            >
                               <span className="font-semibold">{formatHm(cita.fecha_hora)}</span> {cita.motivo || "Servicio"}
                             </div>
                           ))}
@@ -815,7 +859,11 @@ export default function CitasModule({
                           <p className={`text-[10px] ${st}`}>Sin citas</p>
                         ) : (
                           citasDelDia.map((cita) => (
-                            <div key={cita.id} className={`rounded px-2 py-1 text-[10px] border ${calendarStatusClasses(cita.estado, darkMode)}`}>
+                            <div
+                              key={cita.id}
+                              onClick={() => setSelectedCita(cita)}
+                              className={`rounded px-2 py-1 text-[10px] border cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all ${calendarStatusClasses(cita.estado, darkMode)}`}
+                            >
                               <p className="font-semibold">{formatHm(cita.fecha_hora)}</p>
                               <p>{cita.motivo || "Servicio"}</p>
                             </div>
@@ -833,7 +881,11 @@ export default function CitasModule({
                     <p className={`text-sm ${st}`}>No hay citas en este día.</p>
                   ) : (
                     calendarRangeCitas.map((cita) => (
-                      <div key={cita.id} className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-800 bg-[#1d1d26]" : "border-gray-200 bg-white"}`}>
+                      <div
+                        key={cita.id}
+                        onClick={() => setSelectedCita(cita)}
+                        className={`rounded-lg border px-3 py-2 cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all ${darkMode ? "border-zinc-800 bg-[#1d1d26]" : "border-gray-200 bg-white"}`}
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <p className={`text-sm font-semibold ${t}`}>{formatHm(cita.fecha_hora)} · {cita.motivo || "Servicio"}</p>
@@ -862,7 +914,11 @@ export default function CitasModule({
             ) : (
               <div className="space-y-2">
                 {availableCitas.map((c) => (
-                  <div key={c.id} className={`rounded-lg border p-2 ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
+                  <div
+                    key={c.id}
+                    onClick={() => setSelectedCita(c)}
+                    className={`rounded-lg border p-2 cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all ${darkMode ? "border-zinc-800" : "border-gray-200"}`}
+                  >
                     <p className={`text-sm font-semibold ${t}`}>{c.motivo || "Servicio"}</p>
                     <p className={`text-xs ${st}`}>{formatDateTimeWorkshop(c.fecha_hora)}</p>
                     <p className={`text-xs ${st}`}>
@@ -906,12 +962,14 @@ export default function CitasModule({
               <button onClick={() => setFilterMode("7dias")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "7dias" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Siguientes 7 días</button>
               <button onClick={() => setFilterMode("fecha")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "fecha" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Día específico</button>
               {filterMode === "fecha" && (
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => handleFilterDateChange(e.target.value)}
-                  className={`ml-auto px-2 py-1.5 rounded text-xs border ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-white border-gray-300 text-gray-700"}`}
-                />
+                <div className="ml-auto w-40">
+                  <DatePicker
+                    value={filterDate}
+                    onChange={handleFilterDateChange}
+                    darkMode={darkMode}
+                    isBlockedDate={(d) => inhabilSet.has(d)}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -990,74 +1048,70 @@ export default function CitasModule({
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Día</label>
-            <input
-              type="date"
-              min={todayKey}
-              value={form.fecha}
-              onChange={(e) => handleFormDateChange(e.target.value)}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            />
-            <p className={`mt-1 text-[11px] ${st}`}>No se pueden seleccionar domingos ni días inhábiles.</p>
+            <Field label="Día" darkMode={darkMode}>
+              <DatePicker
+                value={form.fecha}
+                onChange={handleFormDateChange}
+                darkMode={darkMode}
+                isBlockedDate={isBlockedDate}
+              />
+              <p className={`mt-1 text-[11px] ${st}`}>No se pueden seleccionar domingos ni días inhábiles.</p>
+            </Field>
           </div>
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Hora</label>
-            <select
-              value={form.hora}
-              onChange={(e) => setForm({ ...form, hora: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            >
-              {timeSlots.map((slot) => (
-                <option key={slot} value={slot}>{slot}</option>
-              ))}
-            </select>
+            <Field label="Hora" darkMode={darkMode}>
+              <Select
+                value={form.hora}
+                onChange={(e) => setForm({ ...form, hora: e.target.value })}
+                darkMode={darkMode}
+                options={timeSlots.map(s => ({ value: s, label: s }))}
+              />
+            </Field>
           </div>
           {role === "administrador" && (
             <div>
-              <label className={`text-xs font-semibold ${st}`}>Cliente</label>
-              <select
-                value={form.cliente_id}
-                onChange={(e) => setForm({ ...form, cliente_id: e.target.value, vehiculo_id: "" })}
-                className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-              >
-                <option value="">Selecciona un cliente</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre} · {c.correo || "sin correo"}</option>
-                ))}
-              </select>
+              <Field label="Cliente" darkMode={darkMode}>
+                <Select
+                  value={form.cliente_id}
+                  onChange={(e) => setForm({ ...form, cliente_id: e.target.value, vehiculo_id: "" })}
+                  darkMode={darkMode}
+                  placeholder="Seleccionar cliente"
+                  options={clientes.map(c => ({ value: c.id, label: `${c.nombre} · ${c.correo || "sin correo"}` }))}
+                />
+              </Field>
             </div>
           )}
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Vehículo</label>
-            <select
-              value={form.vehiculo_id}
-              onChange={(e) => setForm({ ...form, vehiculo_id: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            >
-              <option value="">Selecciona un vehículo</option>
-              {vehiculosParaFormulario.map((v) => (
-                <option key={v.id} value={v.id}>{v.marca} {v.modelo} · {v.placas}</option>
-              ))}
-            </select>
+            <Field label="Vehículo" darkMode={darkMode}>
+              <Select
+                value={form.vehiculo_id}
+                onChange={(e) => setForm({ ...form, vehiculo_id: e.target.value })}
+                darkMode={darkMode}
+                placeholder="Seleccionar vehículo"
+                options={vehiculosParaFormulario.map(v => ({ value: v.id, label: `${v.marca} ${v.modelo} · ${v.placas}` }))}
+              />
+            </Field>
           </div>
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Tipo de servicio</label>
-            <select
-              value={form.servicio}
-              onChange={(e) => setForm({ ...form, servicio: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            >
-              {SERVICIOS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <Field label="Tipo de servicio" darkMode={darkMode}>
+              <Select
+                value={form.servicio}
+                onChange={(e) => setForm({ ...form, servicio: e.target.value })}
+                darkMode={darkMode}
+                options={SERVICIOS.map(s => ({ value: s, label: s }))}
+              />
+            </Field>
           </div>
           <div className="sm:col-span-2">
-            <label className={`text-xs font-semibold ${st}`}>Notas (opcional)</label>
-            <textarea
-              rows={3}
-              value={form.notas}
-              onChange={(e) => setForm({ ...form, notas: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            />
+            <Field label="Notas (opcional)" darkMode={darkMode}>
+              <Textarea
+                rows={3}
+                value={form.notas}
+                onChange={(e) => setForm({ ...form, notas: e.target.value })}
+                darkMode={darkMode}
+                placeholder="Indica el problema o servicio requerido..."
+              />
+            </Field>
           </div>
         </div>
 
@@ -1129,24 +1183,23 @@ export default function CitasModule({
       <Modal open={inhabilOpen} onClose={() => setInhabilOpen(false)} darkMode={darkMode} title="Agregar día inhábil">
         <div className="grid grid-cols-1 gap-3">
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Fecha</label>
-            <input
-              type="date"
-              min={todayKey}
-              value={inhabilForm.fecha}
-              onChange={(e) => setInhabilForm({ ...inhabilForm, fecha: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-            />
+            <Field label="Fecha" darkMode={darkMode}>
+              <DatePicker
+                value={inhabilForm.fecha}
+                onChange={(v) => setInhabilForm({ ...inhabilForm, fecha: v })}
+                darkMode={darkMode}
+              />
+            </Field>
           </div>
           <div>
-            <label className={`text-xs font-semibold ${st}`}>Motivo (opcional)</label>
-            <input
-              type="text"
-              value={inhabilForm.motivo}
-              onChange={(e) => setInhabilForm({ ...inhabilForm, motivo: e.target.value })}
-              className={`mt-1 w-full px-3 py-2 rounded border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-300 text-gray-700"}`}
-              placeholder="Festivo, mantenimiento, etc."
-            />
+            <Field label="Motivo (opcional)" darkMode={darkMode}>
+              <Input
+                value={inhabilForm.motivo}
+                onChange={(e) => setInhabilForm({ ...inhabilForm, motivo: e.target.value })}
+                darkMode={darkMode}
+                placeholder="Festivo, mantenimiento, etc."
+              />
+            </Field>
           </div>
         </div>
         <div className="mt-5 flex gap-2">
@@ -1164,6 +1217,154 @@ export default function CitasModule({
             {saving ? "Guardando..." : "Guardar"}
           </button>
         </div>
+      </Modal>
+
+      {/* Detalle de Cita */}
+      <Modal
+        open={Boolean(selectedCita)}
+        onClose={() => setSelectedCita(null)}
+        darkMode={darkMode}
+        title="Detalles de la Cita"
+      >
+        {selectedCita && (
+          <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Fecha y Hora" darkMode={darkMode}>
+                <p className={`text-sm font-medium ${t}`}>{formatDateTimeWorkshop(selectedCita.fecha_hora)}</p>
+              </Field>
+              <Field label="Estado" darkMode={darkMode}>
+                <span className={`inline-block px-2 py-0.5 rounded text-xs border w-fit ${estadoBadge(selectedCita.estado, darkMode)}`}>
+                  {selectedCita.estado}
+                </span>
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Cliente" darkMode={darkMode}>
+                <p className={`text-sm font-medium ${t}`}>{selectedCita.clientes?.nombre || "—"}</p>
+                <p className={`text-xs ${st}`}>{selectedCita.clientes?.correo || ""}</p>
+              </Field>
+              <Field label="Vehículo" darkMode={darkMode}>
+                <p className={`text-sm font-medium ${t}`}>
+                  {selectedCita.vehiculos ? `${selectedCita.vehiculos.marca} ${selectedCita.vehiculos.modelo}` : "—"}
+                </p>
+                <p className={`text-xs ${st}`}>
+                  {selectedCita.vehiculos?.placas ? `Placas: ${selectedCita.vehiculos.placas}` : ""}
+                </p>
+              </Field>
+            </div>
+
+            <Field label="Servicio / Motivo" darkMode={darkMode}>
+              <p className={`text-sm font-medium ${t}`}>{selectedCita.motivo || "No especificado"}</p>
+            </Field>
+
+            {selectedCita.notas && (
+              <Field label="Notas" darkMode={darkMode}>
+                <div className={`p-3 rounded-lg border text-sm ${darkMode ? "bg-zinc-800/50 border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-600"}`}>
+                  {selectedCita.notas}
+                </div>
+              </Field>
+            )}
+
+            <div className="mt-2 flex flex-wrap gap-3">
+              {canManage && selectedCita.estado === "pendiente" && (
+                <>
+                  <Button
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => { handleResolver(selectedCita.id, "aceptar"); setSelectedCita(null); }}
+                    disabled={saving}
+                  >
+                    {role === "administrador" ? "Validar cita" : "Aceptar"}
+                  </Button>
+                  <Button
+                    variant="accent"
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => { handleResolver(selectedCita.id, "rechazar"); setSelectedCita(null); }}
+                    disabled={saving}
+                  >
+                    Rechazar
+                  </Button>
+                </>
+              )}
+
+              {canManage && selectedCita.estado === "confirmada" && (
+                <Button 
+                  className="flex-1 min-w-[120px]" 
+                  onClick={() => { handleResolver(selectedCita.id, "finalizar"); setSelectedCita(null); }}
+                  disabled={saving}
+                  color="#10b981"
+                >
+                  Completar Servicio
+                </Button>
+              )}
+
+              {(canManage || selectedCita.cliente_id === clienteId) &&
+                (selectedCita.estado === "pendiente" || selectedCita.estado === "confirmada") && (
+                  <Button
+                    variant="ghost"
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => {
+                      if (window.confirm("¿Estás seguro de que deseas cancelar esta cita?")) {
+                        handleResolver(selectedCita.id, "cancelar");
+                        setSelectedCita(null);
+                      }
+                    }}
+                    disabled={saving}
+                  >
+                    Cancelar Cita
+                  </Button>
+                )}
+
+              <Button variant="ghost" className="w-full" onClick={() => setSelectedCita(null)}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Desglose de Día */}
+      <Modal 
+        open={Boolean(selectedDayDetails)} 
+        onClose={() => setSelectedDayDetails(null)} 
+        darkMode={darkMode} 
+        title={selectedDayDetails ? `Citas del ${formatDateWorkshop(selectedDayDetails.date, { day: 'numeric', month: 'long' })}` : "Citas del día"}
+      >
+        {selectedDayDetails && (
+          <div className="flex flex-col gap-4">
+            {selectedDayDetails.citas.length === 0 ? (
+              <p className={`text-sm text-center py-8 ${st}`}>No hay citas registradas para este día.</p>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                {selectedDayDetails.citas.sort((a,b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)).map((cita) => (
+                  <div 
+                    key={cita.id} 
+                    onClick={() => { setSelectedCita(cita); setSelectedDayDetails(null); }}
+                    className={`p-3 rounded-xl border cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-all ${
+                      darkMode ? "bg-zinc-800/40 border-zinc-700 hover:border-zinc-500" : "bg-white border-gray-200 hover:border-gray-300 shadow-sm"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 text-center py-1 rounded text-xs font-bold ${darkMode ? "bg-zinc-700 text-zinc-300" : "bg-gray-100 text-gray-700"}`}>
+                          {formatHm(cita.fecha_hora)}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-semibold ${t}`}>{cita.motivo || "Servicio"}</p>
+                          <p className={`text-xs ${st}`}>{cita.clientes?.nombre || "Cliente"}</p>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] border font-medium ${estadoBadge(cita.estado, darkMode)}`}>
+                        {cita.estado}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="ghost" className="mt-2" onClick={() => setSelectedDayDetails(null)}>Cerrar</Button>
+          </div>
+        )}
       </Modal>
     </div>
   );

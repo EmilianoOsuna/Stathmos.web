@@ -1,6 +1,7 @@
 import { useState } from "react";
 import supabase from "../supabase";
-import { X, AlertCircle, CheckCircle } from "lucide-react";
+import { AlertCircle, CheckCircle } from "lucide-react";
+import { Modal, Button, Field, Textarea, Input, Icon } from "./UIPrimitives";
 
 export default function DiagnosticoModal({ 
   open, 
@@ -23,6 +24,62 @@ export default function DiagnosticoModal({
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setError("");
+  };
+
+  const notifyClientDiagnostico = async ({ tipo, texto }) => {
+    try {
+      const { data: proyectoData, error: proyectoErr } = await supabase
+        .from("proyectos")
+        .select("id, titulo, cliente_id, clientes(usuario_id, correo)")
+        .eq("id", proyectoId)
+        .maybeSingle();
+
+      if (proyectoErr) throw proyectoErr;
+      if (!proyectoData?.cliente_id) return;
+
+      let usuarioId = proyectoData?.clientes?.usuario_id || null;
+      let clienteCorreo = proyectoData?.clientes?.correo || null;
+
+      if (!usuarioId && !clienteCorreo) {
+        const { data: clienteData } = await supabase
+          .from("clientes")
+          .select("usuario_id, correo")
+          .eq("id", proyectoData.cliente_id)
+          .maybeSingle();
+        usuarioId = clienteData?.usuario_id || null;
+        clienteCorreo = clienteData?.correo || null;
+      }
+
+      if (!usuarioId && clienteCorreo) {
+        const { data: usuarioData } = await supabase
+          .from("usuarios")
+          .select("id")
+          .eq("correo", clienteCorreo)
+          .maybeSingle();
+        usuarioId = usuarioData?.id || null;
+      }
+
+      if (!usuarioId) return;
+
+      const titulo = tipo === "inicial"
+        ? "Diagnóstico inicial registrado"
+        : "Nueva observación en tu proyecto";
+
+      const mensaje = tipo === "inicial"
+        ? `Se registró el diagnóstico inicial de tu proyecto "${proyectoData.titulo}".`
+        : `Se agregó una nueva observación en tu proyecto "${proyectoData.titulo}": ${texto}`;
+
+      await supabase.functions.invoke("enviar-notificacion", {
+        body: {
+          usuario_id: usuarioId,
+          proyecto_id: proyectoId,
+          titulo,
+          mensaje,
+        },
+      });
+    } catch (notifyErr) {
+      console.warn("[notifyClientDiagnostico] error:", notifyErr);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -91,6 +148,8 @@ export default function DiagnosticoModal({
           if (insertError) throw insertError;
           data = inserted;
         }
+
+        await notifyClientDiagnostico({ tipo: "observacion", texto: bloqueObservacion });
       } else {
         const { data: inserted, error: dbError } = await supabase
           .from("diagnosticos")
@@ -106,6 +165,8 @@ export default function DiagnosticoModal({
 
         if (dbError) throw dbError;
         data = inserted;
+
+        await notifyClientDiagnostico({ tipo: "inicial", texto: form.sintomas.trim() });
       }
 
       setForm({ sintomas: "", hallazgos: "", causa_raiz: "" });
@@ -130,146 +191,99 @@ export default function DiagnosticoModal({
     }
   };
 
-  if (!open) return null;
-
-  const bgModal = darkMode ? "bg-[#1e1e28]" : "bg-white";
-  const bgInput = darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900";
-  const textPrimary = darkMode ? "text-zinc-100" : "text-gray-800";
-  const textSecondary = darkMode ? "text-zinc-500" : "text-gray-500";
-  const bgError = darkMode ? "bg-red-900/20 border-red-700/30" : "bg-red-50 border-red-200";
-  const textError = darkMode ? "text-red-300" : "text-red-700";
-  const bgSuccess = darkMode ? "bg-emerald-900/20 border-emerald-700/30" : "bg-emerald-50 border-emerald-200";
-  const textSuccess = darkMode ? "text-emerald-300" : "text-emerald-700";
   const esActivo = proyectoEstado === "activo";
   const esEnProgreso = proyectoEstado === "en_progreso";
 
+  const modalTitle = esActivo ? "Diagnóstico inicial" : esEnProgreso ? "Observación de proyecto" : "Diagnóstico";
+  const modalSubtitle = esActivo
+    ? "Captura cómo llega el vehículo al taller"
+    : esEnProgreso
+    ? "Agrega observaciones durante la ejecución del proyecto"
+    : "Este proyecto no admite captura de diagnóstico";
+
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 ${esEnProgreso ? "observaciones-overlay" : ""}`}>
-      <div className={`w-full max-w-2xl rounded-lg shadow-xl border ${bgModal} ${darkMode ? "border-zinc-700" : "border-gray-200"} ${esEnProgreso ? "observaciones-modal" : ""}`}>
-        {/* Header */}
-        <div className={`flex items-center justify-between p-6 border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-          <div>
-            <h2 className={`text-xl font-bold ${textPrimary}`}>
-              {esActivo ? "Diagnóstico inicial" : esEnProgreso ? " Observación de proyecto" : "Diagnóstico"}
-            </h2>
-            <p className={`text-sm ${textSecondary} mt-1`}>
-              {esActivo
-                ? "Captura cómo llega el vehículo al taller"
-                : esEnProgreso
-                ? "Agrega observaciones durante la ejecución del proyecto"
-                : "Este proyecto no admite captura de diagnóstico"}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className={`p-2 rounded-lg transition ${darkMode ? "hover:bg-zinc-700" : "hover:bg-gray-100"}`}
-          >
-            <X className={`w-5 h-5 ${textSecondary}`} />
-          </button>
-        </div>
-
-        {/* Contenido */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {esActivo && (
-            <>
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${textPrimary}`}>
-                   Diagnóstico inicial <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={form.sintomas}
-                  onChange={(e) => handleChange("sintomas", e.target.value)}
-                  placeholder="Describe cómo llega el vehículo al taller y qué síntomas presenta"
-                  className={`w-full px-4 py-3 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${bgInput}`}
-                  rows="4"
-                  disabled={loading || success}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-sm font-medium mb-2 ${textPrimary}`}>
-                  Causa del problema
-                </label>
-                <textarea
-                  value={form.causa_raiz}
-                  onChange={(e) => handleChange("causa_raiz", e.target.value)}
-                  placeholder="Análisis inicial de la causa del problema"
-                  className={`w-full px-4 py-3 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${bgInput}`}
-                  rows="3"
-                  disabled={loading || success}
-                />
-              </div>
-            </>
-          )}
-
-          {esEnProgreso && (
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${textPrimary}`}>
-                Observaciones <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={form.hallazgos}
-                onChange={(e) => handleChange("hallazgos", e.target.value)}
-                placeholder="Describe observaciones del trabajo realizado"
-                className={`w-full px-4 py-3 rounded-lg border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${bgInput}`}
-                rows="4"
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={modalTitle}
+      subtitle={modalSubtitle}
+      darkMode={darkMode}
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {esActivo && (
+          <>
+            <Field label="Diagnóstico inicial" required darkMode={darkMode}>
+              <Textarea
+                darkMode={darkMode}
+                value={form.sintomas}
+                onChange={(e) => handleChange("sintomas", e.target.value)}
+                placeholder="Describe cómo llega el vehículo al taller y qué síntomas presenta"
+                rows={4}
                 disabled={loading || success}
               />
-              <p className={`text-xs ${textSecondary} mt-1`}>Una vez guardada, esta observación no se podrá editar.</p>
-            </div>
-          )}
+            </Field>
 
-          {/* Mensajes */}
-          {error && (
-            <div className={`flex items-start gap-3 p-4 rounded-lg border ${bgError}`}>
-              <AlertCircle className={`w-5 h-5 ${textError} flex-shrink-0 mt-0.5`} />
-              <p className={`text-sm ${textError}`}>{error}</p>
-            </div>
-          )}
+            <Field label="Causa del problema" darkMode={darkMode}>
+              <Textarea
+                darkMode={darkMode}
+                value={form.causa_raiz}
+                onChange={(e) => handleChange("causa_raiz", e.target.value)}
+                placeholder="Análisis inicial de la causa del problema"
+                rows={3}
+                disabled={loading || success}
+              />
+            </Field>
+          </>
+        )}
 
-          {success && (
-            <div className={`flex items-start gap-3 p-4 rounded-lg border ${bgSuccess}`}>
-              <CheckCircle className={`w-5 h-5 ${textSuccess} flex-shrink-0 mt-0.5`} />
-              <p className={`text-sm ${textSuccess}`}>✓ Diagnóstico guardado correctamente</p>
-            </div>
-          )}
-
-          {/* Botones */}
-          <div className="flex gap-3 justify-end pt-4">
-            <button
-              type="button"
-              onClick={onClose}
+        {esEnProgreso && (
+          <Field label="Observaciones" required darkMode={darkMode}>
+            <Textarea
+              darkMode={darkMode}
+              value={form.hallazgos}
+              onChange={(e) => handleChange("hallazgos", e.target.value)}
+              placeholder="Describe observaciones del trabajo realizado"
+              rows={4}
               disabled={loading || success}
-              className={`px-6 py-2 rounded-lg font-medium text-sm transition ${
-                loading || success
-                  ? darkMode
-                    ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : darkMode
-                    ? "bg-zinc-700 hover:bg-zinc-600 text-white"
-                    : "bg-gray-200 hover:bg-gray-300 text-gray-900"
-              }`}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={loading || success}
-              className={`px-6 py-2 rounded-lg font-medium text-sm transition ${
-                loading || success
-                  ? darkMode
-                    ? "bg-blue-900 text-blue-400 cursor-not-allowed"
-                    : "bg-blue-300 text-blue-600 cursor-not-allowed"
-                  : darkMode
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
-              }`}
-            >
-              {loading ? "Guardando..." : success ? "Guardado" : "Guardar Diagnóstico"}
-            </button>
+            />
+            <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-tight">Una vez guardada, esta observación no se podrá editar.</p>
+          </Field>
+        )}
+
+        {/* Mensajes */}
+        {error && (
+          <div className={`p-4 rounded-lg border text-sm flex items-center gap-3 ${darkMode ? "bg-red-900/20 border-red-800 text-red-400" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <AlertCircle className="w-5 h-5" />
+            {error}
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        {success && (
+          <div className={`p-4 rounded-lg border text-sm flex items-center gap-3 ${darkMode ? "bg-emerald-900/20 border-emerald-800 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}>
+            <CheckCircle className="w-5 h-5" />
+            Diagnóstico guardado correctamente
+          </div>
+        )}
+
+        {/* Botones */}
+        <div className="flex gap-3 justify-end pt-4 border-t border-zinc-800/50 mt-6">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            disabled={loading || success}
+            darkMode={darkMode}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={loading || success}
+            darkMode={darkMode}
+          >
+            {loading ? "Guardando..." : success ? "Guardado" : "Guardar Diagnóstico"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

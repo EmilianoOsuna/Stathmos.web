@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { Input, Button, DatePicker } from './UIPrimitives';
 
-export default function RegistroEmpleado() {
+export default function RegistroEmpleado({ darkMode = false }) {
   const [formData, setFormData] = useState({
     nombre: '', correo: '', telefono: '', puesto: '', fecha_contratacion: '', contraseña: ''
   });
@@ -26,7 +27,7 @@ export default function RegistroEmpleado() {
   };
 
   return (
-    <div className="max-w-md mx-auto bg-white p-8 border border-gray-200 rounded-lg shadow-sm">
+    <div className={`max-w-md mx-auto p-8 border rounded-lg shadow-sm ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
       <h2 className="text-2xl font-bold text-[#60aebb] mb-6">Registrar Empleado</h2>
 
       {status.success && (
@@ -41,29 +42,26 @@ export default function RegistroEmpleado() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <input required type="text" name="nombre" placeholder="Nombre completo"
-          value={formData.nombre} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" />
-        <input required type="email" name="correo" placeholder="Correo electrónico"
-          value={formData.correo} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" />
-        <input type="text" name="telefono" placeholder="Teléfono"
-          value={formData.telefono} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" />
-        <input required type="text" name="puesto" placeholder="Puesto (ej. Mecánico Sr.)"
-          value={formData.puesto} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" />
-        <input type="date" name="fecha_contratacion"
-          value={formData.fecha_contratacion} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#60aebb] outline-none" />
-        <input required type="password" name="contraseña" placeholder="Contraseña de acceso"
-          value={formData.contraseña} onChange={handleChange}
-          className="w-full p-2 border rounded focus:ring-2 focus:ring-[#db3c1c] outline-none" />
+        <Input required type="text" name="nombre" placeholder="Nombre completo"
+          value={formData.nombre} onChange={handleChange} darkMode={darkMode} />
+        <Input required type="email" name="correo" placeholder="Correo electrónico"
+          value={formData.correo} onChange={handleChange} darkMode={darkMode} />
+        <Input type="text" name="telefono" placeholder="Teléfono"
+          value={formData.telefono} onChange={handleChange} darkMode={darkMode} />
+        <Input required type="text" name="puesto" placeholder="Puesto (ej. Mecánico Sr.)"
+          value={formData.puesto} onChange={handleChange} darkMode={darkMode} />
+        <DatePicker
+          value={formData.fecha_contratacion}
+          onChange={(val) => setFormData(prev => ({ ...prev, fecha_contratacion: val }))}
+          darkMode={darkMode}
+          placeholder="Fecha de contratación..."
+        />
+        <Input required type="password" name="contraseña" placeholder="Contraseña de acceso"
+          value={formData.contraseña} onChange={handleChange} darkMode={darkMode} />
 
-        <button disabled={status.loading} type="submit"
-          className="w-full bg-[#db3c1c] hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors disabled:opacity-50">
+        <Button disabled={status.loading} type="submit" variant="destructive" className="w-full mt-2">
           {status.loading ? 'Registrando...' : 'Crear Empleado'}
-        </button>
+        </Button>
       </form>
     </div>
   );

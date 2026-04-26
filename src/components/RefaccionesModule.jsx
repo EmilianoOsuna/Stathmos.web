@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
+import { Icon, Input, Select, Textarea, Button } from "./UIPrimitives";
 
 const C_BLUE = "#60aebb";
-
-const inputCls = (darkMode) =>
-  `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
-    darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-  }`;
 
 const badgeStock = (r, darkMode) => {
   if (r.stock === 0) return darkMode ? "bg-red-900/40 text-red-400 border-red-800" : "bg-red-50 text-red-700 border-red-200";
@@ -198,12 +194,12 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
           <p className={`text-xs ${st} mt-0.5`}>{refacciones.length} refacciones</p>
         </div>
         {!readOnly && (
-          <button
+          <Button
             onClick={openCreate}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:border-zinc-500" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
+            variant="secondary"
           >
             + Agregar refaccion
-          </button>
+          </Button>
         )}
       </div>
 
@@ -227,66 +223,66 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
         <div className={`rounded-xl border p-4 mb-5 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className={`text-sm font-semibold ${t}`}>{editTarget ? "Editar Refaccion" : "Nueva Refaccion"}</h3>
-            <button
+            <Button
               onClick={() => { setShowForm(false); setEditTarget(null); }}
-              className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+              variant="outline"
             >
               Cerrar
-            </button>
+            </Button>
             {editTarget && (
-              <button
+              <Button
                 onClick={openCreate}
-                className={`text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+                variant="outline"
               >
                 Cancelar
-              </button>
+              </Button>
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Nombre</label>
-              <input className={inputCls(darkMode)} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+              <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Numero de parte</label>
-              <input className={inputCls(darkMode)} value={form.numero_parte} onChange={(e) => setForm({ ...form, numero_parte: e.target.value })} />
+              <Input value={form.numero_parte} onChange={(e) => setForm({ ...form, numero_parte: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio compra</label>
-              <input type="number" min="0" step="0.01" className={inputCls(darkMode)} value={form.precio_compra} onChange={(e) => setForm({ ...form, precio_compra: e.target.value })} />
+              <Input type="number" min="0" step="0.01" value={form.precio_compra} onChange={(e) => setForm({ ...form, precio_compra: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio venta</label>
-              <input type="number" min="0" step="0.01" className={inputCls(darkMode)} value={form.precio_venta} onChange={(e) => setForm({ ...form, precio_venta: e.target.value })} />
+              <Input type="number" min="0" step="0.01" value={form.precio_venta} onChange={(e) => setForm({ ...form, precio_venta: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock</label>
-              <input type="number" min="0" step="1" className={inputCls(darkMode)} value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
+              <Input type="number" min="0" step="1" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock minimo</label>
-              <input type="number" min="0" step="1" className={inputCls(darkMode)} value={form.stock_minimo} onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })} />
+              <Input type="number" min="0" step="1" value={form.stock_minimo} onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })} darkMode={darkMode} />
             </div>
             <div className="md:col-span-2">
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Descripcion</label>
-              <textarea rows={2} className={inputCls(darkMode)} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />
+              <Textarea rows={2} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Activo</label>
-              <select className={inputCls(darkMode)} value={form.activo ? "true" : "false"} onChange={(e) => setForm({ ...form, activo: e.target.value === "true" })}>
+              <Select value={form.activo ? "true" : "false"} onChange={(e) => setForm({ ...form, activo: e.target.value === "true" })} darkMode={darkMode}>
                 <option value="true">Activo</option>
                 <option value="false">Inactivo</option>
-              </select>
+              </Select>
             </div>
           </div>
-          <button
+          <Button
             onClick={saveRefaccion}
             disabled={saving}
-            className="mt-4 px-4 py-2 rounded-lg text-white text-sm font-medium transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: C_BLUE, boxShadow: `0 2px 8px ${C_BLUE}40` }}
+            className="mt-4 px-4 py-2"
+            variant="primary"
           >
             {saving ? "Guardando..." : editTarget ? "Actualizar" : "Crear"}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -305,24 +301,25 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
                 Estas seguro de modificar el stock? Esta accion es sensible.
               </p>
               <div className="flex gap-3">
-                <button
+                <Button
                   onClick={() => { setConfirmOpen(false); setPendingSave(null); }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
+                  variant="outline"
+                  className="flex-1"
                 >
                   Cancelar
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={async () => {
                     const payload = pendingSave;
                     setConfirmOpen(false);
                     setPendingSave(null);
                     if (payload) await submitSave(payload);
                   }}
-                  className="flex-1 py-2 rounded-lg text-sm font-medium text-white"
-                  style={{ backgroundColor: "#db3c1c", boxShadow: "0 2px 8px #db3c1c40" }}
+                  variant="destructive"
+                  className="flex-1"
                 >
                   Confirmar
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -330,11 +327,11 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
       )}
 
       <div className="mb-4">
-        <input
-          className={inputCls(darkMode)}
+        <Input
           placeholder="Buscar por nombre o numero de parte..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          darkMode={darkMode}
         />
       </div>
 
@@ -377,24 +374,20 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
                     {!readOnly && (
                       <td className="px-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button
+                          <Button
                             onClick={() => openEdit(r)}
-                            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"}`}
+                            variant="secondary"
                           >
                             Editar
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             onClick={() => toggleActivo(r)}
                             disabled={r.activo && Number(r.stock || 0) > 0}
-                            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${
-                              r.activo
-                                ? darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-                                : darkMode ? "border-zinc-700 text-zinc-400 hover:border-emerald-800 hover:text-emerald-400" : "border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600"
-                            }`}
+                            variant={r.activo ? "destructive" : "primary"}
                             title={r.activo && Number(r.stock || 0) > 0 ? "No puedes desactivar una refaccion con inventario" : ""}
                           >
                             {r.activo ? "Desactivar" : "Activar"}
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     )}
@@ -422,24 +415,20 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
                 <p className={`text-xs ${st}`}>{r.activo ? "Activo" : "Inactivo"}</p>
                 {!readOnly && (
                   <div className="flex gap-2">
-                    <button
+                    <Button
                       onClick={() => openEdit(r)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"}`}
+                      variant="secondary"
                     >
                       Editar
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => toggleActivo(r)}
                       disabled={r.activo && Number(r.stock || 0) > 0}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-opacity disabled:opacity-50 disabled:cursor-not-allowed ${
-                        r.activo
-                          ? darkMode ? "border-zinc-700 text-zinc-400 hover:border-red-800 hover:text-red-400" : "border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500"
-                          : darkMode ? "border-zinc-700 text-zinc-400 hover:border-emerald-800 hover:text-emerald-400" : "border-gray-200 text-gray-500 hover:border-emerald-300 hover:text-emerald-600"
-                      }`}
+                      variant={r.activo ? "destructive" : "primary"}
                       title={r.activo && Number(r.stock || 0) > 0 ? "No puedes desactivar una refaccion con inventario" : ""}
                     >
                       {r.activo ? "Desactivar" : "Activar"}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>

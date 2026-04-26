@@ -3,6 +3,7 @@ import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity, FileText } from "lucide-react";
 import { formatDateWorkshop } from "../utils/datetime";
+import { DatePicker } from "./UIPrimitives";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -573,20 +574,20 @@ export default function ReportesOperativosModule({ darkMode = false }) {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className={`block text-xs font-medium mb-2 ${textSecondary}`}>Fecha Inicio</label>
-            <input
-              type="date"
+            <DatePicker
               value={fechaInicio}
-              onChange={(e) => setFechaInicio(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
+              onChange={(val) => setFechaInicio(val)}
+              darkMode={darkMode}
+              placeholder="Fecha inicio..."
             />
           </div>
           <div>
             <label className={`block text-xs font-medium mb-2 ${textSecondary}`}>Fecha Fin</label>
-            <input
-              type="date"
+            <DatePicker
               value={fechaFin}
-              onChange={(e) => setFechaFin(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
+              onChange={(val) => setFechaFin(val)}
+              darkMode={darkMode}
+              placeholder="Fecha fin..."
             />
           </div>
           <div className="flex items-end">

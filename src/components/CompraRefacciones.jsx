@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
+import { Icon, Input, Select, Button } from "./UIPrimitives";
 
 const C_BLUE = "#60aebb";
-
-const inputCls = (darkMode) =>
-  `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
-    darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
-  }`;
 
 const fmtMoney = (value) => {
   const n = Number(value || 0);
@@ -143,7 +139,7 @@ export default function CompraRefacciones({ darkMode }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
         <div className={`rounded-xl border p-4 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
-          <input className={inputCls(darkMode)} placeholder="Buscar refaccion..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Buscar refaccion..." value={search} onChange={(e) => setSearch(e.target.value)} darkMode={darkMode} />
           {loading ? (
             <div className={`p-12 text-center ${st} text-sm`}>Cargando...</div>
           ) : (
@@ -154,9 +150,9 @@ export default function CompraRefacciones({ darkMode }) {
                     <p className={`font-medium ${t}`}>{r.nombre}</p>
                     <p className={`text-xs ${st}`}>{r.numero_parte || "—"}</p>
                   </div>
-                  <button onClick={() => addToCart(r)} className="px-3 py-1.5 rounded-md text-xs font-medium border bg-zinc-800 text-white">
+                  <Button onClick={() => addToCart(r)} variant="secondary">
                     Agregar
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -169,10 +165,10 @@ export default function CompraRefacciones({ darkMode }) {
           <div className="space-y-3 mb-4">
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Proveedor</label>
-              <select className={inputCls(darkMode)} value={proveedorId} onChange={(e) => setProveedorId(e.target.value)}>
+              <Select value={proveedorId} onChange={(e) => setProveedorId(e.target.value)} darkMode={darkMode}>
                 <option value="">Sin proveedor</option>
                 {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -184,8 +180,8 @@ export default function CompraRefacciones({ darkMode }) {
                   <button onClick={() => removeCartItem(item.id)} className="text-xs text-red-400">Quitar</button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <input type="number" className={inputCls(darkMode)} value={item.cantidad} onChange={(e) => updateCartItem(item.id, { cantidad: Number(e.target.value) })} />
-                  <input type="number" className={inputCls(darkMode)} value={item.precio_unit} onChange={(e) => updateCartItem(item.id, { precio_unit: e.target.value })} />
+                  <Input type="number" value={item.cantidad} onChange={(e) => updateCartItem(item.id, { cantidad: Number(e.target.value) })} darkMode={darkMode} />
+                  <Input type="number" value={item.precio_unit} onChange={(e) => updateCartItem(item.id, { precio_unit: e.target.value })} darkMode={darkMode} />
                 </div>
               </div>
             ))}
@@ -196,9 +192,9 @@ export default function CompraRefacciones({ darkMode }) {
             <p className={`text-lg font-bold ${t}`}>${fmtMoney(total)}</p>
           </div>
 
-          <button onClick={handleSubmit} disabled={saving || cart.length === 0} className="mt-4 w-full py-2 bg-sky-600 rounded-lg text-white font-medium">
+          <Button onClick={handleSubmit} disabled={saving || cart.length === 0} className="mt-4 w-full py-2" variant="primary">
             {saving ? "Registrando..." : "Registrar Compra"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

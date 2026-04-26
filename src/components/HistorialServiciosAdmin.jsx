@@ -2,28 +2,42 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { formatDateWorkshop, formatDateTimeWorkshop } from "../utils/datetime";
-import { ChevronDown, Download, Eye, Search, Filter, X, Printer } from "lucide-react";
+import { Icon, Input, Select, Button, DatePicker } from "./UIPrimitives";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-export default function HistorialServiciosAdmin({ darkMode = false }) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchType, setSearchType] = useState("cliente"); // cliente, vehiculo, placa
+export default function HistorialServiciosAdmin({
+  darkMode = false,
+  initialSearchTerm = "",
+  initialSearchType = "cliente",
+  initialEstado = "todos",
+  initialFechaInicio = "",
+  initialFechaFin = "",
+}) {
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
+  const [searchType, setSearchType] = useState(initialSearchType);
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedServicio, setExpandedServicio] = useState(null);
   const [fotos, setFotos] = useState({});
   const [loadingFotos, setLoadingFotos] = useState({});
-  const [filtroEstado, setFiltroEstado] = useState("todos");
-  const [fechaInicio, setFechaInicio] = useState("");
-  const [fechaFin, setFechaFin] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState(initialEstado);
+  const [fechaInicio, setFechaInicio] = useState(initialFechaInicio);
+  const [fechaFin, setFechaFin] = useState(initialFechaFin);
   const [generandoPDF, setGenerandoPDF] = useState({});
   const detailRef = useRef(null);
+
+  // Sync with parent filters
+  useEffect(() => { setSearchTerm(initialSearchTerm); }, [initialSearchTerm]);
+  useEffect(() => { setSearchType(initialSearchType); }, [initialSearchType]);
+  useEffect(() => { setFiltroEstado(initialEstado); }, [initialEstado]);
+  useEffect(() => { setFechaInicio(initialFechaInicio); }, [initialFechaInicio]);
+  useEffect(() => { setFechaFin(initialFechaFin); }, [initialFechaFin]);
 
   // Estados para modal de fotos
   const [lightbox, setLightbox] = useState(null);
 
-  // Cargar todos los servicios al inicializar
+  // Realtime
   const [rtTick, setRtTick] = useState(0);
   useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
   useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
@@ -397,95 +411,6 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
 
   return (
     <div className={`w-full ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      {/* Encabezado */}
-      <div className="mb-6 px-4 md:px-6 pt-4">
-        <h1 className={`text-2xl font-bold ${textPrimary}`}> Historial de Servicios</h1>
-        <p className={`text-sm ${textSecondary} mt-1`}>Visualiza el historial completo de servicios, fotos y facturas</p>
-      </div>
-
-      {/* Búsqueda */}
-      <div className={`mx-4 md:mx-6 mb-6 rounded-lg p-4 border ${bgCard}`}>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div className="md:col-span-2">
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Buscar por</label>
-            <div className="flex gap-2">
-              <select
-                value={searchType}
-                onChange={(e) => setSearchType(e.target.value)}
-                className={`px-3 py-2 rounded border text-sm ${bgInput}`}
-              >
-                <option value="cliente">Cliente</option>
-                <option value="vehiculo">Vehículo</option>
-                <option value="placa">Placa</option>
-              </select>
-              <div className="flex-1 relative">
-                <Search className={`absolute left-3 top-2.5 w-4 h-4 ${textSecondary}`} />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Ingresa término de búsqueda..."
-                  className={`w-full pl-9 pr-3 py-2 rounded border text-sm ${bgInput} placeholder-opacity-50`}
-                  onKeyPress={(e) => e.key === "Enter" && fetchServicios()}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Estado</label>
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
-            >
-              {estados.map((e) => (
-                <option key={e.value} value={e.value}>
-                  {e.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Desde</label>
-            <input
-              type="date"
-              value={fechaInicio}
-              onChange={(e) => setFechaInicio(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
-            />
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 ${textSecondary}`}>Hasta</label>
-            <input
-              type="date"
-              value={fechaFin}
-              onChange={(e) => setFechaFin(e.target.value)}
-              className={`w-full px-3 py-2 rounded border text-sm ${bgInput}`}
-            />
-          </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={searchTerm.trim() ? fetchServicios : fetchAllServicios}
-              disabled={loading}
-              className={`w-full px-4 py-2 rounded font-medium text-sm transition ${
-                loading
-                  ? darkMode
-                    ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : darkMode
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
-              }`}
-            >
-              {loading ? "Cargando..." : searchTerm.trim() ? "Buscar" : "Mostrar Todos"}
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Resultados */}
       <div className="px-4 md:px-6 pb-6">
@@ -544,7 +469,8 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                   </div>
                 </div>
 
-                <ChevronDown
+                <Icon
+                  name="chevrondown"
                   className={`w-5 h-5 ${textSecondary} transition-transform ${
                     expandedServicio === servicio.id ? "rotate-180" : ""
                   }`}
@@ -662,9 +588,21 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                             return (
                               <div key={momento}>
                                 <p className={`text-xs font-medium ${textSecondary} uppercase mb-2`}>
-                                  {momento === "antes" && "✓ Antes"}
-                                  {momento === "durante" && "• Durante"}
-                                  {momento === "despues" && "✓ Después"}
+                                  {momento === "antes" && (
+                                    <span className="flex items-center gap-1">
+                                      <Icon name="check" className="w-3 h-3 text-emerald-500" /> Antes
+                                    </span>
+                                  )}
+                                  {momento === "durante" && (
+                                    <span className="flex items-center gap-1">
+                                      <Icon name="clock" className="w-3 h-3 text-blue-500" /> Durante
+                                    </span>
+                                  )}
+                                  {momento === "despues" && (
+                                    <span className="flex items-center gap-1">
+                                      <Icon name="check" className="w-3 h-3 text-emerald-500" /> Después
+                                    </span>
+                                  )}
                                 </p>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   {fotosMomento.map((foto) => (
@@ -678,7 +616,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                                         <img src={foto.url} alt={foto.descripcion || momento} className="w-full h-full object-cover" />
                                       </div>
                                       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-black/40 rounded-lg flex items-center justify-center transition">
-                                        <Eye className="w-5 h-5 text-white" />
+                                        <Icon name="eye" className="w-5 h-5 text-white" />
                                       </div>
                                       {foto.descripcion && (
                                         <p className={`text-xs ${textSecondary} mt-1 line-clamp-1`}>{foto.descripcion}</p>
@@ -724,7 +662,19 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
                                             : "bg-amber-50 text-amber-700 border-amber-200"
                                     }`}
                                   >
-                                    {cot.estado === "aprobada" ? "✓ APROBADA" : cot.estado === "rechazada" ? "✗ RECHAZADA" : "⧖ PENDIENTE"}
+                                    {cot.estado === "aprobada" ? (
+                                      <span className="flex items-center gap-1 text-emerald-500 font-bold">
+                                        <Icon name="check" className="w-3 h-3" /> APROBADA
+                                      </span>
+                                    ) : cot.estado === "rechazada" ? (
+                                      <span className="flex items-center gap-1 text-red-500 font-bold">
+                                        <Icon name="x" className="w-3 h-3" /> RECHAZADA
+                                      </span>
+                                    ) : (
+                                      <span className="flex items-center gap-1 text-amber-500 font-bold">
+                                        <Icon name="clock" className="w-3 h-3" /> PENDIENTE
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                               </div>
@@ -791,33 +741,23 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
 
                   {/* Botones de acción */}
                   <div className={`flex flex-wrap gap-2 pt-4 px-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                    <button
+                    <Button
                       onClick={() => imprimirTicketServicio(servicio.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition ${
-                        darkMode
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-blue-500 hover:bg-blue-600 text-white"
-                      }`}
+                      variant="primary"
+                      className="flex items-center gap-2"
                     >
-                      <Printer className="w-4 h-4" />
+                      <Icon name="printer" className="w-4 h-4" />
                       Imprimir Ticket
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => generarPDFServicio(servicio)}
                       disabled={generandoPDF[servicio.id]}
-                      className={`flex items-center gap-2 px-4 py-2 rounded font-medium text-sm transition ${
-                        generandoPDF[servicio.id]
-                          ? darkMode
-                            ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                            : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                          : darkMode
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                            : "bg-emerald-500 hover:bg-emerald-600 text-white"
-                      }`}
+                      variant="secondary"
+                      className="flex items-center gap-2"
                     >
-                      <Download className="w-4 h-4" />
+                      <Icon name="download" className="w-4 h-4" />
                       {generandoPDF[servicio.id] ? "Generando..." : "Descargar PDF"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -838,7 +778,7 @@ export default function HistorialServiciosAdmin({ darkMode = false }) {
               onClick={() => setLightbox(null)}
               className="absolute -top-10 right-0 text-white hover:text-gray-300"
             >
-              <X className="w-6 h-6" />
+              <Icon name="x" className="w-6 h-6" />
             </button>
             <img src={lightbox.url} alt={lightbox.descripcion} className="max-w-full max-h-[80vh] object-contain rounded-lg" />
             {lightbox.descripcion && (

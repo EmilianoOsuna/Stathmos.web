@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
+import { Icon, Input, Button } from "./components/UIPrimitives";
 
 // ─── Logo (reutilizado del Login) ─────────────────────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -51,8 +52,8 @@ const PasswordStrength = ({ password, darkMode }) => {
         </p>
         <div className="flex gap-3">
           {checks.map((c, i) => (
-            <span key={i} className={`text-[10px] transition-colors ${c.ok ? "text-emerald-500" : darkMode ? "text-zinc-600" : "text-gray-300"}`}>
-              {c.ok ? "✓" : "○"} {c.label}
+            <span key={i} className={`text-[10px] transition-colors flex items-center gap-1 ${c.ok ? "text-emerald-500" : darkMode ? "text-zinc-600" : "text-gray-300"}`}>
+              {c.ok ? <Icon name="check" className="w-2.5 h-2.5" /> : <Icon name="circle" className="w-2.5 h-2.5" />} {c.label}
             </span>
           ))}
         </div>
@@ -207,16 +208,6 @@ export default function CompletarRegistro() {
           to   { opacity: 1; transform: translateY(0); }
         }
         .reg-card { animation: cardIn 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-        .reg-input {
-          width: 100%;
-          background: transparent;
-          border-bottom-width: 1px;
-          border-bottom-style: solid;
-          padding: 8px 0;
-          font-size: 0.875rem;
-          outline: none;
-          transition: border-color 0.2s;
-        }
       `}</style>
 
       <div
@@ -288,16 +279,13 @@ export default function CompletarRegistro() {
                 Nueva contraseña
               </label>
               <div className="relative">
-                <input
+                <Input
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={handleKey}
                   placeholder="••••••••"
-                  className={`reg-input pr-8 ${inputBase}`}
-                  style={{ borderBottomColor: darkMode ? "#3f3f46" : "#d1d5db" }}
-                  onFocus={(e) => (e.target.style.borderBottomColor = "#60aebb")}
-                  onBlur={(e)  => (e.target.style.borderBottomColor = darkMode ? "#3f3f46" : "#d1d5db")}
+                  darkMode={darkMode}
                 />
                 <button
                   onClick={() => setShowPass(!showPass)}
@@ -315,28 +303,13 @@ export default function CompletarRegistro() {
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>
                 Confirmar contraseña
               </label>
-              <input
+              <Input
                 type={showPass ? "text" : "password"}
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 onKeyDown={handleKey}
                 placeholder="••••••••"
-                className={`reg-input ${inputBase}`}
-                style={{
-                  borderBottomColor: confirm && password !== confirm
-                    ? "#db3c1c"
-                    : confirm && password === confirm
-                    ? "#10b981"
-                    : darkMode ? "#3f3f46" : "#d1d5db"
-                }}
-                onFocus={(e) => {
-                  if (!confirm || password === confirm) e.target.style.borderBottomColor = "#60aebb";
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderBottomColor = confirm && password !== confirm
-                    ? "#db3c1c" : confirm && password === confirm
-                    ? "#10b981" : darkMode ? "#3f3f46" : "#d1d5db";
-                }}
+                darkMode={darkMode}
               />
               {confirm && password !== confirm && (
                 <p className="text-[10px]" style={{ color: "#db3c1c" }}>Las contraseñas no coinciden</p>
@@ -350,16 +323,14 @@ export default function CompletarRegistro() {
               <p className="text-xs text-center" style={{ color: "#db3c1c" }}>{error}</p>
             )}
 
-            <button
+            <Button
               onClick={handleSubmit}
               disabled={saving || !password || !confirm}
-              className="w-full mt-1 py-2.5 rounded-lg text-white font-semibold text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: "#60aebb", boxShadow: "0 2px 10px rgba(96,174,187,0.25)" }}
-              onMouseEnter={(e) => !saving && (e.currentTarget.style.opacity = "0.85")}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              variant="primary"
+              className="w-full mt-1 py-2.5 shadow-[0_2px_10px_rgba(96,174,187,0.25)]"
             >
               {saving ? "Guardando…" : "Activar mi cuenta"}
-            </button>
+            </Button>
           </div>
         )}
 

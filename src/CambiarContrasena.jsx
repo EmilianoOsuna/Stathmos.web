@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
+import { Icon, Input, Button } from "./components/UIPrimitives";
 
 // ─── Logo (reutilizado del Login) ─────────────────────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -50,8 +51,8 @@ const PasswordStrength = ({ password, darkMode }) => {
         </p>
         <div className="flex gap-3">
           {checks.map((c, i) => (
-            <span key={i} className={`text-[10px] transition-colors ${c.ok ? "text-emerald-500" : darkMode ? "text-zinc-600" : "text-gray-300"}`}>
-              {c.ok ? "✓" : "○"} {c.label}
+            <span key={i} className={`text-[10px] transition-colors flex items-center gap-1 ${c.ok ? "text-emerald-500" : darkMode ? "text-zinc-600" : "text-gray-300"}`}>
+              {c.ok ? <Icon name="check" className="w-2.5 h-2.5" /> : <Icon name="circle" className="w-2.5 h-2.5" />} {c.label}
             </span>
           ))}
         </div>
@@ -235,16 +236,16 @@ export default function CambiarContrasena() {
                     Nueva Contraseña
                   </label>
                   <div className="relative">
-                    <input
+                    <Input
                       type={showPass ? "text" : "password"}
                       value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey}
                       placeholder="••••••••"
-                      className={`w-full bg-transparent border-b pb-2 pt-1 text-sm outline-none transition-colors ${inputBase}`}
+                      darkMode={darkMode}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPass(!showPass)}
-                      className={`absolute right-0 top-1.5 text-xs font-semibold ${darkMode ? "text-zinc-500 hover:text-zinc-300" : "text-gray-400 hover:text-gray-600"}`}
+                      className={`absolute right-3 top-2.5 text-xs font-semibold ${darkMode ? "text-zinc-500 hover:text-zinc-300" : "text-gray-400 hover:text-gray-600"}`}
                     >
                       {showPass ? "OCULTAR" : "VER"}
                     </button>
@@ -256,24 +257,24 @@ export default function CambiarContrasena() {
                   <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>
                     Confirmar Contraseña
                   </label>
-                  <input
+                  <Input
                     type="password"
                     value={confirm} onChange={(e) => setConfirm(e.target.value)} onKeyDown={handleKey}
                     placeholder="••••••••"
-                    className={`w-full bg-transparent border-b pb-2 pt-1 text-sm outline-none transition-colors ${inputBase}`}
+                    darkMode={darkMode}
                   />
                 </div>
               </div>
 
               {error && <p className="text-xs text-center" style={{ color: "#db3c1c" }}>{error}</p>}
 
-              <button
+              <Button
                 onClick={handleSubmit} disabled={saving}
-                className="w-full py-2.5 rounded-lg text-white font-semibold text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:opacity-90"
-                style={{ backgroundColor: "#db3c1c", boxShadow: "0 2px 10px rgba(219,60,28,0.25)" }}
+                variant="destructive"
+                className="w-full py-2.5 shadow-[0_2px_10px_rgba(219,60,28,0.25)] hover:opacity-90 transition-all"
               >
                 {saving ? "Guardando..." : "Actualizar Contraseña"}
-              </button>
+              </Button>
             </div>
           )}
         </div>

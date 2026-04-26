@@ -1,8 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   theme: {
-    // Override colors to prevent oklch usage
     extend: {},
+  },
+  corePlugins: {
+    colorOpacity: false,
   },
   future: {
     disableColorOpacityUtilitiesByDefault: true,

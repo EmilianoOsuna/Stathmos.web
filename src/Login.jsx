@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
+import { Input, Button } from "./components/UIPrimitives";
 
 // ─── Logo (SVG incrustado — sin imports externos) ─────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -81,16 +82,6 @@ export default function Login() {
           to   { opacity: 1; transform: translateY(0); }
         }
         .login-card { animation: cardIn 0.45s cubic-bezier(0.22,1,0.36,1) both; }
-        .login-input {
-          width: 100%;
-          background: transparent;
-          border-bottom-width: 1px;
-          border-bottom-style: solid;
-          padding: 8px 0;
-          font-size: 0.875rem;
-          outline: none;
-          transition: border-color 0.2s;
-        }
       `}</style>
 
       <div
@@ -112,14 +103,12 @@ export default function Login() {
         <div className="w-full flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
             <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Correo</label>
-            <input
+            <Input
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)} onKeyDown={handleKey}
               placeholder="admin@taller.com"
-              className={`login-input ${input}`}
-              style={{ borderBottomColor: darkMode ? "#3f3f46" : "#d1d5db", color: darkMode ? "#e4e4e7" : "#1f2937" }}
-              onFocus={(e) => (e.target.style.borderBottomColor = "#60aebb")}
-              onBlur={(e)  => (e.target.style.borderBottomColor = darkMode ? "#3f3f46" : "#d1d5db")}
+              darkMode={darkMode}
+              icon="users"
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -141,28 +130,23 @@ export default function Login() {
                 ¿Olvidaste tu contraseña?
               </button>
             </div>
-            <input
+            <Input
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey}
               placeholder="••••••••"
-              className={`login-input ${input}`}
-              style={{ borderBottomColor: darkMode ? "#3f3f46" : "#d1d5db", color: darkMode ? "#e4e4e7" : "#1f2937" }}
-              onFocus={(e) => (e.target.style.borderBottomColor = "#60aebb")}
-              onBlur={(e)  => (e.target.style.borderBottomColor = darkMode ? "#3f3f46" : "#d1d5db")}
+              darkMode={darkMode}
             />
           </div>
 
           {error && <p className="text-xs text-center" style={{ color: "#db3c1c" }}>{error}</p>}
 
-          <button
+          <Button
             onClick={handleLogin} disabled={loading}
-            className="w-full mt-1 py-2.5 rounded-lg text-white font-semibold text-sm tracking-wide disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-            style={{ backgroundColor: "#db3c1c", boxShadow: "0 2px 10px rgba(219,60,28,0.25)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            variant="destructive"
+            className="w-full mt-1 py-2.5 shadow-[0_2px_10px_rgba(219,60,28,0.25)]"
           >
             {loading ? "Verificando..." : "Ingresar"}
-          </button>
+          </Button>
         </div>
 
         {/* Google OAuth 

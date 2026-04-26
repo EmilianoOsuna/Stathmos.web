@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import supabase from "../supabase";
 import { formatDateTimeWorkshop } from "../utils/datetime";
+import { Icon } from "./UIPrimitives";
 
-export default function HistorialRefacciones({ darkMode }) {
+export default function HistorialRefacciones({
+  darkMode,
+  searchTerm = "",
+  filtroTipo = "todos",
+  fechaInicio = "",
+  fechaFin = "",
+  orden = "reciente",
+}) {
   const [movimientos, setMovimientos] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,20 +58,65 @@ export default function HistorialRefacciones({ darkMode }) {
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
 
+  // ─── Filtrado en memoria ────────────────────────────────────────────────
+  const filtrados = useMemo(() => {
+    let list = [...movimientos];
+
+    if (filtroTipo !== "todos") {
+      list = list.filter((m) => m.tipo_mov === filtroTipo);
+    }
+
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter((m) =>
+        m.refacciones?.nombre?.toLowerCase().includes(q) ||
+        m.proyectos?.titulo?.toLowerCase().includes(q) ||
+        m.proveedores?.nombre?.toLowerCase().includes(q)
+      );
+    }
+
+    if (fechaInicio) {
+      const inicio = new Date(fechaInicio + "T00:00:00");
+      list = list.filter((m) => new Date(m.created_at) >= inicio);
+    }
+    if (fechaFin) {
+      const fin = new Date(fechaFin + "T23:59:59");
+      list = list.filter((m) => new Date(m.created_at) <= fin);
+    }
+
+    list.sort((a, b) =>
+      orden === "reciente"
+        ? new Date(b.created_at) - new Date(a.created_at)
+        : new Date(a.created_at) - new Date(b.created_at)
+    );
+
+    return list;
+  }, [movimientos, searchTerm, filtroTipo, fechaInicio, fechaFin, orden]);
+
   return (
     <div className="anim-fadeUp">
       <div className="flex justify-between items-center mb-4">
-        <h3 className={`text-sm font-semibold ${t}`}>Registro de Movimientos</h3>
-        <button onClick={fetchHistorial} className={`text-xs ${st} hover:text-sky-400 transition-colors`}>
-          🔄 Actualizar
+        <div>
+          <h3 className={`text-sm font-semibold ${t}`}>Registro de Movimientos</h3>
+          <p className={`text-xs ${st} mt-0.5`}>
+            {loading ? "Cargando..." : `${filtrados.length} de ${movimientos.length} movimientos`}
+          </p>
+        </div>
+        <button
+          onClick={fetchHistorial}
+          className={`text-xs ${st} hover:text-sky-400 transition-colors flex items-center gap-1.5`}
+        >
+          <Icon name="refresh" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Actualizar
         </button>
       </div>
 
       <div className={`rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"} overflow-hidden`}>
         {loading ? (
           <div className="p-12 text-center text-sm text-zinc-500 italic">Cargando registros...</div>
-        ) : movimientos.length === 0 ? (
-          <div className="p-12 text-center text-sm text-zinc-500 italic">No hay movimientos registrados.</div>
+        ) : filtrados.length === 0 ? (
+          <div className="p-12 text-center text-sm text-zinc-500 italic">
+            {movimientos.length === 0 ? "No hay movimientos registrados." : "Ningún movimiento coincide con los filtros."}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] text-left">
@@ -78,7 +131,7 @@ export default function HistorialRefacciones({ darkMode }) {
                 </tr>
               </thead>
               <tbody className={darkMode ? "divide-y divide-zinc-800" : "divide-y divide-gray-100"}>
-                {movimientos.map((m) => (
+                {filtrados.map((m) => (
                   <tr key={m.id} className={`${darkMode ? "hover:bg-zinc-800/20" : "hover:bg-gray-50/50"} transition-colors`}>
                     <td className={`px-4 py-3 whitespace-nowrap ${st}`}>{formatDateTimeWorkshop(m.created_at)}</td>
                     <td className="px-4 py-3">

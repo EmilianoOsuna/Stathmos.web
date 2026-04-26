@@ -5,6 +5,7 @@ import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { formatDateTimeWorkshop, formatDateWorkshop } from "../utils/datetime";
+import { Icon } from "./UIPrimitives";
 
 export default function Ticket({ proyectoId, darkMode = false, onClose = null, showOmit = true }) {
   const ticketRef = useRef(null);
@@ -526,7 +527,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
                 : "bg-emerald-500 text-white hover:bg-emerald-600"
             }`}
           >
-            🖨️ Imprimir
+            <Icon name="printer" className="w-4 h-4" /> Imprimir
           </button>
           <button
             onClick={generatePDF}
@@ -537,7 +538,15 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
                 : "bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
             }`}
           >
-            {generatingPDF ? "📥 Generando..." : "📥 Descargar PDF"}
+            {generatingPDF ? (
+              <>
+                <Icon name="download" className="w-4 h-4 animate-bounce" /> Generando...
+              </>
+            ) : (
+              <>
+                <Icon name="download" className="w-4 h-4" /> Descargar PDF
+              </>
+            )}
           </button>
         </div>
 
