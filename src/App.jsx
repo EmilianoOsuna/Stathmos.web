@@ -1612,7 +1612,13 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
         return null;
       };
-
+      const tieneDiag = diagForm.sintomas.trim();
+      const tieneCot  = manoObra > 0 || refacc > 0;
+      const estadoInicial = tieneCot && tieneDiag
+        ? "en_progreso"
+        : tieneDiag
+          ? "pendiente_cotizacion"
+          : "pendiente_diagnóstico";
     const payload = {
       titulo: normalizeForSAT(form.titulo),
       descripcion: form.descripcion || null,
@@ -1620,7 +1626,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       vehiculo_id: form.vehiculo_id,
       mecanico_id: form.mecanico_id || null,
       cita_id: form.cita_id || null, 
-      estado: form.estado,
+      estado: editTarget ? form.estado : estadoInicial,
       bloqueado: form.bloqueado,
       updated_at: new Date().toISOString()
     };
@@ -1635,6 +1641,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         Number(latestFromTarget.monto_refacc || 0) !== refacc
       );
 
+      {/* Esto ya no es necesario porque el estado cambia automáticamente segun el diagnóstico y la cotización, pero dejo la validación lista por si acaso cambiamos la lógica}
       if (form.estado === "en_progreso") {
         const canStart = Boolean(latestFromTarget && latestFromTarget.estado === "aprobada" && !quoteChanged);
         if (!canStart) {
@@ -1643,6 +1650,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           return;
         }
       }
+      */}
 
       const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
       error = projectRes.error;
@@ -1798,25 +1806,6 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             diagSaved = true;
           }
         }
-        
-        // Si se guardó nuevo diagnóstico y el proyecto está en estado "activo", cambiar a "pendiente_cotización"
-        if (diagSaved) {
-          const currentProyecto = editTarget || proyectos.find(p => p.id === proyectoIdFinal);
-          if (currentProyecto && currentProyecto.estado === "activo") {
-            await supabase.from("proyectos").update({
-              estado: "pendiente_cotizacion",
-              updated_at: new Date().toISOString()
-            }).eq("id", proyectoIdFinal);
-
-            await notifyClientStateChange({
-              proyectoId: proyectoIdFinal,
-              clienteId: currentProyecto.cliente_id,
-              tituloProyecto: currentProyecto.titulo,
-              nuevoEstado: "pendiente_cotizacion",
-              session,
-            });
-          }
-        }
       }
     }
 
@@ -1916,7 +1905,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                     <tr key={p.id} className={`transition-colors ${rowH}`}>
                       <td className={`px-5 py-3 font-medium ${t} max-w-[160px] truncate cursor-pointer`} onClick={() => setDetalle(p)}>
                         <div className="flex items-center gap-1">
-                          {p.bloqueado && <Icon name="lock" className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+                          {p.bloqueado && <LucideIcon name="lock" className="w-3 h-3 text-amber-500 flex-shrink-0" />}
                           <span className="truncate">{p.titulo}</span>
                         </div>
                       </td>
@@ -1944,7 +1933,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 <div key={p.id} className="px-4 py-4 flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
                     <p className={`font-medium ${t} flex items-center gap-1`}>
-                      {p.bloqueado && <Icon name="lock" className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                      {p.bloqueado && <LucideIcon name="lock" className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
                       {p.titulo}
                     </p>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium border flex-shrink-0 capitalize ${estadoBadge(p.estado, darkMode)}`}>{p.estado.replace(/_/g, " ")}</span>
@@ -2016,7 +2005,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </Select>
           </Field>
           
-          {isAdmin && (
+          {isAdmin && editTarget &&(
             <Field label="Estado" darkMode={darkMode}>
               <Select darkMode={darkMode} value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
                 {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
@@ -2036,8 +2025,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </div>
           )}
 
-          {editTarget && (
-            /* ── Diagnóstico inicial ───────────────────────────────────────── */
+            {/* ── Diagnóstico inicial ───────────────────────────────────────── */}
             <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
               <div className="flex items-center justify-between mb-3">
                 <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
@@ -2045,7 +2033,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 </p>
                 {existingDiag && !editandoDiag && (
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold flex items-center gap-1 ${darkMode ? "bg-emerald-900/40 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
-                    <Icon name="check" className="w-2.5 h-2.5" /> Registrado
+                    <LucideIcon name="check" className="w-2.5 h-2.5" /> Registrado
                   </span>
                 )}
               </div>
@@ -2093,11 +2081,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 </div>
               )}
             </div>
-          )}
 
           {/* ── Cotización Inicial (bloqueada sin diagnóstico) ──────────────── */}
           {(() => {
-            const diagListo = editTarget ? (existingDiag || diagForm.sintomas.trim()) : true;
+            const diagListo = (existingDiag || diagForm.sintomas.trim());
             return (
           <div className={`rounded-lg border p-3 relative ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
             <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
@@ -2105,7 +2092,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </p>
             {!diagListo && (
               <div className={`absolute inset-0 rounded-lg flex flex-col items-center justify-center gap-2 z-10 ${darkMode ? "bg-zinc-900/80" : "bg-gray-50/90"}`}>
-                <Icon name="lock" className="w-8 h-8 text-amber-500/50" />
+                <LucideIcon name="lock" className="w-8 h-8 text-amber-500/50" />
                 <p className={`text-xs font-medium text-center px-4 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
                   Completa el diagnóstico inicial para habilitar la cotización
                 </p>
@@ -2995,7 +2982,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
           <div className={`flex items-start justify-between px-6 py-4 border-b ${divider}`}>
             <div className="flex-1 min-w-0 pr-4">
               <div className="flex items-center gap-2 flex-wrap">
-                {proyecto.bloqueado && <Icon name="lock" className="w-4 h-4 text-amber-500" />}
+                {proyecto.bloqueado && <LucideIcon name="lock" className="w-4 h-4 text-amber-500" />}
                 <h2 className={`font-semibold text-base ${t}`}>{proyecto.titulo}</h2>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(proyecto.estado, darkMode)}`}>
                   {proyecto.estado?.replace(/_/g, " ")}
@@ -4079,7 +4066,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                 {paymentSuccess && (
                   <div className="bg-emerald-900/30 border border-emerald-700 rounded-lg p-4 mb-4">
                     <p className="text-emerald-300 font-semibold flex items-center gap-2">
-                      <Icon name="check" className="w-4 h-4" /> Pago completado. El auto está listo para recoger!
+                      <LucideIcon name="check" className="w-4 h-4" /> Pago completado. El auto está listo para recoger!
                     </p>
                     <button
                       onClick={() => navigate(`/ticket/${selectedTicket.id}`)}
@@ -4114,7 +4101,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                       }`}
                     >
                       <div className="flex justify-center mb-2">
-                        <Icon name="creditcard" className="w-8 h-8 text-blue-500" />
+                        <LucideIcon name="creditcard" className="w-8 h-8 text-blue-500" />
                       </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Tarjeta</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Débito o Crédito</p>
@@ -4136,7 +4123,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                       }`}
                     >
                       <div className="flex justify-center mb-2">
-                        <Icon name="dollar" className="w-8 h-8 text-emerald-500" />
+                        <LucideIcon name="dollar" className="w-8 h-8 text-emerald-500" />
                       </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Efectivo</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en caja</p>
@@ -4158,7 +4145,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
                       }`}
                     >
                       <div className="flex justify-center mb-2">
-                        <Icon name="lock" className="w-8 h-8 text-purple-500" />
+                        <LucideIcon name="lock" className="w-8 h-8 text-purple-500" />
                       </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Stripe</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en línea</p>
@@ -4597,7 +4584,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
                     );
                   })()}
                   <div className="flex items-center gap-2 mb-1">
-                    {p.bloqueado && <Icon name="lock" className="w-3.5 h-3.5 text-amber-500" />}
+                    {p.bloqueado && <LucideIcon name="lock" className="w-3.5 h-3.5 text-amber-500" />}
                     <p className={`font-semibold ${t}`}>{p.titulo}</p>
                   </div>
                   {p.descripcion && <p className={`text-xs ${st} mb-1`}>{p.descripcion}</p>}
