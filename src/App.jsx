@@ -1283,6 +1283,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [refCartDraft, setRefCartDraft] = useState(null);
   const [refPickerOpen, setRefPickerOpen] = useState(false);
   const [refCartTouched, setRefCartTouched] = useState(false);
+  // Ref hacia EditRefaccionesSection para abrir el picker desde la seccion Cotizacion Inicial
+  const editRefSeccionRef = useRef(null);
 
   // ─── Diagnóstico inicial en el modal ─────────────────────────────────────────
   const DIAG_TIPOS = ["inicial", "preventivo", "correctivo", "revision"];
@@ -1396,6 +1398,18 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const updateRefDraftItem = (id, patch) => {
     setRefCartDraft((prev) => (Array.isArray(prev) ? prev.map((item) => (item.id === id ? { ...item, ...patch } : item)) : prev));
+  };
+
+  const getRefCartItemMaxCantidad = (item) => {
+    const baseQty = Number((refCart || []).find((r) => r.id === item.id)?.cantidad || 0);
+    const stockNow = Number((refCatalog || []).find((r) => r.id === item.id)?.stock ?? item.stock ?? 0);
+    return Math.max(1, baseQty + Math.max(0, stockNow));
+  };
+
+  const normalizeCantidadConStock = (rawValue, maxCantidad) => {
+    const parsed = Number.parseInt(rawValue, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.min(parsed, Math.max(1, Number(maxCantidad || 1)));
   };
 
   const removeRefDraftItem = (id) => {
@@ -1575,13 +1589,100 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       return;
     }
 
-    const syncRefaccionItems = async (cotizacionId, proyectoId) => { 
+    const syncRefaccionItems = async (cotizacionId, proyectoId) => {
       if (!refCartTouched || !cotizacionId) return null;
 
-      // REINTEGRO: devolver stock anterior antes de reemplazar
-      await supabase.functions.invoke("gestionar-inventario", {
-        body: { tipo_operacion: "REINTEGRAR", cotizacion_id: cotizacionId }
-      });
+      const { data: prevItems, error: prevItemsError } = await supabase
+        .from("cotizacion_items")
+        .select("id,refaccion_id,cantidad,precio_unit")
+        .eq("cotizacion_id", cotizacionId)
+        .eq("tipo", "refaccion");
+      if (prevItemsError) return prevItemsError;
+
+      const prevMap = new Map(
+        (prevItems || [])
+          .filter((item) => item.refaccion_id)
+          .map((item) => [item.refaccion_id, item])
+      );
+      const nextMap = new Map(
+        (refCart || [])
+          .filter((item) => item.id)
+          .map((item) => [item.id, item])
+      );
+
+      const ventasPendientes = [];
+
+      // Diferencias de inventario:
+      // - cantidad baja o pieza eliminada -> COMPRA (regresa al stock)
+      // - cantidad sube o pieza nueva -> VENTA (sale de stock)
+      for (const [refaccionId, prevItem] of prevMap.entries()) {
+        const nextItem = nextMap.get(refaccionId);
+        const prevQty = Number(prevItem.cantidad || 0);
+        const nextQty = Number(nextItem?.cantidad || 0);
+
+        if (nextQty < prevQty) {
+          await supabase.functions.invoke("gestionar-inventario", {
+            body: {
+              tipo_operacion: "COMPRA",
+              refaccion_id: refaccionId,
+              cantidad: prevQty - nextQty,
+              precio_unit: Number(nextItem?.precio_unit || prevItem.precio_unit || 0),
+              cotizacion_id: cotizacionId,
+              proyecto_id: proyectoId || null,
+            },
+          });
+        }
+      }
+
+      for (const [refaccionId, nextItem] of nextMap.entries()) {
+        const prevItem = prevMap.get(refaccionId);
+        const prevQty = Number(prevItem?.cantidad || 0);
+        const nextQty = Number(nextItem.cantidad || 0);
+
+        if (nextQty > prevQty) {
+          ventasPendientes.push({ refaccion_id: refaccionId, cantidad: nextQty - prevQty });
+        }
+      }
+
+      if (ventasPendientes.length > 0) {
+        const refIds = ventasPendientes.map((v) => v.refaccion_id);
+        const { data: stockRows, error: stockError } = await supabase
+          .from("refacciones")
+          .select("id,nombre,stock")
+          .in("id", refIds);
+        if (stockError) return stockError;
+
+        const stockMap = new Map((stockRows || []).map((row) => [row.id, row]));
+        const sinStock = ventasPendientes
+          .map((v) => {
+            const row = stockMap.get(v.refaccion_id);
+            const disponible = Number(row?.stock || 0);
+            return disponible < Number(v.cantidad || 0)
+              ? { nombre: row?.nombre || "Refacción", requerido: Number(v.cantidad || 0), disponible }
+              : null;
+          })
+          .filter(Boolean);
+
+        if (sinStock.length > 0) {
+          const detalle = sinStock
+            .map((i) => `${i.nombre} (disp: ${i.disponible}, req: ${i.requerido})`)
+            .join(", ");
+          return new Error(`Stock insuficiente para actualizar la cotización: ${detalle}.`);
+        }
+
+        for (const venta of ventasPendientes) {
+          await supabase.functions.invoke("gestionar-inventario", {
+            body: {
+              tipo_operacion: "VENTA",
+              refaccion_id: venta.refaccion_id,
+              cantidad: venta.cantidad,
+              precio_unit: Number(nextMap.get(venta.refaccion_id)?.precio_unit || 0),
+              cotizacion_id: cotizacionId,
+              proyecto_id: proyectoId || null,
+            },
+          });
+        }
+      }
 
       const deleteRes = await supabase
         .from("cotizacion_items")
@@ -1602,40 +1703,28 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
         const insertRes = await supabase.from("cotizacion_items").insert(rows);
         if (insertRes.error) return insertRes.error;
-        
-          // Sincronizar también en proyecto_refacciones
-          if (refCart.length > 0 && proyectoIdFinal) {
-            // Primero limpiar las anteriores
-            await supabase
-              .from("proyecto_refacciones")
-              .delete()
-              .eq("proyecto_id", proyectoIdFinal);
+      }
 
-            // Insertar las actuales
-            const proyectoRefRows = refCart.map((item) => ({
-              proyecto_id: proyectoIdFinal,
-              refaccion_id: item.id,
-              cantidad: Number(item.cantidad || 1),
-              precio_unitario: Number(item.precio_unit || 0),
-              fue_usada: true,
-            }));
+      if (proyectoId) {
+        const { error: deleteProyectoRefErr } = await supabase
+          .from("proyecto_refacciones")
+          .delete()
+          .eq("proyecto_id", proyectoId);
+        if (deleteProyectoRefErr) return deleteProyectoRefErr;
 
-            await supabase.from("proyecto_refacciones").insert(proyectoRefRows);
-          }
+        if (refCart.length > 0) {
+          const proyectoRefRows = refCart.map((item) => ({
+            proyecto_id: proyectoId,
+            refaccion_id: item.id,
+            cantidad: Number(item.cantidad || 1),
+            precio_unitario: Number(item.precio_unit || 0),
+            fue_usada: true,
+          }));
 
-        for (const item of rows) {
-          if (item.refaccion_id && item.cantidad > 0) {
-            await supabase.functions.invoke("gestionar-inventario", {
-              body: {
-                tipo_operacion: "VENTA",
-                refaccion_id: item.refaccion_id,
-                cantidad: item.cantidad,
-                precio_unit: item.precio_unit,
-                cotizacion_id: cotizacionId,
-                proyecto_id: proyectoId || null,
-              },
-            });
-          }
+          const { error: insertProyectoRefErr } = await supabase
+            .from("proyecto_refacciones")
+            .insert(proyectoRefRows);
+          if (insertProyectoRefErr) return insertProyectoRefErr;
         }
       }
 
@@ -1746,7 +1835,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .single();
           error = quoteInsert.error;
           if (!error) {
-              const syncErr = await syncRefaccionItems(quoteInsert.data?.id, createdProject.id);
+            const syncErr = await syncRefaccionItems(quoteInsert.data?.id, editTarget.id);
             if (syncErr) error = syncErr;
           }
         }
@@ -2177,21 +2266,32 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 ) : (
                   <div className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 ${darkMode ? "border-zinc-700 text-zinc-100" : "border-gray-200 text-gray-700"}`}>
                     <span className="text-sm font-medium">${refCartTotal.toFixed(2)}</span>
-                    <button
-                      type="button"
-                      onClick={clearRefCart}
-                      className="w-7 h-7 rounded-full text-white text-sm leading-none"
-                      style={{ backgroundColor: C_RED }}
-                    >
-                      ×
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={openRefPicker}
+                        className={`text-xs px-2 py-1 rounded-md border ${darkMode ? "border-zinc-600 text-zinc-300 hover:bg-zinc-800" : "border-gray-300 text-gray-600 hover:bg-gray-100"}`}
+                      >
+                        Modificar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearRefCart}
+                        className="w-7 h-7 rounded-full text-white text-sm leading-none"
+                        style={{ backgroundColor: C_RED }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
-            <p className={`mt-2 text-sm ${darkMode ? "text-zinc-300" : "text-gray-700"}`}>
-              Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
-            </p>
+            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+              <p className={`text-sm ${darkMode ? "text-zinc-300" : "text-gray-700"}`}>
+                Total estimado: <strong>${((Number(form.monto_mano_obra || 0) + Number(form.monto_refacc || 0)) || 0).toFixed(2)}</strong>
+              </p>
+            </div>
             {refPickerOpen && createPortal(
               <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-10 bg-black/60 anim-fadeIn" onClick={cancelRefPicker}>
                 <div
@@ -2271,8 +2371,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                                       type="number"
                                       min="1"
                                       step="1"
+                                      max={getRefCartItemMaxCantidad(item)}
                                       value={item.cantidad}
-                                      onChange={(e) => updateRefDraftItem(item.id, { cantidad: Number(e.target.value) })}
+                                      onChange={(e) => {
+                                        const maxCantidad = getRefCartItemMaxCantidad(item);
+                                        updateRefDraftItem(item.id, {
+                                          cantidad: normalizeCantidadConStock(e.target.value, maxCantidad),
+                                        });
+                                      }}
                                     />
                                   </div>
                                   <div className="flex flex-col gap-1">
@@ -2333,6 +2439,54 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
             <label htmlFor="bloqueado" className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Bloqueado (entrega pendiente de pago)</label>
           </div>
+
+          {/* ── Secciones solo en edición ── */}
+          {editTarget && (<>
+
+            {/* Observaciones */}
+            <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Observaciones</p>
+              {editTarget.observaciones && (
+                <div className={`rounded-md border px-3 py-2 mb-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
+                  <p className="whitespace-pre-wrap">{editTarget.observaciones}</p>
+                </div>
+              )}
+              <ObservacionesSection proyecto={editTarget} darkMode={darkMode} canUpload={isAdmin} session={session} />
+            </div>
+
+            {/* Diagnóstico Final */}
+            <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Diagnóstico Final</p>
+              <DiagnosticoFinalSection
+                proyecto={editTarget}
+                darkMode={darkMode}
+                session={session}
+                canUpload={isAdmin}
+                diagnosticoInicial={Array.isArray(editTarget.diagnosticos) ? editTarget.diagnosticos.find(d => d.tipo === "inicial") || null : null}
+                diagnosticoFinal={Array.isArray(editTarget.diagnosticos) ? editTarget.diagnosticos.find(d => d.tipo === "final") || null : null}
+              />
+            </div>
+
+            {/* Refacciones asignadas - solo consulta, el picker se abre desde "Cotizacion Inicial" */}
+            <EditRefaccionesSection
+              ref={editRefSeccionRef}
+              proyecto={editTarget}
+              darkMode={darkMode}
+              session={session}
+              refCatalog={refCatalog}
+            />
+
+            {/* Fotos */}
+            <EditFotosSection
+              proyecto={editTarget}
+              darkMode={darkMode}
+              session={session}
+              canUpload={isAdmin}
+            />
+
+          </>)}
+
+
           {formError && <p className="text-xs" style={{ color: C_RED }}>{formError}</p>}
           <div className="flex gap-3 mt-1">
             <button onClick={() => setModalOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
@@ -2350,7 +2504,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       <ProyectoDetalleModal
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
-        canUpload={true} session={session}
+        canUpload={false} session={session}
         onProjectUpdated={handleProyectoActualizado}
       />
     </div>
@@ -2993,8 +3147,460 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
           );
         };
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
+// ─── EditRefaccionesSection ───────────────────────────────────────────────────
+// Sección de CONSULTA de refacciones asignadas al proyecto.
+// Expone openPicker() via ref para que el padre (Cotización Inicial) lo llame.
+const EditRefaccionesSection = React.forwardRef(function EditRefaccionesSection({ proyecto, darkMode, session, refCatalog }, ref) {
+  const [refacciones,    setRefacciones]    = useState([]);
+  const [loading,        setLoading]        = useState(false);
+  const [pickerOpen,     setPickerOpen]     = useState(false);
+  const [draft,          setDraft]          = useState([]);
+  const [refSearch,      setRefSearch]      = useState("");
+  const [confirmOpen,    setConfirmOpen]    = useState(false);
+  const [saving,         setSaving]         = useState(false);
+  const [err,            setErr]            = useState("");
+  const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+
+  const fetchRefacciones = useCallback(async () => {
+    if (!proyecto?.id) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("proyecto_refacciones")
+      .select("id, refaccion_id, cantidad, precio_unitario, fue_usada, refacciones(id, nombre, numero_parte, precio_venta, stock)")
+      .eq("proyecto_id", proyecto.id);
+    setRefacciones(data || []);
+    setLoading(false);
+  }, [proyecto?.id]);
+
+  useEffect(() => { fetchRefacciones(); }, [fetchRefacciones]);
+
+  // Expone openPicker() al padre via ref
+  React.useImperativeHandle(ref, () => ({ openPicker: () => openPicker() }), []);
+
+  const openPicker = () => {
+    setDraft((refacciones || []).map(r => ({
+      id: r.refaccion_id,
+      nombre: r.refacciones?.nombre || r.refaccion_id,
+      numero_parte: r.refacciones?.numero_parte || "",
+      cantidad: r.cantidad,
+      precio_unit: Number(r.precio_unitario || 0),
+      stock: r.refacciones?.stock || 0,
+    })));
+    setRefSearch("");
+    setErr("");
+    setPickerOpen(true);
+  };
+
+  const addToDraft = (ref) => {
+    setDraft(prev => {
+      const existing = prev.find(i => i.id === ref.id);
+      const baseQty = Number((refacciones || []).find((r) => r.refaccion_id === ref.id)?.cantidad || 0);
+      const stockNow = Number(ref.stock || 0);
+      const maxCantidad = Math.max(1, baseQty + Math.max(0, stockNow));
+      if (existing) {
+        if (Number(existing.cantidad || 0) >= maxCantidad) return prev;
+        return prev.map(i => i.id === ref.id ? { ...i, cantidad: i.cantidad + 1 } : i);
+      }
+      return [...prev, { id: ref.id, nombre: ref.nombre, numero_parte: ref.numero_parte || "", cantidad: 1, precio_unit: Number(ref.precio_venta || 0), stock: ref.stock || 0 }];
+    });
+  };
+
+  const updateDraft = (id, patch) => setDraft(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+  const removeDraft = (id) => setDraft(prev => prev.filter(i => i.id !== id));
+
+  const getDraftItemMaxCantidad = (item) => {
+    const baseQty = Number((refacciones || []).find((r) => r.refaccion_id === item.id)?.cantidad || 0);
+    const stockNow = Number((refCatalog || []).find((r) => r.id === item.id)?.stock ?? item.stock ?? 0);
+    return Math.max(1, baseQty + Math.max(0, stockNow));
+  };
+
+  const normalizeCantidadConStock = (rawValue, maxCantidad) => {
+    const parsed = Number.parseInt(rawValue, 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return 1;
+    return Math.min(parsed, Math.max(1, Number(maxCantidad || 1)));
+  };
+
+  // Helper: llama la edge function con manejo correcto de errores HTTP
+  const callGestorInventario = async (body) => {
+    const { data, error } = await supabase.functions.invoke("gestionar-inventario", { body });
+    // supabase.functions.invoke puede devolver error nulo aunque el status sea 4xx/5xx
+    // por eso también revisamos data.success
+    if (error) throw new Error(error.message || "Error en gestionar-inventario");
+    if (data && data.success === false) throw new Error(data.error || "Error al actualizar inventario");
+    return data;
+  };
+
+  const handleGuardarCambios = async () => {
+    setSaving(true); setErr("");
+    setConfirmOpen(false);
+    try {
+      const anterior = refacciones || [];
+      const anteriorMap = Object.fromEntries(anterior.map(r => [r.refaccion_id, r]));
+      const nuevoMap    = Object.fromEntries(draft.map(r => [r.id, r]));
+
+      const ventasPendientes = [];
+      for (const r of draft) {
+        const prev = anteriorMap[r.id];
+        const cantPrev = Number(prev?.cantidad || 0);
+        const cantNew = Number(r.cantidad || 0);
+        if (cantNew > cantPrev) {
+          ventasPendientes.push({ refaccion_id: r.id, cantidad: cantNew - cantPrev });
+        }
+      }
+
+      if (ventasPendientes.length > 0) {
+        const refIds = ventasPendientes.map((v) => v.refaccion_id);
+        const { data: stockRows, error: stockError } = await supabase
+          .from("refacciones")
+          .select("id,nombre,stock")
+          .in("id", refIds);
+        if (stockError) throw new Error(stockError.message || "Error al validar stock.");
+
+        const stockMap = new Map((stockRows || []).map((row) => [row.id, row]));
+        const sinStock = ventasPendientes
+          .map((v) => {
+            const row = stockMap.get(v.refaccion_id);
+            const disponible = Number(row?.stock || 0);
+            return disponible < Number(v.cantidad || 0)
+              ? { nombre: row?.nombre || "Refacción", requerido: Number(v.cantidad || 0), disponible }
+              : null;
+          })
+          .filter(Boolean);
+
+        if (sinStock.length > 0) {
+          const detalle = sinStock
+            .map((i) => `${i.nombre} (disp: ${i.disponible}, req: ${i.requerido})`)
+            .join(", ");
+          throw new Error(`Stock insuficiente para guardar cambios: ${detalle}.`);
+        }
+      }
+
+      // ── 1. Refacciones ELIMINADAS → COMPRA (devolución al stock) + borrar de proyecto_refacciones
+      for (const r of anterior) {
+        if (!nuevoMap[r.refaccion_id]) {
+          await callGestorInventario({
+            tipo_operacion: "COMPRA",
+            refaccion_id: r.refaccion_id,
+            cantidad: Number(r.cantidad),
+            precio_unit: Number(r.precio_unitario || 0),
+            proyecto_id: proyecto.id,
+          });
+          const { error: delErr } = await supabase.from("proyecto_refacciones").delete().eq("id", r.id);
+          if (delErr) throw new Error("Error al eliminar refacción del proyecto: " + delErr.message);
+        }
+      }
+
+      // ── 2. Refacciones NUEVAS → VENTA (salida de inventario) + insertar en proyecto_refacciones
+      for (const r of draft) {
+        if (!anteriorMap[r.id]) {
+          await callGestorInventario({
+            tipo_operacion: "VENTA",
+            refaccion_id: r.id,
+            cantidad: Number(r.cantidad),
+            precio_unit: Number(r.precio_unit || 0),
+            proyecto_id: proyecto.id,
+          });
+          const { error: insErr } = await supabase.from("proyecto_refacciones").insert([{
+            proyecto_id: proyecto.id,
+            refaccion_id: r.id,
+            cantidad: Number(r.cantidad),
+            precio_unitario: Number(r.precio_unit || 0),
+            fue_usada: true,
+          }]);
+          if (insErr) throw new Error("Error al asignar refacción: " + insErr.message);
+        } else {
+          // ── 3. Refacciones EXISTENTES con cantidad o precio cambiado
+          const prev = anteriorMap[r.id];
+          const cantPrev = Number(prev.cantidad || 0);
+          const cantNew  = Number(r.cantidad || 0);
+          if (cantPrev !== cantNew) {
+            const diff = cantNew - cantPrev;
+            // diff > 0 → se piden más → VENTA (sale del stock)
+            // diff < 0 → se devuelven → COMPRA (regresa al stock)
+            await callGestorInventario({
+              tipo_operacion: diff > 0 ? "VENTA" : "COMPRA",
+              refaccion_id: r.id,
+              cantidad: Math.abs(diff),
+              precio_unit: Number(r.precio_unit || 0),
+              proyecto_id: proyecto.id,
+            });
+          }
+          if (cantPrev !== cantNew || Number(prev.precio_unitario) !== Number(r.precio_unit)) {
+            const { error: updErr } = await supabase.from("proyecto_refacciones")
+              .update({ cantidad: cantNew, precio_unitario: Number(r.precio_unit || 0) })
+              .eq("id", prev.id);
+            if (updErr) throw new Error("Error al actualizar refacción: " + updErr.message);
+          }
+        }
+      }
+
+      setPickerOpen(false);
+      await fetchRefacciones();
+    } catch (e) {
+      setErr(e?.message || "Error al guardar cambios.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const refFiltered = (refCatalog || []).filter(r =>
+    r.nombre?.toLowerCase().includes(refSearch.toLowerCase()) ||
+    r.numero_parte?.toLowerCase().includes(refSearch.toLowerCase())
+  );
+
+  const draftTotal = draft.reduce((s, i) => s + Number(i.precio_unit || 0) * Number(i.cantidad || 0), 0);
+
+  // ─── Render: solo vista de consulta + picker (abierto desde fuera via openPicker) ───
+  return (
+    <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
+      <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Refacciones Asignadas</p>
+      {loading ? (
+        <p className={`text-xs ${st}`}>Cargando…</p>
+      ) : refacciones.length === 0 ? (
+        <p className={`text-xs ${st}`}>No hay refacciones asignadas a este proyecto.</p>
+      ) : (
+        <div className={`rounded-md border divide-y ${darkMode ? "border-zinc-700 divide-zinc-700" : "border-gray-200 divide-gray-100"}`}>
+          {refacciones.map(r => (
+            <div key={r.id} className="px-3 py-2 flex justify-between items-center text-sm">
+              <div>
+                <p className={t}>{r.refacciones?.nombre || "—"}</p>
+                <p className={`text-xs ${st}`}>Cant: {r.cantidad} · ${Number(r.precio_unitario || 0).toFixed(2)} c/u</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {err && <p className="mt-1 text-xs text-red-500">{err}</p>}
+
+      {/* Picker portal */}
+      {pickerOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-10 bg-black/60" onClick={() => setPickerOpen(false)}>
+          <div
+            className={`relative w-full max-w-5xl rounded-xl ${darkMode ? "bg-[#1e1e26] text-white" : "bg-white text-gray-800"}`}
+            style={{ boxShadow: darkMode ? "0 24px 64px rgba(0,0,0,0.6)" : "0 16px 48px rgba(0,0,0,0.15)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? "border-zinc-700/60" : "border-gray-200"}`}>
+              <h2 className="font-semibold text-base">Modificar refacciones</h2>
+              <button onClick={() => setPickerOpen(false)} className="text-zinc-400 hover:text-current text-xl leading-none">×</button>
+            </div>
+            <div className="px-6 py-5 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+                <div>
+                  <Input darkMode={darkMode} placeholder="Buscar refacción…" value={refSearch} onChange={e => setRefSearch(e.target.value)} />
+                  <div className={`mt-3 divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                    {refFiltered.map(r => (
+                      <div key={r.id} className={`py-2 flex items-center justify-between ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
+                        <div>
+                          <p className={`text-sm font-medium ${t}`}>{r.nombre}</p>
+                          <p className={`text-xs ${st}`}>{r.numero_parte || "—"} · Stock: {r.stock}</p>
+                        </div>
+                        {(() => {
+                          const currentQty = Number(draft.find((i) => i.id === r.id)?.cantidad || 0);
+                          const baseQty = Number((refacciones || []).find((x) => x.refaccion_id === r.id)?.cantidad || 0);
+                          const maxCantidad = Math.max(1, baseQty + Math.max(0, Number(r.stock || 0)));
+                          const limiteAlcanzado = currentQty >= maxCantidad;
+                          return (
+                            <button
+                              onClick={() => addToDraft(r)}
+                              disabled={limiteAlcanzado}
+                              className={`px-3 py-1.5 rounded-md text-xs font-medium border disabled:opacity-40 disabled:cursor-not-allowed ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                            >
+                              {limiteAlcanzado ? "Límite" : "+ Añadir"}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold mb-2 ${t}`}>Carrito</p>
+                  {draft.length > 0 ? (
+                    <div className={`divide-y ${darkMode ? "divide-zinc-800" : "divide-gray-100"}`}>
+                      {draft.map(item => (
+                        <div key={item.id} className="py-2 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className={`text-sm font-medium ${t}`}>{item.nombre}</p>
+                              <p className={`text-xs ${st}`}>{item.numero_parte || "—"}</p>
+                            </div>
+                            <button onClick={() => removeDraft(item.id)} className={`text-xs px-2 py-1 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-red-300" : "border-gray-200 text-gray-500 hover:text-red-500"}`}>Quitar</button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className={`text-[10px] font-semibold uppercase ${st}`}>Cantidad</span>
+                              <Input
+                                darkMode={darkMode}
+                                type="number"
+                                min="1"
+                                max={getDraftItemMaxCantidad(item)}
+                                value={item.cantidad}
+                                onChange={e => {
+                                  const maxCantidad = getDraftItemMaxCantidad(item);
+                                  updateDraft(item.id, { cantidad: normalizeCantidadConStock(e.target.value, maxCantidad) });
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <span className={`text-[10px] font-semibold uppercase ${st}`}>Precio</span>
+                              <Input darkMode={darkMode} type="number" min="0" step="0.01" value={item.precio_unit} onChange={e => updateDraft(item.id, { precio_unit: e.target.value })} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={`text-xs ${st}`}>Agrega refacciones desde la lista.</p>
+                  )}
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className={`text-xs ${st}`}>Total</span>
+                    <span className={`text-sm font-semibold ${t}`}>${draftTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button onClick={() => setPickerOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+                    <button onClick={() => setConfirmOpen(true)} disabled={saving} className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{ backgroundColor: C_BLUE }}>
+                      {saving ? "Guardando…" : "Guardar cambios"}
+                    </button>
+                  </div>
+                  {err && <p className="mt-2 text-xs text-red-500">{err}</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirmación */}
+      {confirmOpen && createPortal(
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60">
+          <div className={`w-full max-w-sm rounded-xl p-6 ${darkMode ? "bg-[#1e1e28]" : "bg-white"}`} style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.3)" }}>
+            <h3 className={`font-semibold text-base mb-2 ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>¿Confirmar cambios?</h3>
+            <p className={`text-sm mb-4 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+              Los cambios en las refacciones afectarán el inventario. Las refacciones eliminadas regresarán al stock y las nuevas se descontarán.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+              <button onClick={handleGuardarCambios} disabled={saving} className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{ backgroundColor: C_BLUE }}>
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+});
+
+// ─── EditFotosSection ─────────────────────────────────────────────────────────
+const EditFotosSection = ({ proyecto, darkMode, session, canUpload }) => {
+  const [fotos,      setFotos]      = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [uploading,  setUploading]  = useState(false);
+  const [momento,    setMomento]    = useState("durante");
+  const [lightbox,   setLightbox]   = useState(null);
+  const [err,        setErr]        = useState("");
+  const fileRef = useRef(null);
+  const st = darkMode ? "text-zinc-500" : "text-gray-400";
+
+  const fetchFotos = useCallback(async () => {
+    if (!proyecto?.id) return;
+    setLoading(true);
+    const { data } = await supabase.from("fotografias").select("id,url,momento,descripcion,created_at").eq("proyecto_id", proyecto.id).order("created_at");
+    setFotos(data || []);
+    setLoading(false);
+  }, [proyecto?.id]);
+
+  useEffect(() => { fetchFotos(); }, [fetchFotos]);
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !proyecto?.id) return;
+    setUploading(true); setErr("");
+    try {
+      // Resolver mecanico_id
+      let mecId = proyecto?.mecanico_id || null;
+      if (session?.user?.email && !mecId) {
+        const { data: emp } = await supabase.from("empleados").select("id").eq("correo", session.user.email).maybeSingle();
+        if (emp?.id) mecId = emp.id;
+      }
+      if (!mecId) { setErr("No se encontró mecánico asignado para subir fotos."); setUploading(false); return; }
+
+      for (const file of files) {
+        const ext  = file.name.split(".").pop();
+        const path = `proyectos/${proyecto.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("fotografias").upload(path, file, { contentType: file.type });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from("fotografias").getPublicUrl(path);
+        await supabase.from("fotografias").insert({ proyecto_id: proyecto.id, mecanico_id: mecId, momento, url: urlData.publicUrl });
+      }
+      await fetchFotos();
+    } catch (e) {
+      setErr(e?.message || "Error al subir fotos.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const momentoGrupos = ["antes", "durante", "despues"];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className={`text-xs font-semibold uppercase tracking-wider ${st}`}>Fotografías {fotos.length > 0 && `(${fotos.length})`}</p>
+        {canUpload && (
+          <div className="flex items-center gap-2">
+            {uploading && <span className={`text-xs ${st}`}>Subiendo…</span>}
+            <select value={momento} onChange={e => setMomento(e.target.value)} disabled={uploading}
+              className={`text-xs px-2 py-1.5 rounded-lg border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}>
+              <option value="antes">Antes</option>
+              <option value="durante">Durante</option>
+              <option value="despues">Después</option>
+            </select>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50" style={{ backgroundColor: C_BLUE, color: "white" }}>
+              + Fotos
+            </button>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handleUpload} />
+          </div>
+        )}
+      </div>
+      {err && <p className="text-xs text-red-500 mb-2">{err}</p>}
+      {loading ? <p className={`text-xs ${st}`}>Cargando…</p> : fotos.length === 0 ? (
+        <p className={`text-xs ${st}`}>Aún no hay fotografías.</p>
+      ) : (
+        momentoGrupos.map(m => {
+          const grupo = fotos.filter(f => f.momento === m);
+          if (!grupo.length) return null;
+          return (
+            <div key={m} className="mb-3">
+              <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st} capitalize`}>{m === "despues" ? "Después" : m}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {grupo.map(f => (
+                  <img key={f.id} src={f.url} alt="" onClick={() => setLightbox(f.url)}
+                    className="w-full h-20 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity" />
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
+      {lightbox && createPortal(
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/90" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain" />
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+};
+
+// ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
 const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, diagnosticoFormatoBasico = false, onProjectUpdated }) => {
-  const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
@@ -3015,6 +3621,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const [refNuevaCantidad, setRefNuevaCantidad] = useState("1");
   const [refSaveError, setRefSaveError] = useState("");
   const [addingRefaccion, setAddingRefaccion] = useState(false);
+  const [momentoFoto, setMomentoFoto] = useState("durante");
   const fileRef = useRef(null);
 
   // ─── NUEVA FUNCIÓN PARA TRAER REFACCIONES DEL PROYECTO ───
@@ -3515,12 +4122,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
                     <p className={t}>{r.refacciones?.nombre}</p>
                     <p className={st}>Cant: {r.cantidad}</p>
                   </div>
-                  <button 
-                    onClick={() => toggleUsoRefaccion(r.id, r.fue_usada)}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.fue_usada ? 'bg-emerald-500/20 text-emerald-500' : 'bg-zinc-500/20 text-zinc-500'}`}
-                  >
-                    {r.fue_usada ? 'INSTALADA' : 'NO USADA / REGRESAR'}
-                  </button>
                 </div>
               ))
             )}
@@ -5203,7 +5804,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
       <ProyectoDetalleModal
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
-        canUpload={true} session={session} diagnosticoFormatoBasico={true}
+        canUpload={false} session={session} diagnosticoFormatoBasico={true}
       />
     </div>
   );
