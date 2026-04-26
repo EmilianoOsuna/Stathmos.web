@@ -1286,7 +1286,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   // ─── Diagnóstico inicial en el modal ─────────────────────────────────────────
   const DIAG_TIPOS = ["inicial", "preventivo", "correctivo", "revision"];
-  const diagFormInit = { tipo: "preventivo", sintomas: "", hallazgos: "", causa_raiz: "" };
+  const diagFormInit = { tipo_operacion: "preventivo", sintomas: "", descripcion: "", causa_raiz: "" };
   const [diagForm,     setDiagForm]     = useState(diagFormInit);
   const [diagError,    setDiagError]    = useState("");
   // Diagnóstico existente en el proyecto que se está editando
@@ -1306,11 +1306,11 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [p, c, v, e, r, ci] = await Promise.all([  // ← agrega ci
-      supabase.from("proyectos").select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
+      supabase.from("proyectos").select("*,observaciones, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
-      supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,activo").eq("activo", true).order("nombre"),
+      supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,stock,activo").eq("activo", true).order("nombre"),
       supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
     ]);
     setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);  // ← agrega setCitas
@@ -1368,6 +1368,13 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setRefCartDraft((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const existing = list.find((item) => item.id === refaccion.id);
+      const cantidadActual = existing ? existing.cantidad : 0;
+      const stockDisponible = Number(refaccion.stock || 0);
+
+      // Bloquear si no hay stock suficiente
+      if (stockDisponible <= 0) return list; // sin stock, no agrega
+      if (cantidadActual >= stockDisponible) return list; // ya llegó al límite
+
       if (existing) {
         return list.map((item) =>
           item.id === refaccion.id ? { ...item, cantidad: item.cantidad + 1 } : item
@@ -1381,6 +1388,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           numero_parte: refaccion.numero_parte || "",
           cantidad: 1,
           precio_unit: Number(refaccion.precio_venta || 0),
+          stock: stockDisponible,
         },
       ];
     });
@@ -1424,8 +1432,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       return;
     }
     setEditTarget(null);
-    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
-    setFormError("");
+    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "", cita_id: "" });    setFormError("");
     setRefCart([]);
     setRefCartDraft(null);
     setRefSearch("");
@@ -1464,10 +1471,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setRefCartDraft(null);
     setRefCartTouched(false);
     // Cargar diagnóstico inicial existente
-    const diagInicial = Array.isArray(p.diagnosticos) ? p.diagnosticos.find(d => d.tipo === "inicial") : null;
-    if (diagInicial) {
+    const diagInicial = Array.isArray(p.diagnosticos)
+      ? p.diagnosticos.find(d => d.tipo === "inicial")
+      : null;
+      if (diagInicial) {
       setExistingDiag(diagInicial);
-      setDiagForm({ tipo: diagInicial.tipo || "inicial", sintomas: diagInicial.sintomas || "", hallazgos: diagInicial.hallazgos || "", causa_raiz: diagInicial.causa_raiz || "" });
+      setDiagForm({ tipo_operacion: diagInicial.tipo_operacion || "preventivo", sintomas: diagInicial.sintomas || "", descripcion: diagInicial.descripcion || "", causa_raiz: diagInicial.causa_raiz || "" });
     } else {
       setExistingDiag(null);
       setDiagForm(diagFormInit);
@@ -1566,60 +1575,79 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       return;
     }
 
-    const syncRefaccionItems = async (cotizacionId) => {
-        if (!refCartTouched || !cotizacionId) return null;
+    const syncRefaccionItems = async (cotizacionId, proyectoId) => { 
+      if (!refCartTouched || !cotizacionId) return null;
 
-        // REINTEGRO: devolver stock anterior antes de reemplazar
-        await supabase.functions.invoke("gestionar-inventario", {
-          body: { tipo_operacion: "REINTEGRAR", cotizacion_id: cotizacionId }
-        });
+      // REINTEGRO: devolver stock anterior antes de reemplazar
+      await supabase.functions.invoke("gestionar-inventario", {
+        body: { tipo_operacion: "REINTEGRAR", cotizacion_id: cotizacionId }
+      });
 
-        const deleteRes = await supabase
-          .from("cotizacion_items")
-          .delete()
-          .eq("cotizacion_id", cotizacionId)
-          .eq("tipo", "refaccion");
-        if (deleteRes.error) return deleteRes.error;
+      const deleteRes = await supabase
+        .from("cotizacion_items")
+        .delete()
+        .eq("cotizacion_id", cotizacionId)
+        .eq("tipo", "refaccion");
+      if (deleteRes.error) return deleteRes.error;
 
-        if (refCart.length > 0) {
-          const rows = refCart.map((item) => ({
-            cotizacion_id: cotizacionId,
-            descripcion: item.nombre || "Refaccion",
-            tipo: "refaccion",
-            refaccion_id: item.id,
-            cantidad: Number(item.cantidad || 1),
-            precio_unit: Number(item.precio_unit || 0),
-          }));
+      if (refCart.length > 0) {
+        const rows = refCart.map((item) => ({
+          cotizacion_id: cotizacionId,
+          descripcion: item.nombre || "Refaccion",
+          tipo: "refaccion",
+          refaccion_id: item.id,
+          cantidad: Number(item.cantidad || 1),
+          precio_unit: Number(item.precio_unit || 0),
+        }));
 
-          const insertRes = await supabase.from("cotizacion_items").insert(rows);
-          if (insertRes.error) return insertRes.error;
+        const insertRes = await supabase.from("cotizacion_items").insert(rows);
+        if (insertRes.error) return insertRes.error;
+        
+          // Sincronizar también en proyecto_refacciones
+          if (refCart.length > 0 && proyectoIdFinal) {
+            // Primero limpiar las anteriores
+            await supabase
+              .from("proyecto_refacciones")
+              .delete()
+              .eq("proyecto_id", proyectoIdFinal);
 
-          // DESCONTAR STOCK por cada refacción agregada
-          for (const item of rows) {
-            if (item.refaccion_id && item.cantidad > 0) {
-              await supabase.functions.invoke("gestionar-inventario", {
-                body: {
-                  tipo_operacion: "VENTA",
-                  refaccion_id: item.refaccion_id,
-                  cantidad: item.cantidad,
-                  precio_unit: item.precio_unit,
-                  cotizacion_id: cotizacionId,
-                  proyecto_id: editTarget?.id || proyectoIdFinal,
-                },
-              });
-            }
+            // Insertar las actuales
+            const proyectoRefRows = refCart.map((item) => ({
+              proyecto_id: proyectoIdFinal,
+              refaccion_id: item.id,
+              cantidad: Number(item.cantidad || 1),
+              precio_unitario: Number(item.precio_unit || 0),
+              fue_usada: true,
+            }));
+
+            await supabase.from("proyecto_refacciones").insert(proyectoRefRows);
+          }
+
+        for (const item of rows) {
+          if (item.refaccion_id && item.cantidad > 0) {
+            await supabase.functions.invoke("gestionar-inventario", {
+              body: {
+                tipo_operacion: "VENTA",
+                refaccion_id: item.refaccion_id,
+                cantidad: item.cantidad,
+                precio_unit: item.precio_unit,
+                cotizacion_id: cotizacionId,
+                proyecto_id: proyectoId || null,
+              },
+            });
           }
         }
+      }
 
-        return null;
-      };
+      return null;
+    };
       const tieneDiag = diagForm.sintomas.trim();
       const tieneCot  = manoObra > 0 || refacc > 0;
       const estadoInicial = tieneCot && tieneDiag
         ? "en_progreso"
         : tieneDiag
           ? "pendiente_cotizacion"
-          : "pendiente_diagnóstico";
+          : "pendiente_diagnostico";
     const payload = {
       titulo: normalizeForSAT(form.titulo),
       descripcion: form.descripcion || null,
@@ -1707,7 +1735,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .eq("id", existingCotizacion.id);
           error = quoteUpdate.error;
           if (!error) {
-            const syncErr = await syncRefaccionItems(existingCotizacion.id);
+            const syncErr = await syncRefaccionItems(existingCotizacion.id, editTarget.id);
             if (syncErr) error = syncErr;
           }
         } else if (manoObra > 0 || refacc > 0) {
@@ -1718,7 +1746,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .single();
           error = quoteInsert.error;
           if (!error) {
-            const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+              const syncErr = await syncRefaccionItems(quoteInsert.data?.id, createdProject.id);
             if (syncErr) error = syncErr;
           }
         }
@@ -1763,7 +1791,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           .single();
         error = quoteInsert.error;
         if (!error) {
-          const syncErr = await syncRefaccionItems(quoteInsert.data?.id);
+          const syncErr = await syncRefaccionItems(quoteInsert.data?.id, createdProject.id);
           if (syncErr) error = syncErr;
         }
       }
@@ -1773,17 +1801,27 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     if (error) { setFormError(error.message); return; }
 
     // ── Guardar diagnóstico inicial si se llenó ───────────────────────────────
-    const diagTieneDatos = diagForm.sintomas.trim() || diagForm.hallazgos.trim() || diagForm.causa_raiz.trim();
-    if (diagTieneDatos) {
-      const mecId = form.mecanico_id || editTarget?.mecanico_id || null;
+    const diagTieneDatos = diagForm.sintomas.trim() || diagForm.descripcion.trim() || diagForm.causa_raiz.trim();
+        if (diagTieneDatos && proyectoIdFinal) {
+          let mecId = form.mecanico_id || editTarget?.mecanico_id || null;
+          // Si no hay mecánico asignado, usar el usuario logueado
+          if (!mecId && session?.user?.email) {
+            const { data: empData } = await supabase
+              .from("empleados")
+              .select("id")
+              .eq("correo", session.user.email)
+              .maybeSingle();
+            mecId = empData?.id || null;
+          }
       if (mecId) {
         let diagSaved = false;
         if (existingDiag?.id && editandoDiag) {
           // Actualizar diagnóstico existente
           await supabase.from("diagnosticos").update({
-            tipo: diagForm.tipo || "inicial",
+            tipo: "inicial",
+            tipo_operacion: diagForm.tipo_operacion || "preventivo",
             sintomas: diagForm.sintomas.trim() || null,
-            hallazgos: diagForm.hallazgos.trim() || null,
+            descripcion: diagForm.descripcion.trim() || null,
             causa_raiz: diagForm.causa_raiz.trim() || null,
           }).eq("id", existingDiag.id);
           diagSaved = true;
@@ -1799,9 +1837,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             await supabase.from("diagnosticos").insert([{
               proyecto_id: proyectoIdFinal,
               mecanico_id: mecId,
-              tipo: diagForm.tipo || "inicial",
+              tipo: "inicial",
+              tipo_operacion: diagForm.tipo_operacion || "preventivo",
               sintomas: diagForm.sintomas.trim() || null,
-              hallazgos: diagForm.hallazgos.trim() || null,
+              descripcion: diagForm.descripcion.trim() || null,
               causa_raiz: diagForm.causa_raiz.trim() || null,
             }]);
             diagSaved = true;
@@ -1810,7 +1849,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       }
     }
 
-    setModalOpen(false); fetchAll();
+    setModalOpen(false);
+      const { data: freshProyectos } = await supabase
+        .from("proyectos")
+        .select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
+        .order("created_at", { ascending: false });
+      if (freshProyectos) {
+        setProyectos(freshProyectos);
+        if (detalle) setDetalle(freshProyectos.find(p => p.id === detalle.id) || null);
+      }
   };
 
   const handleDelete = async () => {
@@ -2042,16 +2089,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 <div className="flex flex-col gap-2">
                   <div className={`rounded-md border px-3 py-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
                     <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ...`}>Tipo de servicio</p>
-                    <p className="capitalize">{existingDiag.tipo || "—"}</p>
+                    <p className="capitalize">{existingDiag.tipo_operacion || "—"}</p>
                     <p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ...`}>Descripción</p>
                     <p>{existingDiag.sintomas || "—"}</p>
-                    {existingDiag.tipo === "correctivo" && existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa del problema</p><p>{existingDiag.causa_raiz}</p></>}
+                    {existingDiag.tipo_operacion === "correctivo" && existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa del problema</p><p>{existingDiag.causa_raiz}</p></>}
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setEditandoDiag(true); setDiagForm({ tipo: existingDiag.tipo || "inicial", sintomas: existingDiag.sintomas || "", hallazgos: existingDiag.hallazgos || "", causa_raiz: existingDiag.causa_raiz || "" }); }}
-                    className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
-                  >
+                    onClick={() => { setEditandoDiag(true); setDiagForm({ tipo_operacion: existingDiag.tipo_operacion || "preventivo", sintomas: existingDiag.sintomas || "", descripcion: existingDiag.descripcion || "", causa_raiz: existingDiag.causa_raiz || "" }); }}
+                    className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
                     Editar diagnóstico
                   </button>
                 </div>
@@ -2059,7 +2105,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 <div className="flex flex-col gap-3">
                   
                   <Field label="Tipo de servicio" darkMode={darkMode}>
-                    <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value, causa_raiz: ""})}>
+                      <Select darkMode={darkMode} value={diagForm.tipo_operacion} onChange={(e) => setDiagForm({...diagForm, tipo_operacion: e.target.value, causa_raiz: ""})}>
                       <option value="preventivo">Preventivo</option>
                       <option value="correctivo">Correctivo</option>
                       <option value="revision">Revisión</option>
@@ -2068,7 +2114,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                   <Field label="Descripción" darkMode={darkMode}>
                     <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe el diagnóstico inicial del vehículo…" />
                   </Field>
-                  {diagForm.tipo === "correctivo" && (
+                  {diagForm.tipo_operacion === "correctivo" && (
                     <Field label="Posible Causa del problema" darkMode={darkMode}>
                       <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
                     </Field>
@@ -2170,21 +2216,31 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                           {refFiltered.length === 0 ? (
                             <div className={`py-6 text-center text-sm ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Sin resultados</div>
                           ) : (
-                            refFiltered.map((r) => (
-                              <div key={r.id} className={`py-2 flex items-center justify-between ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
-                                <div>
-                                  <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{r.nombre}</p>
-                                  <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>{r.numero_parte || "—"}</p>
+                            refFiltered.map((r) => {
+                              const enCarrito = (Array.isArray(refCartDraft) ? refCartDraft : []).find(i => i.id === r.id)?.cantidad || 0;
+                              const sinStock = Number(r.stock || 0) <= 0;
+                              const limiteAlcanzado = enCarrito >= Number(r.stock || 0);
+                              return (
+                                <div key={r.id} className={`py-2 flex items-center justify-between ${darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50"}`}>
+                                  <div>
+                                    <p className={`text-sm font-medium ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>{r.nombre}</p>
+                                    <p className={`text-xs ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
+                                      {r.numero_parte || "—"} · Stock: {r.stock ?? 0}
+                                      {enCarrito > 0 && ` (${enCarrito} en carrito)`}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => addRefToDraft(r)}
+                                    disabled={sinStock || limiteAlcanzado}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+                                      ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
+                                  >
+                                    {sinStock ? "Sin stock" : limiteAlcanzado ? "Límite" : "Agregar"}
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => addRefToDraft(r)}
-                                  className={`px-3 py-1.5 rounded-md text-xs font-medium border ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-600 hover:bg-gray-100"}`}
-                                >
-                                  Agregar
-                                </button>
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
                       </div>
@@ -2453,7 +2509,7 @@ const DIAG_TIPOS_LABELS = { inicial: "Inicial", preventivo: "Preventivo", correc
 const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, diagnosticoInicial: diagProp, formatoBasico = false }) => {
   const [diag,       setDiag]       = useState(diagProp || null);
   const [editMode,   setEditMode]   = useState(false);
-  const [form,       setForm]       = useState({ tipo: "inicial", sintomas: "", hallazgos: "", causa_raiz: "" });
+  const [form,       setForm]       = useState({ tipo: "inicial", sintomas: "", descripcion: "", causa_raiz: "" });
   const [saving,     setSaving]     = useState(false);
   const [err,        setErr]        = useState("");
 
@@ -2471,7 +2527,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
     setForm({
       tipo:       diag?.tipo       || "inicial",
       sintomas:   diag?.sintomas   || "",
-      hallazgos:  formatoBasico ? "" : (diag?.hallazgos || ""),
+      descripcion:  formatoBasico ? "" : (diag?.descripcion || ""),
       causa_raiz: diag?.causa_raiz || "",
     });
     setEditMode(true);
@@ -2493,7 +2549,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
       const payload = {
         tipo:       form.tipo,
         sintomas:   form.sintomas.trim()   || null,
-        hallazgos:  formatoBasico ? null : (form.hallazgos.trim() || null),
+        descripcion:  formatoBasico ? null : (form.descripcion.trim() || null),
         causa_raiz: form.causa_raiz.trim() || null,
       };
 
@@ -2504,7 +2560,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
       } else {
         const { data, error } = await supabase.from("diagnosticos")
           .insert([{ proyecto_id: proyecto.id, mecanico_id: mecId, ...payload }])
-          .select("id, tipo, sintomas, hallazgos, causa_raiz, created_at")
+          .select("id, tipo, sintomas, descripcion, causa_raiz, created_at")
           .single();
         if (error) throw error;
         setDiag(data);
@@ -2552,11 +2608,11 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
           </div>
           {!formatoBasico && (
           <div>
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Hallazgos</label>
+            <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>descripcion</label>
             <textarea
               rows={2}
-              value={form.hallazgos}
-              onChange={(e) => setForm({...form, hallazgos: e.target.value})}
+              value={form.descripcion}
+              onChange={(e) => setForm({...form, descripcion: e.target.value})}
               placeholder="Observaciones técnicas al recibir el vehículo…"
               className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
             />
@@ -2590,7 +2646,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
         <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
           <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${st}`}>{DIAG_TIPOS_LABELS[diag.tipo] || diag.tipo}</p>
           <p className={`text-sm font-medium ${t}`}>{diag.sintomas || "Sin contenido"}</p>
-          {!formatoBasico && diag.hallazgos && <p className={`text-xs mt-1.5 ${st}`}><span className="font-semibold">Hallazgos:</span> {diag.hallazgos}</p>}
+          {!formatoBasico && diag.descripcion && <p className={`text-xs mt-1.5 ${st}`}><span className="font-semibold">descripcion:</span> {diag.descripcion}</p>}
           {diag.causa_raiz && <p className={`text-xs mt-1 ${st}`}><span className="font-semibold">Causa:</span> {diag.causa_raiz}</p>}
           {diag.empleados?.nombre && <p className={`text-[11px] mt-2 ${st}`}>Registrado por {diag.empleados.nombre}</p>}
         </div>
@@ -2609,20 +2665,347 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
     </div>
   );
 };
+  const ObservacionesSection = ({ proyecto, darkMode, canUpload, session }) => {
+    const valorGuardado = useRef(proyecto.observaciones || "");
+    const [texto, setTexto]   = useState(valorGuardado.current);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr]       = useState("");
+    const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+    const st = darkMode ? "text-zinc-500" : "text-gray-400";
 
+    useEffect(() => {
+      valorGuardado.current = proyecto.observaciones || "";
+      setTexto(proyecto.observaciones || "");
+    }, [proyecto?.id, proyecto?.observaciones]);
+
+    const haycambios = texto !== valorGuardado.current;
+
+    const handleGuardar = async () => {
+      setSaving(true); setErr("");
+      try {
+        const { error } = await supabase.from("proyectos")
+          .update({ observaciones: texto.trim(), updated_at: new Date().toISOString() })
+          .eq("id", proyecto.id);
+        if (error) throw error;
+        // ✅ Actualiza la referencia local sin necesitar recargar el padre
+        valorGuardado.current = texto.trim();
+      } catch (e) {
+        setErr(e?.message || "Error al guardar.");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div>
+        <p className={`text-[10px] font-semibold uppercase tracking-widest ${st} mb-2`}>Observaciones</p>
+        {canUpload ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              rows={3}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="Observaciones del proyecto…"
+              className={`w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none focus:ring-2 focus:ring-sky-500 ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+            />
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            <button
+              onClick={handleGuardar}
+              disabled={saving || !haycambios}
+              className="self-start px-3 py-1.5 rounded-md text-xs font-medium text-white disabled:opacity-40"
+              style={{ backgroundColor: C_BLUE }}
+            >{saving ? "Guardando…" : "Guardar observación"}</button>
+          </div>
+        ) : (
+          texto
+            ? <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+                <p className={`text-sm whitespace-pre-wrap ${t}`}>{texto}</p>
+              </div>
+            : <p className={`text-xs ${st}`}>Sin observaciones.</p>
+        )}
+      </div>
+    );
+  };
+  const CotizacionDetalleSection = ({ proyecto, darkMode, session, canUpload, onActualizado }) => {
+    const cotizacion = Array.isArray(proyecto.cotizaciones) && proyecto.cotizaciones.length > 0
+      ? proyecto.cotizaciones.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+      : null;
+    const [manoObra, setManoObra] = useState(cotizacion?.monto_mano_obra ?? "");
+    const [saving, setSaving]     = useState(false);
+    const [err, setErr]           = useState("");
+    const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+    const st = darkMode ? "text-zinc-500" : "text-gray-400";
+
+    useEffect(() => {
+      setManoObra(cotizacion?.monto_mano_obra ?? "");
+    }, [proyecto?.id, cotizacion?.id]);
+
+    const handleGuardar = async () => {
+      const monto = Number(manoObra);
+      if (!Number.isFinite(monto) || monto < 0) { setErr("Monto inválido."); return; }
+      setSaving(true); setErr("");
+      try {
+        if (cotizacion?.id) {
+          const { error } = await supabase.from("cotizaciones")
+            .update({ monto_mano_obra: monto, updated_at: new Date().toISOString() })
+            .eq("id", cotizacion.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("cotizaciones")
+            .insert([{ proyecto_id: proyecto.id, monto_mano_obra: monto, monto_refacc: 0, estado: "pendiente" }]);
+          if (error) throw error;
+          // Cambiar estado del proyecto a pendiente_aprobacion
+          await supabase.from("proyectos")
+            .update({ estado: "pendiente_aprobacion", updated_at: new Date().toISOString() })
+            .eq("id", proyecto.id);
+          if (onActualizado) onActualizado({ id: proyecto.id, estado: "pendiente_aprobacion" });
+        }
+      } catch (e) {
+        setErr(e?.message || "Error al guardar cotización.");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div>
+        <p className={`text-[10px] font-semibold uppercase tracking-widest ${st} mb-2`}>Cotización inicial</p>
+        {cotizacion ? (
+          <div className={`rounded-lg border px-3 py-2 mb-3 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+            <div className="flex justify-between items-center">
+              <p className={`text-xs ${st}`}>Mano de obra</p>
+              <p className={`text-sm font-semibold ${t}`}>${Number(cotizacion.monto_mano_obra || 0).toFixed(2)}</p>
+            </div>
+            <div className="flex justify-between items-center mt-1">
+              <p className={`text-xs ${st}`}>Refacciones</p>
+              <p className={`text-sm font-semibold ${t}`}>${Number(cotizacion.monto_refacc || 0).toFixed(2)}</p>
+            </div>
+            <div className={`flex justify-between items-center mt-2 pt-2 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+              <p className={`text-xs font-semibold ${t}`}>Total</p>
+              <p className={`text-sm font-bold ${t}`}>${Number(cotizacion.monto_total || 0).toFixed(2)}</p>
+            </div>
+            <p className={`text-[10px] mt-2 ${st} capitalize`}>Estado: {cotizacion.estado?.replace(/_/g, " ")}</p>
+          </div>
+        ) : canUpload ? (
+          <div className="flex flex-col gap-2 mb-2">
+            <p className={`text-xs ${st}`}>No hay cotización registrada. Agrega una:</p>
+            <Field label="Mano de obra" darkMode={darkMode}>
+              <Input darkMode={darkMode} type="number" min="0" step="0.01" value={manoObra}
+                onChange={(e) => setManoObra(e.target.value)} placeholder="0.00" />
+            </Field>
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            <button onClick={handleGuardar} disabled={saving}
+              className="self-start px-3 py-1.5 rounded-md text-xs font-medium text-white disabled:opacity-50"
+              style={{ backgroundColor: C_BLUE }}
+            >{saving ? "Guardando…" : "Crear cotización"}</button>
+          </div>
+        ) : (
+          <p className={`text-xs ${st}`}>Sin cotización registrada.</p>
+        )}
+      </div>
+    );
+  };  
+  const DiagnosticoFinalSection = ({ proyecto, darkMode, session, canUpload, diagnosticoInicial, diagnosticoFinal: diagFinalProp }) => {
+    const [diag,     setDiag]     = useState(diagFinalProp || null);
+    const [editMode, setEditMode] = useState(false);
+    const [form,     setForm]     = useState({ tipo_operacion: "preventivo", sintomas: "", causa_raiz: "" });
+    const [saving,   setSaving]   = useState(false);
+    const [err,      setErr]      = useState("");
+    const t  = darkMode ? "text-zinc-100" : "text-gray-800";
+    const st = darkMode ? "text-zinc-500" : "text-gray-400";
+
+    useEffect(() => {
+      setDiag(diagFinalProp || null);
+      setEditMode(false);
+    }, [proyecto?.id, diagFinalProp]);
+
+    const usarIgualQueInicial = () => {
+      if (!diagnosticoInicial) return;
+      setForm({
+        tipo_operacion: diagnosticoInicial.tipo_operacion || "preventivo",
+        sintomas: diagnosticoInicial.sintomas || "",
+        causa_raiz: diagnosticoInicial.causa_raiz || "",
+      });
+    };
+
+    const handleGuardar = async () => {
+      if (!form.sintomas.trim()) { setErr("La descripción es obligatoria."); return; }
+      setSaving(true); setErr("");
+      try {
+        let mecId = proyecto?.mecanico_id || null;
+        if (session?.user?.email) {
+          const { data: emp } = await supabase.from("empleados").select("id").eq("correo", session.user.email).maybeSingle();
+          if (emp?.id) mecId = emp.id;
+        }
+        if (!mecId) { setErr("No se encontró mecánico asignado."); setSaving(false); return; }
+
+        const payload = {
+          tipo: "final",
+          tipo_operacion: form.tipo_operacion,
+          sintomas: form.sintomas.trim(),
+          causa_raiz: form.tipo_operacion === "correctivo" ? (form.causa_raiz.trim() || null) : null,
+        };
+
+        if (diag?.id) {
+          const { error } = await supabase.from("diagnosticos").update(payload).eq("id", diag.id);
+          if (error) throw error;
+          setDiag({ ...diag, ...payload });
+        } else {
+          const { data, error } = await supabase.from("diagnosticos")
+            .insert([{ proyecto_id: proyecto.id, mecanico_id: mecId, ...payload }])
+            .select("id, tipo, tipo_operacion, sintomas, causa_raiz, created_at")
+            .single();
+          if (error) throw error;
+          setDiag(data);
+        }
+        setEditMode(false);
+      } catch (e) {
+        setErr(e?.message || "Error al guardar.");
+      } finally {
+        setSaving(false);
+      }
+    };
+    const handleSinCambios = async () => {
+      if (!diagnosticoInicial) return;
+      setSaving(true); setErr("");
+      try {
+        let mecId = proyecto?.mecanico_id || null;
+        if (session?.user?.email) {
+          const { data: emp } = await supabase.from("empleados").select("id").eq("correo", session.user.email).maybeSingle();
+          if (emp?.id) mecId = emp.id;
+        }
+        if (!mecId) { setErr("No se encontró mecánico asignado."); setSaving(false); return; }
+
+        const payload = {
+          proyecto_id: proyecto.id,
+          mecanico_id: mecId,
+          tipo: "final",
+          tipo_operacion: diagnosticoInicial.tipo_operacion,
+          sintomas: diagnosticoInicial.sintomas,
+          descripcion: diagnosticoInicial.descripcion,
+          causa_raiz: diagnosticoInicial.causa_raiz,
+        };
+
+        const { data, error } = await supabase
+          .from("diagnosticos")
+          .insert([payload])
+          .select("id, tipo, tipo_operacion, sintomas, descripcion, causa_raiz, created_at")
+          .single();
+        if (error) throw error;
+        setDiag(data);
+      } catch (e) {
+        setErr(e?.message || "Error al guardar.");
+      } finally {
+        setSaving(false);
+      }
+    };
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Diagnóstico final</p>
+          {diag && !editMode && canUpload && (
+            <button onClick={() => { setForm({ tipo_operacion: diag.tipo_operacion || "preventivo", sintomas: diag.sintomas || "", causa_raiz: diag.causa_raiz || "" }); setEditMode(true); }}
+              className={`text-[10px] px-2 py-1 rounded border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
+              Editar
+            </button>
+          )}
+        </div>
+
+        {editMode ? (
+          <div className={`rounded-lg border p-3 flex flex-col gap-3 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+            {diagnosticoInicial && (
+              <button type="button" onClick={usarIgualQueInicial}
+                className={`self-start text-xs px-3 py-1.5 rounded-md border ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
+                ✓ Coincide con el diagnóstico inicial
+              </button>
+            )}
+            <div>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Tipo de servicio</label>
+              <select value={form.tipo_operacion}
+                onChange={(e) => setForm({...form, tipo_operacion: e.target.value, causa_raiz: ""})}
+                className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}>
+                <option value="preventivo">Preventivo</option>
+                <option value="correctivo">Correctivo</option>
+                <option value="revision">Revisión</option>
+              </select>
+            </div>
+            <div>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Descripción *</label>
+              <textarea rows={3} value={form.sintomas} onChange={(e) => setForm({...form, sintomas: e.target.value})}
+                placeholder="Describe el estado final del vehículo…"
+                className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+              />
+            </div>
+            {form.tipo_operacion === "correctivo" && (
+              <div>
+                <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Causa del problema</label>
+                <input type="text" value={form.causa_raiz} onChange={(e) => setForm({...form, causa_raiz: e.target.value})}
+                  placeholder="Causa identificada…"
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border text-sm outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+                />
+              </div>
+            )}
+            {err && <p className="text-xs text-red-500">{err}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => { setEditMode(false); setErr(""); }}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>
+                Cancelar
+              </button>
+              <button onClick={handleGuardar} disabled={saving}
+                className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: C_BLUE }}>
+                {saving ? "Guardando…" : "Guardar diagnóstico final"}
+              </button>
+            </div>
+          </div>
+        ) : diag ? (
+          <div className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
+            <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${st} capitalize`}>{diag.tipo_operacion || "—"}</p>
+            <p className={`text-sm ${t}`}>{diag.sintomas || "—"}</p>
+            {diag.tipo_operacion === "correctivo" && diag.causa_raiz && (
+              <p className={`text-xs mt-1 ${st}`}><span className="font-semibold">Causa:</span> {diag.causa_raiz}</p>
+            )}
+          </div>
+          ) : canUpload ? (
+                <div>
+                  <p className={`text-xs mb-2 ${st}`}>Aún no hay diagnóstico final registrado.</p>
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={() => setEditMode(true)}
+                      className="px-3 py-1.5 rounded-md text-xs font-medium text-white"
+                      style={{ backgroundColor: C_BLUE }}>
+                      + Agregar diagnóstico final
+                    </button>
+                    {diagnosticoInicial && (
+                      <button
+                        onClick={handleSinCambios}
+                        disabled={saving}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium border disabled:opacity-50 ${darkMode ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        No Hubo Cambios Respecto al Inicial
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className={`text-xs ${st}`}>Aún no hay diagnóstico final registrado.</p>
+              )}
+            </div>
+          );
+        };
 // ─── Modal Detalle Proyecto (con galería y subida de fotos) ───────────────────
-const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, diagnosticoFormatoBasico = false }) => {
+const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = false, session, diagnosticoFormatoBasico = false, onProjectUpdated }) => {
   const [momentoFoto, setMomentoFoto] = useState("durante");
   const [fotos,        setFotos]        = useState([]);
   const [loadingFotos, setLoadingFotos] = useState(false);
   const [uploading,    setUploading]    = useState(false);
   const [uploadError,  setUploadError]  = useState("");
   const [lightbox,     setLightbox]     = useState(null);
+  const [refaccionesCotizacion, setRefaccionesCotizacion] = useState([]);
   const [citas, setCitas] = useState([]);
   const [estadoProyectoLocal,   setEstadoProyectoLocal]   = useState(proyecto?.estado || "activo");
-  const [estadoInicialProyecto, setEstadoInicialProyecto] = useState(proyecto?.descripcion || "");
-  const [estadoInicialError,    setEstadoInicialError]    = useState("");
-  const [estadoInicialGuardando, setEstadoInicialGuardando] = useState(false);
+  const [descripcionProyecto, setDescripcionProyecto] = useState(proyecto?.descripcion || "");
+  const [descripcionError,    setDescripcionError]    = useState("");
+  const [descripcionGuardando, setDescripcionGuardando] = useState(false);
   // ─── NUEVOS ESTADOS PARA REFACCIONES ───
   const [refaccionesAsignadas, setRefaccionesAsignadas] = useState([]);
   const [loadingRefacciones, setLoadingRefacciones] = useState(false);
@@ -2651,13 +3034,26 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     setLoadingRefacciones(false);
   }, [proyecto?.id]);
 
-  const fetchRefaccionesProyecto = useCallback(async () => {
+  
+  const fetchRefaccionesCotizacion = useCallback(async () => {
+    if (!proyecto?.id) return;
+    const cotizacion = Array.isArray(proyecto.cotizaciones)
+      ? [...proyecto.cotizaciones].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+      : null;
+    if (!cotizacion?.id) return;
     const { data } = await supabase
-      .from("proyecto_refacciones")
-      .select("*, refacciones(nombre, numero_parte)")
-      .eq("proyecto_id", proyecto.id);
-    setRefaccionesAsignadas(data || []);
-  }, [proyecto?.id]);
+      .from("cotizacion_items")
+      .select("id, cantidad, precio_unit, refacciones(id, nombre, numero_parte)")
+      .eq("cotizacion_id", cotizacion.id)
+      .eq("tipo", "refaccion");
+    setRefaccionesCotizacion(data || []);
+  }, [proyecto?.id, proyecto?.cotizaciones]);
+  
+    useEffect(() => {
+      if (!open || !proyecto?.id) return;
+      fetchRefaccionesAsignadas();
+      fetchRefaccionesCotizacion();
+    }, [open, proyecto?.id, fetchRefaccionesAsignadas, fetchRefaccionesCotizacion]);
 
   const fetchRefCatalog = useCallback(async () => {
     if (!proyecto?.id) return;
@@ -2668,10 +3064,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
       .order("nombre");
     setRefCatalog(data || []);
   }, [proyecto?.id]);
-
-  useEffect(() => {
-    if (open) fetchRefaccionesProyecto();
-  }, [open, fetchRefaccionesProyecto]);
 
   useEffect(() => {
     if (open && diagnosticoFormatoBasico && canUpload) {
@@ -2742,7 +3134,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
 
       setRefNuevaId("");
       setRefNuevaCantidad("1");
-      await fetchRefaccionesProyecto();
+      await fetchRefaccionesAsignadas();
     } catch (e) {
       setRefSaveError(e?.message || "No se pudo agregar la refacción.");
     } finally {
@@ -2756,7 +3148,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
       .from("proyecto_refacciones")
       .update({ fue_usada: !actual })
       .eq("id", id);
-    fetchRefaccionesProyecto();
+    fetchRefaccionesAsignadas();
   };
 
   
@@ -2782,9 +3174,9 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
 
   useEffect(() => {
     if (!open || !proyecto) return;
-    setEstadoInicialProyecto(proyecto.descripcion || "");
+    setDescripcionProyecto(proyecto.descripcion || "");
     setEstadoProyectoLocal(proyecto.estado || "activo");
-    setEstadoInicialError("");
+    setDescripcionError("");
   }, [open, proyecto?.id, proyecto?.descripcion, proyecto?.estado]);
 
   useEffect(() => {
@@ -2897,47 +3289,20 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     await notifyClientNewPhotos();
   };
 
-  const handleGuardarEstadoInicial = async () => {
-    if (!proyecto?.id) return;
-    if (!canUpload) return;
-    if (estadoProyectoLocal !== "activo") return;
-    if (!estadoInicialProyecto.trim()) {
-      setEstadoInicialError("Ingresa el estado inicial del proyecto antes de guardarlo.");
-      return;
-    }
-
-    setEstadoInicialGuardando(true);
-    setEstadoInicialError("");
-
+    const handleGuardarDescripcion = async () => {
+    if (!proyecto?.id || !canUpload) return;
+    if (!descripcionProyecto.trim()) { setDescripcionError("La descripción no puede estar vacía."); return; }
+    setDescripcionGuardando(true); setDescripcionError("");
     try {
-      const nuevoValor = estadoInicialProyecto.trim();
-      const { error } = await supabase
-        .from("proyectos")
-        .update({
-          descripcion: nuevoValor,
-          estado: "en_progreso",
-          updated_at: new Date().toISOString(),
-        })
+      const { error } = await supabase.from("proyectos")
+        .update({ descripcion: descripcionProyecto.trim(), updated_at: new Date().toISOString() })
         .eq("id", proyecto.id);
-
       if (error) throw error;
-
-      setEstadoProyectoLocal("en_progreso");
-      if (onProjectUpdated) {
-        onProjectUpdated({ id: proyecto.id, descripcion: nuevoValor, estado: "en_progreso" });
-      }
-
-      await notifyClientStateChange({
-        proyectoId: proyecto.id,
-        clienteId: proyecto.cliente_id,
-        tituloProyecto: proyecto.titulo,
-        nuevoEstado: "en_progreso",
-        session,
-      });
-    } catch (error) {
-      setEstadoInicialError(error?.message || "No se pudo guardar el estado inicial del proyecto.");
+      if (onProjectUpdated) onProjectUpdated({ id: proyecto.id, descripcion: descripcionProyecto.trim() });
+    } catch (e) {
+      setDescripcionError(e?.message || "Error al guardar.");
     } finally {
-      setEstadoInicialGuardando(false);
+      setDescripcionGuardando(false);
     }
   };
 
@@ -2947,7 +3312,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
   const st      = darkMode ? "text-zinc-500"  : "text-gray-400";
   const card    = darkMode ? "bg-[#1e1e26] border-zinc-800" : "bg-white border-gray-200";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
-  const puedeEditarEstadoInicial = canUpload && estadoProyectoLocal === "activo";
   const momentoLabel = (value) => {
     if (value === "antes") return "Antes";
     if (value === "durante") return "Durante";
@@ -2963,7 +3327,7 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     return map[value] || (darkMode ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-gray-100 text-gray-600 border-gray-200");
   };
 
-  const cleanHallazgosText = (value = "") =>
+  const cleandescripcionText = (value = "") =>
     String(value)
       .split("\n")
       .map((line) => line.replace(/^\s*\[[^\]]+\]\s*/, ""))
@@ -3016,102 +3380,128 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             ) : null)}
           </div>
 
+          {/* ── Descripción del proyecto ── */}
           <div className={`px-6 py-4 border-b ${divider}`}>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <p className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Estado inicial del proyecto</p>
-                
-              </div>
-            </div>
-
+            <p className={`text-[10px] font-semibold uppercase tracking-widest ${st} mb-2`}>Descripción del proyecto</p>
             <textarea
-              value={estadoInicialProyecto}
-              onChange={(e) => setEstadoInicialProyecto(e.target.value)}
-              readOnly={!puedeEditarEstadoInicial}
-              rows={4}
-              placeholder="Describe el estado inicial, hallazgos principales y condiciones del vehículo al recibirlo."
-              className={`w-full px-4 py-3 rounded-lg border text-sm resize-none outline-none ${puedeEditarEstadoInicial ? "focus:ring-2 focus:ring-sky-500" : "opacity-90"} ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
+              value={descripcionProyecto}
+              onChange={(e) => setDescripcionProyecto(e.target.value)}
+              readOnly={!canUpload}
+              rows={3}
+              placeholder="Descripción general del proyecto…"
+              className={`w-full px-4 py-3 rounded-lg border text-sm resize-none outline-none ${canUpload ? "focus:ring-2 focus:ring-sky-500" : "opacity-90"} ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-100" : "bg-white border-gray-200 text-gray-800"}`}
             />
-
-            <div className="mt-3 flex items-center justify-between gap-3">
-              
-              
-            </div>
-
-            {estadoInicialError && (
-              <p className="mt-2 text-xs text-red-500">{estadoInicialError}</p>
+            {canUpload && (
+              <button
+                 onClick={handleGuardarDescripcion}
+                 disabled={descripcionGuardando || descripcionProyecto === (proyecto?.descripcion || "")}
+                className="mt-2 px-3 py-1.5 rounded-md text-xs font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: C_BLUE }}
+              >{descripcionGuardando ? "Guardando…" : "Guardar descripción"}</button>
             )}
+            {descripcionError && <p className="mt-1 text-xs text-red-500">{descripcionError}</p>}
+          </div>
 
-            <div className={`mt-4 pt-4 border-t ${divider} space-y-4`}>
-              <DiagnosticoInicialSection
-                proyecto={proyecto}
-                darkMode={darkMode}
-                session={session}
-                canUpload={canUpload}
-                diagnosticoInicial={diagnosticoInicial}
-                formatoBasico={diagnosticoFormatoBasico}
-              />
+          {/* ── Diagnóstico inicial ── */}
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <DiagnosticoInicialSection
+              proyecto={proyecto}
+              darkMode={darkMode}
+              session={session}
+              canUpload={canUpload}
+              diagnosticoInicial={diagnosticoInicial}
+              formatoBasico={diagnosticoFormatoBasico}
+            />
+          </div>
 
-              <div>
-                <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st}`}>Observaciones</p>
-                {observaciones.length === 0 ? (
-                  <p className={`text-xs ${st}`}>Aún no hay observaciones registradas.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {observaciones.map((obs) => (
-                      <div key={obs.id} className={`rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-700 bg-[#21212b]" : "border-gray-200 bg-gray-50"}`}>
-                        <p className={`text-sm whitespace-pre-wrap ${t}`}>{cleanHallazgosText(obs.hallazgos || "")}</p>
-                        <p className={`text-[11px] mt-2 ${st}`}>
-                          {obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : "Observación registrada"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-              </div>
-            </div>
-            
+          {/* ── Cotización ── */}
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <CotizacionDetalleSection
+              proyecto={proyecto}
+              darkMode={darkMode}
+              session={session}
+              canUpload={canUpload}
+              onActualizado={onProjectUpdated}
+            />
+          </div>
+
+          {/* ── Observaciones ── */}
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <ObservacionesSection
+              proyecto={proyecto}
+              darkMode={darkMode}
+              canUpload={canUpload}
+              session={session}
+            />
+          </div>
+
+          {/* ── Diagnóstico final ── */}
+          <div className={`px-6 py-4 border-b ${divider}`}>
+            <DiagnosticoFinalSection
+              proyecto={proyecto}
+              darkMode={darkMode}
+              session={session}
+              canUpload={canUpload}
+              diagnosticoInicial={diagnosticoInicial}
+              diagnosticoFinal={diagnosticosProyecto.find(d => d.tipo === "final") || null}
+            />
           </div>
           
           <div className={`px-6 py-4 border-b ${divider}`}>
             <p className={`text-xs font-semibold uppercase tracking-widest ${st} mb-3`}>Refacciones en este trabajo</p>
 
             {diagnosticoFormatoBasico && canUpload && (
-              <div className="mb-3 grid grid-cols-1 sm:grid-cols-[1fr_120px_auto] gap-2 items-end">
-                <div>
-                  <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Refacción</label>
-                  <Select darkMode={darkMode} value={refNuevaId} onChange={(e) => setRefNuevaId(e.target.value)}>
-                    <option value="">Seleccionar refacción…</option>
-                    {refCatalog.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.nombre} ({r.numero_parte || "SIN NUMERO"}) · Stock: {r.stock}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div>
-                  <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Cantidad</label>
-                  <Input
-                    darkMode={darkMode}
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={refNuevaCantidad}
-                    onChange={(e) => setRefNuevaCantidad(e.target.value)}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAgregarRefaccion}
-                  disabled={addingRefaccion}
-                  className="px-3 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
-                  style={{ backgroundColor: C_BLUE }}
-                >
-                  {addingRefaccion ? "Agregando..." : "Agregar"}
-                </button>
+            <div className="mb-3 grid grid-cols-1 sm:grid-cols-[1fr_120px_auto] gap-2 items-end">
+              <div>
+                <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Refacción</label>
+                <Select darkMode={darkMode} value={refNuevaId} onChange={(e) => setRefNuevaId(e.target.value)}>
+                  <option value="">Seleccionar refacción…</option>
+                  {refCatalog.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.nombre} ({r.numero_parte || "SIN NUMERO"}) · Stock: {r.stock}
+                    </option>
+                  ))}
+                </Select>
               </div>
-            )}
+              <div>
+                <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Cantidad</label>
+                <Input
+                  darkMode={darkMode}
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={refNuevaCantidad}
+                  onChange={(e) => setRefNuevaCantidad(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAgregarRefaccion}
+                disabled={addingRefaccion}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                style={{ backgroundColor: C_BLUE }}
+              >
+                {addingRefaccion ? "Agregando..." : "Agregar"}
+              </button>
+            </div>
+          )}
+          {/* Refacciones de cotización */}
+          {refaccionesCotizacion.length > 0 && (
+            <>
+              <p className={`text-[10px] font-semibold uppercase tracking-widest mt-4 mb-2 ${st}`}>
+                Refacciones cotizadas
+              </p>
+              {refaccionesCotizacion.map((item) => (
+                <div key={item.id} className="flex justify-between items-center py-2 text-sm">
+                  <div>
+                    <p className={t}>{item.refacciones?.nombre || "—"}</p>
+                    <p className={st}>{item.refacciones?.numero_parte || "Sin número"} · Cant: {item.cantidad}</p>
+                  </div>
+                  <p className={`text-sm font-medium ${t}`}>${Number(item.precio_unit || 0).toFixed(2)}</p>
+                </div>
+              ))}
+            </>
+          )}
 
             {refSaveError && <p className="text-xs mb-2" style={{ color: C_RED }}>{refSaveError}</p>}
             {loadingRefacciones ? (
@@ -3204,19 +3594,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
             )}
             
           </div>
-          
-              {puedeEditarEstadoInicial && canUpload && (
-  <div className="flex justify-end px-6 py-4">
-    <button
-      type="button"
-      onClick={handleGuardarEstadoInicial}
-      disabled={estadoInicialGuardando}
-      className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50"
-    >
-      {estadoInicialGuardando ? "Guardando..." : "Guardar y pasar a en progreso"}
-    </button>
-  </div>
-)}
         </div>
       </div>
             
