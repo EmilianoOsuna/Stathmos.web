@@ -1604,6 +1604,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                   cantidad: item.cantidad,
                   precio_unit: item.precio_unit,
                   cotizacion_id: cotizacionId,
+                  proyecto_id: editTarget?.id || proyectoIdFinal,
                 },
               });
             }
