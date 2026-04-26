@@ -1286,7 +1286,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   // ─── Diagnóstico inicial en el modal ─────────────────────────────────────────
   const DIAG_TIPOS = ["inicial", "preventivo", "correctivo", "revision"];
-  const diagFormInit = { tipo: "inicial", sintomas: "", hallazgos: "", causa_raiz: "" };
+  const diagFormInit = { tipo: "preventivo", sintomas: "", hallazgos: "", causa_raiz: "" };
   const [diagForm,     setDiagForm]     = useState(diagFormInit);
   const [diagError,    setDiagError]    = useState("");
   // Diagnóstico existente en el proyecto que se está editando
@@ -2040,11 +2040,11 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               {existingDiag && !editandoDiag ? (
                 <div className="flex flex-col gap-2">
                   <div className={`rounded-md border px-3 py-2 text-sm ${darkMode ? "border-zinc-700 bg-[#21212b] text-zinc-300" : "border-gray-200 bg-white text-gray-700"}`}>
-                    <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Tipo</p>
-                    <p>{existingDiag.tipo || "—"}</p>
-                    <p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Diagnóstico inicial</p>
+                    <p className={`text-[10px] font-semibold uppercase tracking-widest mb-1 ...`}>Tipo de servicio</p>
+                    <p className="capitalize">{existingDiag.tipo || "—"}</p>
+                    <p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ...`}>Descripción</p>
                     <p>{existingDiag.sintomas || "—"}</p>
-                    {existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa del problema</p><p>{existingDiag.causa_raiz}</p></>}
+                    {existingDiag.tipo === "correctivo" && existingDiag.causa_raiz && <><p className={`text-[10px] font-semibold uppercase tracking-widest mt-2 mb-1 ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>Causa del problema</p><p>{existingDiag.causa_raiz}</p></>}
                   </div>
                   <button
                     type="button"
@@ -2057,20 +2057,21 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               ) : (
                 <div className="flex flex-col gap-3">
                   
-                  {/* Tipo de diagnóstico no necesario
-                  <Field label="Tipo" darkMode={darkMode}>
-                    <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value})}>
-                      {DIAG_TIPOS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                  <Field label="Tipo de servicio" darkMode={darkMode}>
+                    <Select darkMode={darkMode} value={diagForm.tipo} onChange={(e) => setDiagForm({...diagForm, tipo: e.target.value, causa_raiz: ""})}>
+                      <option value="preventivo">Preventivo</option>
+                      <option value="correctivo">Correctivo</option>
+                      <option value="revision">Revisión</option>
                     </Select>
                   </Field>
-                  */}
-
                   <Field label="Descripción" darkMode={darkMode}>
                     <Textarea darkMode={darkMode} rows={2} value={diagForm.sintomas} onChange={(e) => setDiagForm({...diagForm, sintomas: e.target.value})} placeholder="Describe el diagnóstico inicial del vehículo…" />
                   </Field>
-                  <Field label="Causa del problema" darkMode={darkMode}>
-                    <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
-                  </Field>
+                  {diagForm.tipo === "correctivo" && (
+                    <Field label="Posible Causa del problema" darkMode={darkMode}>
+                      <Input darkMode={darkMode} value={diagForm.causa_raiz} onChange={(e) => setDiagForm({...diagForm, causa_raiz: e.target.value})} placeholder="Causa probable del problema…" />
+                    </Field>
+                  )}
                   {editandoDiag && (
                     <button
                       type="button"
