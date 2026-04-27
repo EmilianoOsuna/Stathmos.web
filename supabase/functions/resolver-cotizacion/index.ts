@@ -158,7 +158,11 @@ serve(async (req) => {
       );
     }
 
-    if (!["pendiente", "modificada"].includes(cotizacion.estado)) {
+    const estadosPermitidos = accionNorm === "aprobar"
+      ? ["pendiente", "modificada", "rechazada"]
+      : ["pendiente", "modificada"];
+
+    if (!estadosPermitidos.includes(cotizacion.estado)) {
       return new Response(
         JSON.stringify({ success: false, error: "Cotizacion ya resuelta" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
@@ -268,7 +272,7 @@ serve(async (req) => {
 
     if (updateCotErr) throw updateCotErr;
 
-    const estadoProyecto = accionNorm === "aprobar" ? "en_progreso" : "cancelado";
+    const estadoProyecto = accionNorm === "aprobar" ? "en_progreso" : "no_aprobado";
     const updateProyecto = {
       estado: estadoProyecto,
       updated_at: nowIso,

@@ -81,7 +81,18 @@ const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ESTADOS_PROYECTO = ["activo","pendiente_diagnostico","pendiente_cotizacion","pendiente_aprobacion","en_progreso","pendiente_refaccion","terminado","entregado","cancelado"];
+const ESTADOS_PROYECTO = [
+  "pendiente_diagnostico",
+  "pendiente_cotizacion",
+  "pendiente_aprobacion",
+  "en_progreso",
+  "pendiente_refaccion",
+  "terminado",
+  "entregado",
+  "no_aprobado",
+  "cancelado",
+  "activo",
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const estadoBadge = (estado, darkMode) => {
@@ -94,6 +105,7 @@ const estadoBadge = (estado, darkMode) => {
     pendiente_refaccion:   "bg-purple-900/50 text-purple-300 border-purple-800",
     terminado:             "bg-emerald-900/50 text-emerald-300 border-emerald-800",
     entregado:             "bg-teal-900/50 text-teal-300 border-teal-800",
+    no_aprobado:           "bg-rose-900/50 text-rose-300 border-rose-800",
     cancelado:             "bg-zinc-800 text-zinc-400 border-zinc-700",
   };
   const light = {
@@ -105,6 +117,7 @@ const estadoBadge = (estado, darkMode) => {
     pendiente_refaccion:   "bg-purple-50 text-purple-700 border-purple-200",
     terminado:             "bg-emerald-50 text-emerald-700 border-emerald-200",
     entregado:             "bg-teal-50 text-teal-700 border-teal-200",
+    no_aprobado:           "bg-rose-50 text-rose-700 border-rose-200",
     cancelado:             "bg-gray-100 text-gray-500 border-gray-200",
   };
   const m = darkMode ? dark : light;
@@ -122,6 +135,7 @@ const ESTADO_LABELS = {
   pendiente_refaccion: "Pendiente (refacción)",
   terminado: "Terminado",
   entregado: "Entregado",
+  no_aprobado: "No aprobado",
   cancelado: "Cancelado",
 };
 
@@ -310,6 +324,8 @@ const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado ===
   Purpose: allow safe server-side creation of `pagos` (bypassing RLS securely) while providing a local offline mode for testing when Supabase access isn't available.
 */
 
+const PAYMENT_ALLOWED_STATES = ["en_progreso", "pendiente_refaccion", "terminado"];
+
 const isPayable = (ticket) => {
   const estadoRaw = typeof ticket === "string" ? ticket : ticket?.estado;
   const cotizacion = typeof ticket === "object" && ticket
@@ -319,7 +335,7 @@ const isPayable = (ticket) => {
   const estado = String(estadoRaw || "").toLowerCase().trim();
   const cotizacionAprobada = cotizacion?.estado === "aprobada";
 
-  return estado === "en_progreso" && cotizacionAprobada;
+  return PAYMENT_ALLOWED_STATES.includes(estado) && cotizacionAprobada;
 };
 
 const normalizeRole = (value = "") =>
@@ -1265,17 +1281,30 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [modalOpen,    setModalOpen]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "pendiente_diagnostico", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [filteredVehiculos, setFilteredVehiculos] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const [stateConfirm, setStateConfirm] = useState(null);
 
   const handleProyectoActualizado = (updates) => {
     if (!updates?.id) return;
 
     setProyectos((prev) => prev.map((p) => (p.id === updates.id ? { ...p, ...updates } : p)));
     setDetalle((prev) => (prev?.id === updates.id ? { ...prev, ...updates } : prev));
+  };
+
+  const hasApprovedPaymentForProject = async (proyectoId) => {
+    const { data, error } = await supabase
+      .from("pagos")
+      .select("id")
+      .eq("proyecto_id", proyectoId)
+      .eq("estado", "completado")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return Boolean(data?.id);
   };
   const [refCatalog, setRefCatalog] = useState([]);
   const [refSearch, setRefSearch] = useState("");
@@ -1440,13 +1469,20 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     r.numero_parte?.toLowerCase().includes(refSearch.toLowerCase())
   );
 
+  const adminManualStatusOptions = useMemo(() => {
+    if (!editTarget) return [];
+    const base = ["en_progreso", "pendiente_refaccion", "terminado", "entregado", "cancelado"];
+    const current = form.estado;
+    return base.includes(current) ? base : [current, ...base];
+  }, [editTarget, form.estado]);
+
   const openCreate = () => {
     if (!isAdmin) {
       setFormError("Solo administradores pueden crear nuevos proyectos.");
       return;
     }
     setEditTarget(null);
-    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "activo", bloqueado: false, monto_mano_obra: "", monto_refacc: "", cita_id: "" });    setFormError("");
+    setForm({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "pendiente_diagnostico", bloqueado: false, monto_mano_obra: "", monto_refacc: "", cita_id: "" });    setFormError("");
     setRefCart([]);
     setRefCartDraft(null);
     setRefSearch("");
@@ -1473,7 +1509,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       cliente_id: p.cliente_id || "",
       vehiculo_id: p.vehiculo_id || "",
       mecanico_id: p.mecanico_id || "",
-      estado: p.estado || "activo",
+      estado: p.estado || "pendiente_diagnostico",
       bloqueado: p.bloqueado ?? false,
       monto_mano_obra: cotizacion?.monto_mano_obra != null ? String(cotizacion.monto_mano_obra) : "",
       monto_refacc: cotizacion?.monto_refacc != null ? String(cotizacion.monto_refacc) : "",
@@ -1587,6 +1623,49 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       setSaving(false);
       setFormError("La cotización debe contener montos válidos (mayores o iguales a 0).");
       return;
+    }
+
+    if (editTarget && form.estado !== editTarget.estado) {
+      if (isMecanico) {
+        setSaving(false);
+        setFormError("Los mecánicos no pueden cambiar manualmente el estado desde este formulario.");
+        return;
+      }
+
+      if (isAdmin) {
+        const adminAllowed = ["en_progreso", "pendiente_refaccion", "terminado", "entregado", "cancelado"];
+        if (!adminAllowed.includes(form.estado)) {
+          setSaving(false);
+          setFormError("Solo puedes cambiar manualmente a: En progreso, Pendiente (refacción), Terminado, Entregado o Cancelado.");
+          return;
+        }
+      }
+
+      if (form.estado === "entregado") {
+        if (!isAdmin) {
+          setSaving(false);
+          setFormError("Solo el administrador puede marcar un proyecto como entregado.");
+          return;
+        }
+        try {
+          const hasApprovedPayment = await hasApprovedPaymentForProject(editTarget.id);
+          if (!hasApprovedPayment) {
+            setSaving(false);
+            setFormError("No puedes marcar como entregado sin un pago aprobado.");
+            return;
+          }
+        } catch (paymentCheckErr) {
+          setSaving(false);
+          setFormError(paymentCheckErr?.message || "No se pudo validar el pago del proyecto.");
+          return;
+        }
+      }
+
+      if (form.estado === "cancelado" && !isAdmin) {
+        setSaving(false);
+        setFormError("Solo el administrador puede cancelar un proyecto.");
+        return;
+      }
     }
 
     const syncRefaccionItems = async (cotizacionId, proyectoId) => {
@@ -1732,11 +1811,11 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     };
       const tieneDiag = diagForm.sintomas.trim();
       const tieneCot  = manoObra > 0 || refacc > 0;
-      const estadoInicial = tieneCot && tieneDiag
-        ? "en_progreso"
-        : tieneDiag
-          ? "pendiente_cotizacion"
-          : "pendiente_diagnostico";
+      const estadoInicial = !tieneDiag
+        ? "pendiente_diagnostico"
+        : tieneCot
+          ? "pendiente_aprobacion"
+          : "pendiente_cotizacion";
     const payload = {
       titulo: normalizeForSAT(form.titulo),
       descripcion: form.descripcion || null,
@@ -1824,6 +1903,17 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .eq("id", existingCotizacion.id);
           error = quoteUpdate.error;
           if (!error) {
+            if (quoteChangedInDb) {
+              const { error: projectStatusErr } = await supabase
+                .from("proyectos")
+                .update({ estado: "pendiente_aprobacion", updated_at: new Date().toISOString() })
+                .eq("id", editTarget.id);
+              if (projectStatusErr) {
+                error = projectStatusErr;
+              }
+            }
+          }
+          if (!error) {
             const syncErr = await syncRefaccionItems(existingCotizacion.id, editTarget.id);
             if (syncErr) error = syncErr;
           }
@@ -1835,6 +1925,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .single();
           error = quoteInsert.error;
           if (!error) {
+            const { error: projectStatusErr } = await supabase
+              .from("proyectos")
+              .update({ estado: "pendiente_aprobacion", updated_at: new Date().toISOString() })
+              .eq("id", editTarget.id);
+            if (projectStatusErr) {
+              error = projectStatusErr;
+            }
+          }
+          if (!error) {
             const syncErr = await syncRefaccionItems(quoteInsert.data?.id, editTarget.id);
             if (syncErr) error = syncErr;
           }
@@ -1842,12 +1941,6 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
       }
     } else {
-      if (form.estado === "en_progreso") {
-        setSaving(false);
-        setFormError("No puedes iniciar ejecución en un proyecto nuevo sin aprobación previa del cliente.");
-        return;
-      }
-
       const { data: createdProject, error: createError } = await supabase
         .from("proyectos")
         .insert([{ ...payload, fecha_ingreso: new Date().toISOString() }])
@@ -1975,6 +2068,54 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const divider = darkMode ? "divide-zinc-800" : "divide-gray-100";
   const rowH    = darkMode ? "hover:bg-[#25252f]" : "hover:bg-gray-50";
   const headTxt = darkMode ? "text-zinc-500 border-zinc-800" : "text-gray-400 border-gray-100";
+
+  const handleAdminEstadoChange = async (nextEstado) => {
+    setFormError("");
+    if (!editTarget) {
+      setForm((prev) => ({ ...prev, estado: nextEstado }));
+      return;
+    }
+    if (nextEstado === form.estado) return;
+
+    if (nextEstado === "entregado") {
+      try {
+        const hasApprovedPayment = await hasApprovedPaymentForProject(editTarget.id);
+        if (!hasApprovedPayment) {
+          setFormError("No puedes marcar como entregado sin un pago aprobado.");
+          return;
+        }
+      } catch (paymentCheckErr) {
+        setFormError(paymentCheckErr?.message || "No se pudo validar el pago del proyecto.");
+        return;
+      }
+      setForm((prev) => ({ ...prev, estado: nextEstado }));
+      return;
+    }
+
+    if (nextEstado === "terminado") {
+      setStateConfirm({
+        title: "Confirmar estado terminado",
+        message: "¿Confirmas que deseas marcar este proyecto como <strong>terminado</strong>?",
+        confirmLabel: "Marcar terminado",
+        confirmColor: C_BLUE,
+        nextEstado,
+      });
+      return;
+    }
+
+    if (nextEstado === "cancelado") {
+      setStateConfirm({
+        title: "Confirmar cancelación",
+        message: "¿Confirmas que deseas marcar este proyecto como <strong>cancelado</strong>?",
+        confirmLabel: "Cancelar proyecto",
+        confirmColor: C_RED,
+        nextEstado,
+      });
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, estado: nextEstado }));
+  };
 
 
 
@@ -2144,8 +2285,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           
           {isAdmin && editTarget &&(
             <Field label="Estado" darkMode={darkMode}>
-              <Select darkMode={darkMode} value={form.estado} onChange={(e) => setForm({...form, estado: e.target.value})}>
-                {ESTADOS_PROYECTO.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
+              <Select darkMode={darkMode} value={form.estado} onChange={(e) => handleAdminEstadoChange(e.target.value)}>
+                {adminManualStatusOptions.map((e) => <option key={e} value={e}>{e.replace(/_/g, " ")}</option>)}
               </Select>
             </Field>
           )}
@@ -2500,6 +2641,23 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         title="Cancelar Proyecto"
         message={`¿Cancelar el proyecto <strong>${deleteTarget?.titulo}</strong>? El estado cambiará a "cancelado".`}
         onConfirm={handleDelete} confirmLabel="Cancelar Proyecto" confirmColor={C_RED} darkMode={darkMode}
+      />
+
+      <ConfirmModal
+        open={!!stateConfirm}
+        onClose={() => setStateConfirm(null)}
+        title={stateConfirm?.title || "Confirmación"}
+        message={stateConfirm?.message || "¿Deseas continuar?"}
+        onConfirm={() => {
+          const nextEstado = stateConfirm?.nextEstado;
+          setStateConfirm(null);
+          if (nextEstado) {
+            setForm((prev) => ({ ...prev, estado: nextEstado }));
+          }
+        }}
+        confirmLabel={stateConfirm?.confirmLabel || "Confirmar"}
+        confirmColor={stateConfirm?.confirmColor || C_BLUE}
+        darkMode={darkMode}
       />
       <ProyectoDetalleModal
         open={!!detalle} onClose={() => setDetalle(null)}
@@ -4823,7 +4981,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
         return;
       }
       if (!isPayable(selectedTicket)) {
-        setPaymentError("No es posible procesar el pago: la cotización debe estar aprobada y el proyecto en progreso.");
+        setPaymentError("No es posible procesar el pago: la cotización debe estar aprobada y el proyecto en progreso, pendiente de refacción o terminado.");
         setProcessingPayment(false);
         return;
       }
@@ -4906,14 +5064,13 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
     const montoRefacciones = selectedTicket.cotizacion?.monto_refacc || 0;
     const cotizacionAprobada = selectedTicket.cotizacion?.estado === "aprobada";
     const estadoProyecto = String(selectedTicket.estado || "").toLowerCase().trim();
-    const proyectoEnProgreso = estadoProyecto === "en_progreso";
-    const pagoHabilitado = proyectoEnProgreso && cotizacionAprobada;
-    const bloqueoProcesoTecnico = estadoProyecto === "pendiente_cotizacion" || !cotizacionAprobada;
+    const pagoHabilitado = PAYMENT_ALLOWED_STATES.includes(estadoProyecto) && cotizacionAprobada;
+    const bloqueoProcesoTecnico = ["pendiente_diagnostico", "pendiente_cotizacion", "pendiente_aprobacion", "no_aprobado"].includes(estadoProyecto) || !cotizacionAprobada;
     const mensajePagoNoDisponible = estadoProyecto === "entregado"
       ? "Este proyecto ya fue pagado."
       : bloqueoProcesoTecnico
         ? "El proceso técnico no ha iniciado. Debes aprobar la cotización antes de pagar."
-        : "El pago se habilitará cuando el proyecto esté en progreso y la cotización aprobada.";
+        : "El pago se habilitará cuando el proyecto esté en progreso, pendiente de refacción o terminado, con cotización aprobada.";
 
     return (
       <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
@@ -5382,6 +5539,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   const [decisionLoadingId, setDecisionLoadingId] = useState(null);
   const [decisionError, setDecisionError] = useState("");
   const [decisionSuccess, setDecisionSuccess] = useState("");
+  const [quoteConfirm, setQuoteConfirm] = useState(null);
 
   const fetch = useCallback(async () => {
     if (!clienteId) {
@@ -5526,6 +5684,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
                   {(() => {
                     const cot = getLatestCotizacion(p);
                     const quotePending = cot && ["pendiente", "modificada"].includes(cot.estado);
+                    const quoteApprovable = cot && ["pendiente", "modificada", "rechazada"].includes(cot.estado);
                     return (
                       <>
                         <div className="flex items-center gap-2 mb-1">
@@ -5546,22 +5705,30 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
                             Presupuesto estimado: <span className="font-semibold">${Number(cot.monto_total || (Number(cot.monto_mano_obra || 0) + Number(cot.monto_refacc || 0))).toFixed(2)}</span>
                           </p>
                         )}
-                        {quotePending && (
+                        {quoteApprovable && (
                           <div className="flex gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
                             <button
                               disabled={decisionLoadingId === p.id}
-                              onClick={() => handleCotizacionDecision(p, "aprobar")}
+                              onClick={() => setQuoteConfirm({
+                                proyecto: p,
+                                decision: "aprobar",
+                                title: "Confirmar aprobación",
+                                message: "¿Confirmas que deseas <strong>aprobar</strong> la cotización actual?",
+                                confirmLabel: "Aprobar cotización",
+                              })}
                               className="px-2.5 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                             >
                               {decisionLoadingId === p.id ? "Procesando..." : "Aprobar"}
                             </button>
-                            <button
-                              disabled={decisionLoadingId === p.id}
-                              onClick={() => handleCotizacionDecision(p, "rechazar")}
-                              className="px-2.5 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                            >
-                              Rechazar
-                            </button>
+                            {quotePending && (
+                              <button
+                                disabled={decisionLoadingId === p.id}
+                                onClick={() => handleCotizacionDecision(p, "rechazar")}
+                                className="px-2.5 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                Rechazar
+                              </button>
+                            )}
                           </div>
                         )}
                       </>
@@ -5594,6 +5761,24 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
         canUpload={false} session={session}
+      />
+
+      <ConfirmModal
+        open={!!quoteConfirm}
+        onClose={() => setQuoteConfirm(null)}
+        title={quoteConfirm?.title || "Confirmación"}
+        message={quoteConfirm?.message || "¿Deseas continuar?"}
+        onConfirm={() => {
+          const proyecto = quoteConfirm?.proyecto;
+          const decision = quoteConfirm?.decision;
+          setQuoteConfirm(null);
+          if (proyecto && decision) {
+            handleCotizacionDecision(proyecto, decision);
+          }
+        }}
+        confirmLabel={quoteConfirm?.confirmLabel || "Confirmar"}
+        confirmColor={C_BLUE}
+        darkMode={darkMode}
       />
     </div>
   );
@@ -5654,6 +5839,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
   const [loading,      setLoading]      = useState(true);
   const [filterEstado, setFilterEstado] = useState("todos");
   const [actionError,  setActionError]  = useState("");
+  const [estadoConfirm, setEstadoConfirm] = useState(null);
   const fetch = useCallback(async () => {
     if (!empleadoId) return;
     setLoading(true);
@@ -5686,10 +5872,29 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
 
 
 
-  const handleEstadoChange = async (proyecto, nuevoEstado) => {
+  const getMecanicoAllowedTransitions = (estadoActual) => {
+    const actual = String(estadoActual || "").toLowerCase().trim();
+    if (actual === "en_progreso") return ["en_progreso", "pendiente_refaccion", "terminado"];
+    if (actual === "pendiente_refaccion") return ["pendiente_refaccion", "en_progreso", "terminado"];
+    if (actual === "terminado") return ["terminado"];
+    return [];
+  };
+
+  const handleEstadoChange = async (proyecto, nuevoEstado, skipConfirm = false) => {
     setActionError("");
-    if (nuevoEstado === "en_progreso" && !hasApprovedQuote(proyecto)) {
-      setActionError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
+    const allowedTransitions = getMecanicoAllowedTransitions(proyecto?.estado);
+    if (!allowedTransitions.includes(nuevoEstado)) {
+      setActionError("Transición de estado no permitida para mecánico.");
+      return;
+    }
+
+    if (nuevoEstado !== proyecto?.estado && !hasApprovedQuote(proyecto)) {
+      setActionError("No puedes cambiar el estado sin cotización aprobada por el cliente.");
+      return;
+    }
+
+    if (nuevoEstado === "terminado" && !skipConfirm) {
+      setEstadoConfirm({ proyecto, nuevoEstado });
       return;
     }
 
@@ -5784,17 +5989,21 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
                   <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(p.estado, darkMode)}`}>
                     {p.estado.replace(/_/g, " ")}
                   </span>
-                  {!["entregado","cancelado"].includes(p.estado) && (
-                    <select
-                      className={`text-xs rounded px-2 py-1 border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}
-                      value={p.estado}
-                      onChange={(e) => handleEstadoChange(p, e.target.value)}
-                    >
-                      {ESTADOS_PROYECTO.filter((s) => s !== "entregado" && s !== "cancelado").map((s) => (
-                        <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-                      ))}
-                    </select>
-                  )}
+                  {(() => {
+                    const options = getMecanicoAllowedTransitions(p.estado);
+                    if (options.length <= 1) return null;
+                    return (
+                      <select
+                        className={`text-xs rounded px-2 py-1 border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                        value={p.estado}
+                        onChange={(e) => handleEstadoChange(p, e.target.value)}
+                      >
+                        {options.map((s) => (
+                          <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
@@ -5805,6 +6014,24 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
         open={!!detalle} onClose={() => setDetalle(null)}
         proyecto={detalle} darkMode={darkMode}
         canUpload={false} session={session} diagnosticoFormatoBasico={true}
+      />
+
+      <ConfirmModal
+        open={!!estadoConfirm}
+        onClose={() => setEstadoConfirm(null)}
+        title="Confirmar estado terminado"
+        message="¿Confirmas que deseas marcar este proyecto como <strong>terminado</strong>?"
+        onConfirm={() => {
+          const proyecto = estadoConfirm?.proyecto;
+          const next = estadoConfirm?.nuevoEstado;
+          setEstadoConfirm(null);
+          if (proyecto && next) {
+            handleEstadoChange(proyecto, next, true);
+          }
+        }}
+        confirmLabel="Marcar terminado"
+        confirmColor={C_BLUE}
+        darkMode={darkMode}
       />
     </div>
   );

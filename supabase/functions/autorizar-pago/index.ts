@@ -8,6 +8,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+const normalizeRole = (value = "") =>
+  String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -25,6 +32,39 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized: missing token" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    const { data: authData, error: authErr } = await supabaseAdmin.auth.getUser(token);
+    if (authErr || !authData?.user?.id) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+      );
+    }
+
+    const { data: perfil, error: perfilErr } = await supabaseAdmin
+      .from("usuarios")
+      .select("rol_id")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (perfilErr) throw perfilErr;
+
+    let rolNombre = "";
+    if (perfil?.rol_id) {
+      const { data: rolData, error: rolErr } = await supabaseAdmin
+        .from("roles")
+        .select("nombre")
+        .eq("id", perfil.rol_id)
+        .maybeSingle();
+      if (rolErr) throw rolErr;
+      rolNombre = normalizeRole(rolData?.nombre || "");
+    }
+
+    if (!["administrador", "admin"].includes(rolNombre)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Forbidden: solo administrador puede autorizar pagos" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
       );
     }
 

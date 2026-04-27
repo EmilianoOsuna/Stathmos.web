@@ -87,9 +87,10 @@ serve(async (req) => {
     }
 
     const estadoProyecto = String(proyecto.estado || "").toLowerCase().trim();
-    if (estadoProyecto !== "en_progreso" && estadoProyecto !== "terminado") {
+    const estadosPermitidosPago = ["en_progreso", "pendiente_refaccion", "terminado"];
+    if (!estadosPermitidosPago.includes(estadoProyecto)) {
       return new Response(
-        JSON.stringify({ success: false, error: "Proyecto no disponible para pago: debe estar en 'En progreso' o 'Terminado'." }),
+        JSON.stringify({ success: false, error: "Proyecto no disponible para pago: debe estar en 'En progreso', 'Pendiente de refacción' o 'Terminado'." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
       );
     }
