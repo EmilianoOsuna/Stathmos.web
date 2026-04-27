@@ -1317,7 +1317,7 @@ const VehiculosModule = ({ darkMode }) => {
 };
 
 // ─── PROYECTOS MODULE ─────────────────────────────────────────────────────────
-const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
+const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoId = null }) => {
   const [proyectos,  setProyectos]  = useState([]);
   const [clientes,   setClientes]   = useState([]);
   const [vehiculos,  setVehiculos]  = useState([]);
@@ -1385,16 +1385,22 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [p, c, v, e, r, ci] = await Promise.all([  // ← agrega ci
-      supabase.from("proyectos").select("*,observaciones, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)").order("created_at", { ascending: false }),
+    let proyectosQuery = supabase
+      .from("proyectos")
+      .select("*,observaciones, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
+      .order("created_at", { ascending: false });
+    if (empleadoId) proyectosQuery = proyectosQuery.eq("mecanico_id", empleadoId);
+
+    const [p, c, v, e, r, ci] = await Promise.all([
+      proyectosQuery,
       supabase.from("clientes").select("id,nombre,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,stock,activo").eq("activo", true).order("nombre"),
       supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado,proyectos(id)").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
     ]);
-    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);  // ← agrega setCitas
-  }, []);
+    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);
+  }, [empleadoId]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // Usar el hook global en lugar de la suscripción manual
@@ -1547,12 +1553,6 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setModalOpen(true);
   };
   const openEdit = async (p) => {
-    // Validar permisos: mecánico solo en ciertos estados
-    if (isMecanico && !["en_progreso", "pendiente_refaccion", "terminado"].includes(p.estado)) {
-      setFormError(`Mecánicos solo pueden editar proyectos en: En progreso, Pendiente (refacción), o Terminado. Este proyecto está en: ${estadoLabel(p.estado)}`);
-      return;
-    }
-    
     const cotizacion = getLatestCotizacion(p);
     setEditTarget(p);
     setForm({
@@ -1679,9 +1679,18 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
     if (editTarget && form.estado !== editTarget.estado) {
       if (isMecanico) {
-        setSaving(false);
-        setFormError("Los mecánicos no pueden cambiar manualmente el estado desde este formulario.");
-        return;
+        const mecAllowed = (() => {
+          const actual = String(editTarget.estado || "").toLowerCase().trim();
+          if (actual === "en_progreso") return ["en_progreso", "pendiente_refaccion", "terminado"];
+          if (actual === "pendiente_refaccion") return ["pendiente_refaccion", "en_progreso", "terminado"];
+          if (actual === "terminado") return ["terminado"];
+          return [];
+        })();
+        if (!mecAllowed.includes(form.estado)) {
+          setSaving(false);
+          setFormError(`No puedes cambiar el estado a "${form.estado.replace(/_/g, " ")}" desde "${editTarget.estado.replace(/_/g, " ")}".`);
+          return;
+        }
       }
 
       if (isAdmin) {
@@ -2222,7 +2231,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       <ModuleHeader
-        title="Proyectos"
+        title={isMecanico ? "Mis Proyectos Asignados" : "Proyectos"}
         count={filtered.length}
         countLabel="proyectos activos"
         darkMode={darkMode}
@@ -2303,7 +2312,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                       <td className="px-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <BtnEdit onClick={() => openEdit(p)} darkMode={darkMode} />
-                          <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />
+                          {isAdmin && <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />}
                         </div>
                       </td>
                     </tr>
@@ -2326,7 +2335,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                   {p.empleados && <p className={`text-xs ${st}`}>Mecánico: {p.empleados.nombre}</p>}
                   <div className="flex gap-2 mt-1">
                     <BtnEdit onClick={() => openEdit(p)} darkMode={darkMode} />
-                    <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />
+                    {isAdmin && <BtnCancelProject onClick={() => setDeleteTarget(p)} darkMode={darkMode} />}
                   </div>
                 </div>
               ))}
@@ -2338,22 +2347,38 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       {/* Create/Edit modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editTarget ? "Editar Proyecto" : "Nuevo Proyecto"} darkMode={darkMode}>
         <div className="flex flex-col gap-4">
-          <Field label="Título del Proyecto" required darkMode={darkMode}><Input darkMode={darkMode} value={form.titulo} onChange={(e) => setForm({...form, titulo: normalizeUI(e.target.value)})} placeholder="DIAGNOSTICO GENERAL" /></Field>
-          <Field label="Descripción" darkMode={darkMode}><Textarea darkMode={darkMode} rows={3} value={form.descripcion} onChange={(e) => setForm({...form, descripcion: e.target.value})} placeholder="Detalles del servicio…" /></Field>
+          <Field label="Título del Proyecto" required darkMode={darkMode}><Input darkMode={darkMode} value={form.titulo} onChange={(e) => !isMecanico && setForm({...form, titulo: normalizeUI(e.target.value)})} readOnly={isMecanico} placeholder="DIAGNOSTICO GENERAL" /></Field>
+          <Field label="Descripción" darkMode={darkMode}><Textarea darkMode={darkMode} rows={3} value={form.descripcion} onChange={(e) => !isMecanico && setForm({...form, descripcion: e.target.value})} readOnly={isMecanico} placeholder="Detalles del servicio…" /></Field>
           <Field label="Cliente" required darkMode={darkMode}>
-            <Select darkMode={darkMode} value={form.cliente_id} onChange={(e) => setForm({...form, cliente_id: e.target.value, vehiculo_id: ""})}>
-              <option value="">Seleccionar cliente…</option>
-              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </Select>
+            {isMecanico ? (
+              <div className={`px-3 py-2 rounded-lg border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-400" : "bg-gray-100 border-gray-200 text-gray-500"}`}>
+                {clientes.find(c => c.id === form.cliente_id)?.nombre || "—"}
+              </div>
+            ) : (
+              <Select darkMode={darkMode} value={form.cliente_id} onChange={(e) => setForm({...form, cliente_id: e.target.value, vehiculo_id: ""})}>
+                <option value="">Seleccionar cliente…</option>
+                {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </Select>
+            )}
           </Field>
           <Field label="Vehículo" required darkMode={darkMode}>
-            <Select darkMode={darkMode} value={form.vehiculo_id} onChange={(e) => setForm({...form, vehiculo_id: e.target.value, cita_id: ""})} disabled={!form.cliente_id}>
-              <option value="">{form.cliente_id ? "Seleccionar vehículo…" : "Primero selecciona un cliente"}</option>
-              {filteredVehiculos.map((v) => <option key={v.id} value={v.id}>{v.marca} {v.modelo} · {v.placas}</option>)}
-            </Select>
+            {isMecanico ? (
+              <div className={`px-3 py-2 rounded-lg border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-400" : "bg-gray-100 border-gray-200 text-gray-500"}`}>
+                {filteredVehiculos.find(v => v.id === form.vehiculo_id)
+                  ? `${filteredVehiculos.find(v => v.id === form.vehiculo_id).marca} ${filteredVehiculos.find(v => v.id === form.vehiculo_id).modelo} · ${filteredVehiculos.find(v => v.id === form.vehiculo_id).placas}`
+                  : vehiculos.find(v => v.id === form.vehiculo_id)
+                    ? `${vehiculos.find(v => v.id === form.vehiculo_id).marca} ${vehiculos.find(v => v.id === form.vehiculo_id).modelo} · ${vehiculos.find(v => v.id === form.vehiculo_id).placas}`
+                    : "—"}
+              </div>
+            ) : (
+              <Select darkMode={darkMode} value={form.vehiculo_id} onChange={(e) => setForm({...form, vehiculo_id: e.target.value, cita_id: ""})} disabled={!form.cliente_id}>
+                <option value="">{form.cliente_id ? "Seleccionar vehículo…" : "Primero selecciona un cliente"}</option>
+                {filteredVehiculos.map((v) => <option key={v.id} value={v.id}>{v.marca} {v.modelo} · {v.placas}</option>)}
+              </Select>
+            )}
           </Field>
 
-          {(() => {
+          {!isMecanico && (() => {
             const citasFiltradas = citas.filter(
               (ci) => ci.cliente_id === form.cliente_id &&
                       (!form.vehiculo_id || ci.vehiculo_id === form.vehiculo_id) &&
@@ -2384,12 +2409,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             );
           })()}
 
+          {!isMecanico && (
           <Field label="Mecánico Asignado" darkMode={darkMode}>
             <Select darkMode={darkMode} value={form.mecanico_id} onChange={(e) => setForm({...form, mecanico_id: e.target.value})}>
               <option value="">Sin asignar</option>
               {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
             </Select>
           </Field>
+          )}
           
           {isAdmin && editTarget &&(
             <Field label="Estado" darkMode={darkMode}>
@@ -2399,17 +2426,28 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </Field>
           )}
           
-          {isMecanico && editTarget && (
-            <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
-              <p className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Estado Actual</p>
-              <p className={`mt-1 text-sm ${darkMode ? "text-zinc-200" : "text-gray-700"}`}>{estadoLabel(form.estado)}</p>
-              {form.estado !== "terminado" && form.estado !== "entregado" && form.estado !== "cancelado" && (
-                <p className={`mt-2 text-xs ${darkMode ? "text-amber-400" : "text-amber-600"}`}>
-                  Solo puedes cambiar a <strong>Terminado</strong> cuando completes el trabajo.
-                </p>
-              )}
-            </div>
-          )}
+          {isMecanico && editTarget && (() => {
+            const mecTransitions = (() => {
+              const actual = String(form.estado || "").toLowerCase().trim();
+              if (actual === "en_progreso") return ["en_progreso", "pendiente_refaccion", "terminado"];
+              if (actual === "pendiente_refaccion") return ["pendiente_refaccion", "en_progreso", "terminado"];
+              if (actual === "terminado") return ["terminado"]; // no reversible para mecánico
+              return [];
+            })();
+            return (
+              <Field label="Estado" darkMode={darkMode}>
+                {mecTransitions.length <= 1 ? (
+                  <div className={`px-3 py-2 rounded-lg border text-sm ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-400" : "bg-gray-100 border-gray-200 text-gray-500"}`}>
+                    {estadoLabel(form.estado)}
+                  </div>
+                ) : (
+                  <Select darkMode={darkMode} value={form.estado} onChange={(e) => handleAdminEstadoChange(e.target.value)}>
+                    {mecTransitions.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                  </Select>
+                )}
+              </Field>
+            );
+          })()}
 
             {/* ── Diagnóstico inicial ───────────────────────────────────────── */}
             <div className={`rounded-lg border p-3 ${darkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-gray-50"}`}>
@@ -2704,7 +2742,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               <ObservacionesSection
                 proyecto={editTarget}
                 darkMode={darkMode}
-                canUpload={isAdmin}
+                canUpload={isAdmin || isMecanico}
                 session={session}
                 onGuardado={(nuevoTexto) => setEditTarget(prev => ({ ...prev, observaciones: nuevoTexto }))}
               />
@@ -2717,7 +2755,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                 proyecto={editTarget}
                 darkMode={darkMode}
                 session={session}
-                canUpload={isAdmin}
+                canUpload={isAdmin || isMecanico}
                 diagnosticoInicial={Array.isArray(editTarget.diagnosticos) ? editTarget.diagnosticos.find(d => d.tipo === "inicial") || null : null}
                 diagnosticoFinal={Array.isArray(editTarget.diagnosticos) ? editTarget.diagnosticos.find(d => d.tipo === "final") || null : null}
               />
@@ -2737,7 +2775,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
               proyecto={editTarget}
               darkMode={darkMode}
               session={session}
-              canUpload={isAdmin}
+              canUpload={isAdmin || isMecanico}
             />
 
           </>)}
@@ -6141,6 +6179,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
   };
 
   const [detalle, setDetalle] = useState(null);
+  const [mecEditar, setMecEditar] = useState(null);
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
@@ -6214,21 +6253,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
                   <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(p.estado, darkMode)}`}>
                     {p.estado.replace(/_/g, " ")}
                   </span>
-                  {(() => {
-                    const options = getMecanicoAllowedTransitions(p.estado);
-                    if (options.length <= 1) return null;
-                    return (
-                      <select
-                        className={`text-xs rounded px-2 py-1 border outline-none ${darkMode ? "bg-[#2a2a35] border-zinc-700 text-zinc-300" : "bg-gray-50 border-gray-200 text-gray-700"}`}
-                        value={p.estado}
-                        onChange={(e) => handleEstadoChange(p, e.target.value)}
-                      >
-                        {options.map((s) => (
-                          <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-                        ))}
-                      </select>
-                    );
-                  })()}
+                  <BtnEdit onClick={() => setMecEditar(p)} darkMode={darkMode} />
                 </div>
               </div>
             ))}
@@ -6438,7 +6463,7 @@ const DashboardMecanico = ({ session, darkMode }) => {
 
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico" onNotificationClick={handleNotificationClick}>
-      {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} initialProjectId={notifProjectId} />}
+      {activeModule === "proyectos-mecanico" && <ProyectosModule darkMode={darkMode} session={session} empleadoId={empleadoId} initialProjectId={notifProjectId} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "inventario" && <GestionInventario darkMode={darkMode} role="mecanico" />}
     </DashboardShell>
