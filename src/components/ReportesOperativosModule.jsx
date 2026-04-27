@@ -278,191 +278,242 @@ export default function ReportesOperativosModule({ darkMode = false }) {
     }
   };
 
-  const generatePDF = async () => {
-    if (!resumenGeneral) return;
+    const generatePDF = async () => {
+      if (!resumenGeneral) return;
 
-    setGenerandoPDF(true);
-    try {
-      const container = document.createElement("div");
-      container.style.width = "1000px";
-      container.style.padding = "20px";
-      container.style.background = "white";
-      container.style.fontFamily = "Arial, sans-serif";
-      container.style.color = "#333";
+      setGenerandoPDF(true);
+      try {
+        const container = document.createElement("div");
+        container.style.cssText = `
+          width: 794px;
+          background: #ffffff;
+          font-family: Arial, sans-serif;
+          color: #1a1a2e;
+          position: fixed;
+          top: -9999px;
+          left: -9999px;
+        `;
 
-      const html = `
-        <div>
-          <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 10px; text-align: center;">Reporte Operativo</h1>
-          <p style="font-size: 12px; text-align: center; margin-bottom: 20px; color: #666;">Periodo: ${resumenGeneral.periodo}</p>
+        const hoy = new Date().toLocaleDateString("es-MX", {
+          day: "numeric", month: "long", year: "numeric",
+        });
 
-          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Indicadores Clave</h2>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
-            <thead>
-              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Métrica</th>
-                <th style="text-align: right; padding: 12px; font-weight: bold;">Valor</th>
+        const totalMecanicos = Number(resumenGeneral.cargaActivaTotal || 0);
+
+        const kpiCards = [
+          { label: "Ciclo Promedio", value: `${resumenGeneral.tiempoPromedioCiclo} días`, color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe" },
+          { label: "Tasa de Conversión", value: `${resumenGeneral.tasaConversion}%`, color: "#059669", bg: "#f0fdf4", border: "#bbf7d0" },
+          { label: "Carga Activa", value: resumenGeneral.cargaActivaTotal, color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+          { label: "Stock Crítico", value: resumenGeneral.refaccionesCriticas, color: "#dc2626", bg: "#fff1f2", border: "#fecdd3" },
+          { label: "Asistencia Citas", value: `${resumenGeneral.tasaAsistencia}%`, color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+        ].map((k, i) => `
+          <div style="padding: 18px 16px; background: ${k.bg}; border-right: ${i < 4 ? `1px solid ${k.border}` : "none"};">
+            <p style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin: 0 0 6px; font-family: Arial, sans-serif;">${k.label}</p>
+            <p style="font-size: 18px; font-weight: bold; color: ${k.color}; margin: 0; font-family: Arial, sans-serif;">${k.value}</p>
+          </div>
+        `).join("");
+
+        const mecanicoRows = cargaMecanicos.length === 0
+          ? `<tr><td colspan="3" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin carga activa registrada</td></tr>`
+          : cargaMecanicos.map((row, i) => {
+              const ratio = totalMecanicos > 0 ? ((row.activos / totalMecanicos) * 100).toFixed(1) : "0.0";
+              return `
+                <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+                  <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${row.mecanico}</td>
+                  <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #1e40af; font-family: Arial, sans-serif; text-align: center;">${row.activos}</td>
+                  <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: right;">${ratio}%</td>
+                </tr>
+              `;
+            }).join("");
+
+        const stockRows = alertasStock.length === 0
+          ? `<tr><td colspan="4" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin alertas de stock crítico</td></tr>`
+          : alertasStock.map((row, i) => `
+              <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+                <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${row.nombre}</td>
+                <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif;">${row.numero_parte || "—"}</td>
+                <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #dc2626; font-family: Arial, sans-serif; text-align: center;">${row.stock}</td>
+                <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${row.stock_minimo}</td>
               </tr>
-            </thead>
-            <tbody>
-              <tr style="border-bottom: 1px solid #ddd;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tiempo promedio de ciclo (días)</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tiempoPromedioCiclo}</td>
+            `).join("");
+
+        const rotacionRows = rotacionRefacciones.length === 0
+          ? `<tr><td colspan="4" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin movimientos en el periodo</td></tr>`
+          : rotacionRefacciones.map((row, i) => `
+              <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+                <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${row.nombre}</td>
+                <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif;">${row.numero_parte}</td>
+                <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #1e40af; font-family: Arial, sans-serif; text-align: center;">${row.usos}</td>
+                <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${row.movimientos}</td>
               </tr>
-              <tr style="border-bottom: 1px solid #ddd; background-color: #fafafa;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tasa de conversión (%)</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tasaConversion}%</td>
+            `).join("");
+
+        const cuellosRows = cuellosBotella.length === 0
+          ? `<tr><td colspan="3" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin datos de flujo</td></tr>`
+          : cuellosBotella.map((row, i) => `
+              <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+                <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${STATE_LABELS[row.estado] || row.estado}</td>
+                <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #7c3aed; font-family: Arial, sans-serif; text-align: center;">${row.cantidad}</td>
+                <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${row.edadPromedioDias}</td>
               </tr>
-              <tr style="border-bottom: 1px solid #ddd;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Cotizaciones aprobadas</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.cotizacionesAprobadas}/${resumenGeneral.totalCotizaciones}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #ddd; background-color: #fafafa;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Carga activa total (proyectos)</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.cargaActivaTotal}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #ddd;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Refacciones en stock crítico</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.refaccionesCriticas}</td>
-              </tr>
-              <tr style="background-color: #fafafa;">
-                <td style="padding: 10px; text-align: left; border-right: 1px solid #ddd;">Tasa de asistencia de citas (%)</td>
-                <td style="padding: 10px; text-align: right; font-weight: bold;">${resumenGeneral.tasaAsistencia}%</td>
-              </tr>
-            </tbody>
-          </table>
+            `).join("");
 
-          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Carga de Trabajo por Mecánico</h2>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
-            <thead>
-              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Mecánico</th>
-                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Proyectos activos</th>
-                <th style="text-align: right; padding: 12px; font-weight: bold;">Participación (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${cargaMecanicos.length === 0 ? '<tr><td colspan="3" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' : 
-                cargaMecanicos.map((row, i) => {
-                  const total = Number(resumenGeneral.cargaActivaTotal || 0);
-                  const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
-                  return `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-                    <td style="padding: 10px; border-right: 1px solid #ddd;">${row.mecanico}</td>
-                    <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.activos}</td>
-                    <td style="padding: 10px; text-align: right;">${ratio}%</td>
-                  </tr>`;
-                }).join('')}
-            </tbody>
-          </table>
+        const citasBlock = flujoCitas ? `
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 0; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+            ${[
+              { label: "Total", value: flujoCitas.total, color: "#374151", bg: "#f9fafb" },
+              { label: "Confirmadas", value: flujoCitas.confirmadas, color: "#1d4ed8", bg: "#eff6ff" },
+              { label: "Completadas", value: flujoCitas.completadas, color: "#059669", bg: "#f0fdf4" },
+              { label: "Canceladas", value: flujoCitas.canceladas, color: "#dc2626", bg: "#fff1f2" },
+              { label: "Asistencia", value: `${flujoCitas.tasaAsistencia}%`, color: "#d97706", bg: "#fffbeb" },
+            ].map((c, i) => `
+              <div style="padding: 16px 12px; background: ${c.bg}; border-right: ${i < 4 ? "1px solid #e5e7eb" : "none"}; text-align: center;">
+                <p style="font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #6b7280; margin: 0 0 6px; font-family: Arial, sans-serif;">${c.label}</p>
+                <p style="font-size: 20px; font-weight: bold; color: ${c.color}; margin: 0; font-family: Arial, sans-serif;">${c.value}</p>
+              </div>
+            `).join("")}
+          </div>
+        ` : `<p style="font-size: 12px; color: #9ca3af; font-family: Arial, sans-serif;">Sin datos de citas en el periodo.</p>`;
 
-          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Alertas de Stock Crítico</h2>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
-            <thead>
-              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Refacción</th>
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Número de parte</th>
-                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Stock</th>
-                <th style="text-align: right; padding: 12px; font-weight: bold;">Mínimo</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${alertasStock.length === 0 ? '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #666;">Sin alertas</td></tr>' :
-                alertasStock.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.nombre}</td>
-                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.numero_parte || "-"}</td>
-                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">${row.stock}</td>
-                  <td style="padding: 10px; text-align: right;">${row.stock_minimo}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
+        const sectionHeader = (title, accentColor) => `
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: ${accentColor}; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">${title}</h2>
+          </div>
+        `;
 
-          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Refacciones con Mayor Rotación</h2>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ddd;">
-            <thead>
-              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Refacción</th>
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Número de parte</th>
-                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Unidades usadas</th>
-                <th style="text-align: right; padding: 12px; font-weight: bold;">Movimientos</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rotacionRefacciones.length === 0 ? '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' :
-                rotacionRefacciones.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.nombre}</td>
-                  <td style="padding: 10px; border-right: 1px solid #ddd;">${row.numero_parte}</td>
-                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.usos}</td>
-                  <td style="padding: 10px; text-align: right;">${row.movimientos}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
+        const tableHead = (cols) => `
+          <thead>
+            <tr style="background: #1a1a2e;">
+              ${cols.map(({ label, align = "left" }) => `
+                <th style="padding: 11px 14px; text-align: ${align}; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif; font-weight: bold;">${label}</th>
+              `).join("")}
+            </tr>
+          </thead>
+        `;
 
-          <h2 style="font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px;">Cuellos de Botella por Estado</h2>
-          <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
-            <thead>
-              <tr style="background-color: #f5f5f5; border-bottom: 2px solid #333;">
-                <th style="text-align: left; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Estado</th>
-                <th style="text-align: right; padding: 12px; border-right: 1px solid #ddd; font-weight: bold;">Cantidad de proyectos</th>
-                <th style="text-align: right; padding: 12px; font-weight: bold;">Edad promedio (días)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${cuellosBotella.length === 0 ? '<tr><td colspan="3" style="padding: 10px; text-align: center; color: #666;">Sin datos</td></tr>' :
-                cuellosBotella.map((row, i) => `<tr style="border-bottom: 1px solid #ddd; ${i % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-                  <td style="padding: 10px; border-right: 1px solid #ddd;">${STATE_LABELS[row.estado] || row.estado}</td>
-                  <td style="padding: 10px; border-right: 1px solid #ddd; text-align: right; font-weight: bold;">${row.cantidad}</td>
-                  <td style="padding: 10px; text-align: right;">${row.edadPromedioDias}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
+        container.innerHTML = `
+          <!-- ENCABEZADO -->
+          <div style="background: #1a1a2e; padding: 40px 50px 32px; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: -30px; right: -30px; width: 180px; height: 180px; border-radius: 50%; background: rgba(59,130,246,0.12);"></div>
+            <div style="position: absolute; bottom: -20px; left: 200px; width: 100px; height: 100px; border-radius: 50%; background: rgba(16,185,129,0.08);"></div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
+                  <div style="width: 4px; height: 40px; background: linear-gradient(to bottom, #3b82f6, #10b981); border-radius: 2px;"></div>
+                  <div>
+                    <p style="font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #60a5fa; margin: 0 0 4px; font-family: Arial, sans-serif;">Stathmos · Reportes Operativos</p>
+                    <h1 style="font-size: 28px; color: #ffffff; margin: 0; letter-spacing: -0.5px; font-family: Arial, sans-serif;">Reporte Operativo</h1>
+                  </div>
+                </div>
+                <p style="font-size: 12px; color: #94a3b8; margin: 0; font-family: Arial, sans-serif;">Periodo analizado: ${resumenGeneral.periodo}</p>
+              </div>
+              <div style="text-align: right;">
+                <p style="font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #60a5fa; margin: 0 0 5px; font-family: Arial, sans-serif;">Fecha de Emisión</p>
+                <p style="font-size: 14px; color: #ffffff; margin: 0; font-family: Arial, sans-serif; font-weight: bold;">${hoy}</p>
+                <div style="margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px;">
+                  <p style="font-size: 10px; color: #94a3b8; margin: 0; font-family: Arial, sans-serif;">Documento interno · Sin validez fiscal</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-      container.innerHTML = html;
-      document.body.appendChild(container);
+          <!-- KPIs -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 0; border-bottom: 1px solid #e5e7eb;">
+            ${kpiCards}
+          </div>
 
-      const canvas = await html2canvas(container, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        allowTaint: true,
-        logging: false,
-      });
+          <div style="padding: 36px 50px;">
 
-      document.body.removeChild(container);
+            <!-- PRODUCTIVIDAD -->
+            <div style="margin-bottom: 36px;">
+              ${sectionHeader("Carga de Trabajo por Mecánico", "#3b82f6")}
+              <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+                ${tableHead([{ label: "Mecánico" }, { label: "Proyectos Activos", align: "center" }, { label: "Participación", align: "right" }])}
+                <tbody>${mecanicoRows}</tbody>
+              </table>
+            </div>
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: canvas.width > canvas.height ? "landscape" : "portrait",
-        unit: "mm",
-        format: "a4",
-      });
+            <!-- STOCK CRÍTICO -->
+            <div style="margin-bottom: 36px;">
+              ${sectionHeader("Alertas de Stock Crítico", "#dc2626")}
+              <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+                ${tableHead([{ label: "Refacción" }, { label: "Número de Parte" }, { label: "Stock", align: "center" }, { label: "Mínimo", align: "center" }])}
+                <tbody>${stockRows}</tbody>
+              </table>
+            </div>
 
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth - 10;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            <!-- ROTACIÓN -->
+            <div style="margin-bottom: 36px;">
+              ${sectionHeader("Índice de Rotación de Refacciones", "#8b5cf6")}
+              <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+                ${tableHead([{ label: "Refacción" }, { label: "Número de Parte" }, { label: "Unidades Usadas", align: "center" }, { label: "Movimientos", align: "center" }])}
+                <tbody>${rotacionRows}</tbody>
+              </table>
+            </div>
 
-      let heightLeft = imgHeight;
-      let position = 5;
+            <!-- CITAS -->
+            <div style="margin-bottom: 36px;">
+              ${sectionHeader("Tasa de Asistencia de Citas", "#10b981")}
+              ${citasBlock}
+            </div>
 
-      pdf.addImage(imgData, "PNG", 5, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight - 10;
+            <!-- CUELLOS DE BOTELLA -->
+            <div style="margin-bottom: 36px;">
+              ${sectionHeader("Cuellos de Botella por Estado", "#f59e0b")}
+              <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+                ${tableHead([{ label: "Estado" }, { label: "Proyectos", align: "center" }, { label: "Edad Promedio (días)", align: "center" }])}
+                <tbody>${cuellosRows}</tbody>
+              </table>
+            </div>
 
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 5, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight - 10;
+          </div>
+
+          <!-- PIE -->
+          <div style="background: #f8f9fa; border-top: 1px solid #e5e7eb; padding: 16px 50px; display: flex; justify-content: space-between; align-items: center;">
+            <p style="font-size: 10px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">© ${new Date().getFullYear()} Stathmos · Documento generado automáticamente</p>
+            <p style="font-size: 10px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">Este reporte no tiene validez fiscal oficial</p>
+          </div>
+        `;
+
+        document.body.appendChild(container);
+
+        const canvas = await html2canvas(container, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          windowWidth: 794,
+        });
+
+        document.body.removeChild(container);
+
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF("p", "mm", "a4");
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        if (pdfHeight <= pageHeight) {
+          pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        } else {
+          let yOffset = 0;
+          while (yOffset < pdfHeight) {
+            if (yOffset > 0) pdf.addPage();
+            pdf.addImage(imgData, "PNG", 0, -yOffset, pdfWidth, pdfHeight);
+            yOffset += pageHeight;
+          }
+        }
+
+        pdf.save(`Reportes_Operativos_Stathmos_${new Date().toISOString().split("T")[0]}.pdf`);
+      } catch (error) {
+        console.error("Error al generar PDF:", error);
+        alert("Error al generar PDF");
+      } finally {
+        setGenerandoPDF(false);
       }
-
-      pdf.save(`Reportes_Operativos_${new Date().toISOString().split("T")[0]}.pdf`);
-    } catch (error) {
-      console.error("Error al generar PDF:", error);
-      alert("Error al generar PDF");
-    } finally {
-      setGenerandoPDF(false);
-    }
-  };
+    };
 
   const generateCSV = () => {
     if (!resumenGeneral) return;

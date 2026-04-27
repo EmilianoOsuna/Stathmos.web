@@ -46,56 +46,24 @@ export default function HistorialServiciosAdmin({
     setLoading(true);
     try {
       const { data, error } = await supabase.from("proyectos").select(`
-        id,
-        titulo,
-        descripcion,
-        estado,
-        fecha_ingreso,
-        fecha_cierre,
-        cliente_id,
-        vehiculo_id,
-        clientes (
-          id,
-          nombre,
-          correo,
-          telefono,
-          rfc,
-          direccion
-        ),
-        vehiculos (
-          id,
-          marca,
-          modelo,
-          anio,
-          placas,
-          color,
-          vin
-        ),
+        id, titulo, descripcion, observaciones, estado,
+        fecha_ingreso, fecha_cierre, fecha_aprobacion,
+        mecanico_id, cliente_id, vehiculo_id,
+        empleados ( nombre ),
+        clientes ( id, nombre, correo, telefono, rfc, direccion ),
+        vehiculos ( id, marca, modelo, anio, placas, color, vin ),
         cotizaciones (
-          id,
-          estado,
-          created_at,
-          fecha_emision,
-          monto_mano_obra,
-          monto_refacc,
-          monto_total,
-          cotizacion_items (
-            descripcion,
-            cantidad,
-            precio_unit,
-            subtotal
-          )
+          id, estado, notas, created_at, fecha_emision,
+          monto_mano_obra, monto_refacc, monto_total,
+          cotizacion_items ( id, descripcion, tipo, cantidad, precio_unit, subtotal )
         ),
         diagnosticos (
-          id,
-          tipo,
-          sintomas,
-          descripcion,
-          causa_raiz,
-          created_at,
-          empleados (
-            nombre
-          )
+          id, tipo, tipo_operacion, sintomas, descripcion, causa_raiz, created_at,
+          empleados ( nombre )
+        ),
+        proyecto_refacciones (
+          id, cantidad, precio_unitario, fue_usada,
+          refacciones ( nombre, numero_parte )
         )
       `).order("fecha_ingreso", { ascending: false });
 
@@ -134,12 +102,13 @@ export default function HistorialServiciosAdmin({
           const { data, error } = await supabase
             .from("proyectos")
             .select(`
-              id, titulo, descripcion, estado, fecha_ingreso, fecha_cierre, cliente_id, vehiculo_id,
+              id, titulo, descripcion, observaciones, estado, fecha_ingreso, fecha_cierre, fecha_aprobacion, mecanico_id, cliente_id, vehiculo_id,
+              empleados (nombre),
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
-              cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
+              cotizaciones (id, estado, notas, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total,
+                cotizacion_items (id, descripcion, tipo, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, tipo_operacion, sintomas, descripcion, causa_raiz, created_at, empleados (nombre)), proyecto_refacciones (id, cantidad, precio_unitario, fue_usada, refacciones (nombre, numero_parte))
             `)
             .in("cliente_id", clienteIds)
             .order("fecha_ingreso", { ascending: false });
@@ -162,12 +131,13 @@ export default function HistorialServiciosAdmin({
           const { data, error } = await supabase
             .from("proyectos")
             .select(`
-              id, titulo, descripcion, estado, fecha_ingreso, fecha_cierre, cliente_id, vehiculo_id,
+              id, titulo, descripcion, observaciones, estado, fecha_ingreso, fecha_cierre, fecha_aprobacion, mecanico_id, cliente_id, vehiculo_id,
+              empleados (nombre),
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
-              cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
+              cotizaciones (id, estado, notas, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total,
+                cotizacion_items (id, descripcion, tipo, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, tipo_operacion, sintomas, descripcion, causa_raiz, created_at, empleados (nombre)), proyecto_refacciones (id, cantidad, precio_unitario, fue_usada, refacciones (nombre, numero_parte))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -190,12 +160,13 @@ export default function HistorialServiciosAdmin({
           const { data, error } = await supabase
             .from("proyectos")
             .select(`
-              id, titulo, descripcion, estado, fecha_ingreso, fecha_cierre, cliente_id, vehiculo_id,
+              id, titulo, descripcion, observaciones, estado, fecha_ingreso, fecha_cierre, fecha_aprobacion, mecanico_id, cliente_id, vehiculo_id,
+              empleados (nombre),
               clientes (id, nombre, correo, telefono, rfc, direccion),
               vehiculos (id, marca, modelo, anio, placas, color, vin),
-              cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
-                cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
+              cotizaciones (id, estado, notas, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total,
+                cotizacion_items (id, descripcion, tipo, cantidad, precio_unit, subtotal)),
+              diagnosticos (id, tipo, tipo_operacion, sintomas, descripcion, causa_raiz, created_at, empleados (nombre)), proyecto_refacciones (id, cantidad, precio_unitario, fue_usada, refacciones (nombre, numero_parte))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -284,89 +255,237 @@ export default function HistorialServiciosAdmin({
   const generarPDFServicio = async (servicio) => {
     setGenerandoPDF((prev) => ({ ...prev, [servicio.id]: true }));
     try {
-      const element = detailRef.current;
-      if (!element) return;
+    const container = document.createElement("div");
+    container.style.cssText = `
+      width: 794px;
+      background: #ffffff;
+      font-family: Arial, sans-serif;
+      color: #1a1a2e;
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
+    `;
 
-      // Crear un contenedor temporal con estilos del ticket
-      const tempContainer = document.createElement("div");
-      tempContainer.style.padding = "18px";
-      tempContainer.style.borderRadius = "18px";
-      tempContainer.style.background = "linear-gradient(160deg, rgba(96,174,187,0.18), rgba(219,60,28,0.08))";
-      tempContainer.style.border = "1px solid rgba(148,163,184,0.35)";
-      tempContainer.style.margin = "16px";
-      tempContainer.style.maxWidth = "600px";
-      tempContainer.style.display = "flex";
-      tempContainer.style.justifyContent = "center";
+    const hoy = new Date().toLocaleDateString("es-MX", {
+      day: "numeric", month: "long", year: "numeric",
+    });
 
-      const ticketPaper = document.createElement("div");
-      ticketPaper.style.width = "100%";
-      ticketPaper.style.maxWidth = "600px";
-      ticketPaper.style.background = "#ffffff";
-      ticketPaper.style.color = "#111111";
-      ticketPaper.style.border = "1px dashed #9ca3af";
-      ticketPaper.style.padding = "24px";
-      ticketPaper.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)";
-      ticketPaper.style.borderRadius = "12px";
-      ticketPaper.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    const cotizacion = getLatestCotizacion(servicio.cotizaciones);
+    const utilidadColor = "#059669";
 
-      // Clonar el elemento
-      const clone = element.cloneNode(true);
-      
-      // Remover todas las clases para evitar problemas con oklch colors
-      const allElements = clone.querySelectorAll('*');
-      allElements.forEach((el) => {
-        el.removeAttribute("class");
-        if (el.style && el.style.cssText) {
-          const styles = el.style.cssText.split(';').filter(style => {
-            return style.trim() && !style.includes('oklch');
-          }).join(';');
-          el.style.cssText = styles;
-        }
-      });
-      
-      ticketPaper.appendChild(clone);
-      tempContainer.appendChild(ticketPaper);
+    // Diagnósticos finales
+    const observacionesRows = Array.isArray(servicio.diagnosticos)
+      ? servicio.diagnosticos
+          .filter((d) => d.tipo === "final")
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+          .map((obs, idx) => `
+            <div style="margin-bottom: 12px; padding: 14px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f8f9fa;">
+              <p style="font-size: 10px; color: #6b7280; margin: 0 0 6px; font-family: Arial, sans-serif; text-transform: uppercase; letter-spacing: 1px;">Observación ${idx + 1}</p>
+              <p style="font-size: 12px; color: #1a1a2e; margin: 0 0 6px; white-space: pre-wrap; font-family: Arial, sans-serif;">${cleanHallazgosText(obs.hallazgos || "") || "Sin contenido"}</p>
+              <p style="font-size: 10px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">
+                ${obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : ""}
+                ${obs.created_at ? ` • ${new Date(obs.created_at).toLocaleDateString("es-MX")}` : ""}
+              </p>
+            </div>
+          `).join("")
+      : "";
 
-      // Agregar al documento temporalmente
-      document.body.appendChild(tempContainer);
+    // Items de cotización
+    const cotItemsRows = cotizacion && Array.isArray(cotizacion.cotizacion_items)
+      ? cotizacion.cotizacion_items.map((item, i) => `
+          <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+            <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${item.descripcion}</td>
+            <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${item.cantidad}</td>
+            <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.precio_unit).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+            <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #1e40af; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.subtotal).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="4" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin items registrados</td></tr>`;
 
-      const canvas = await html2canvas(tempContainer, { 
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        allowTaint: true,
-        logging: false,
-      });
+    const estadoLabel = servicio.estado.replace(/_/g, " ").toUpperCase();
+    const estadoColors = {
+      activo: { bg: "#e0f2fe", color: "#0369a1" },
+      en_progreso: { bg: "#dbeafe", color: "#1d4ed8" },
+      terminado: { bg: "#d1fae5", color: "#065f46" },
+      entregado: { bg: "#ccfbf1", color: "#0f766e" },
+      cancelado: { bg: "#f3f4f6", color: "#6b7280" },
+    };
+    const ec = estadoColors[servicio.estado] || { bg: "#f3f4f6", color: "#6b7280" };
 
-      // Remover el contenedor temporal
-      document.body.removeChild(tempContainer);
+    container.innerHTML = `
+      <!-- ENCABEZADO -->
+      <div style="background: #1a1a2e; padding: 40px 50px 32px; position: relative; overflow: hidden;">
+        <div style="position: absolute; top: -30px; right: -30px; width: 180px; height: 180px; border-radius: 50%; background: rgba(59,130,246,0.12);"></div>
+        <div style="position: absolute; bottom: -20px; left: 200px; width: 100px; height: 100px; border-radius: 50%; background: rgba(16,185,129,0.08);"></div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
+              <div style="width: 4px; height: 40px; background: linear-gradient(to bottom, #3b82f6, #10b981); border-radius: 2px;"></div>
+              <div>
+                <p style="font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #60a5fa; margin: 0 0 4px; font-family: Arial, sans-serif;">Stathmos · Historial de Servicios</p>
+                <h1 style="font-size: 26px; color: #ffffff; margin: 0; letter-spacing: -0.5px; font-family: Arial, sans-serif;">${servicio.titulo}</h1>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; font-family: Arial, sans-serif; font-weight: bold; padding: 4px 12px; border-radius: 20px; background: ${ec.bg}; color: ${ec.color};">
+                ${estadoLabel}
+              </span>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <p style="font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #60a5fa; margin: 0 0 5px; font-family: Arial, sans-serif;">Fecha de Emisión</p>
+            <p style="font-size: 14px; color: #ffffff; margin: 0; font-family: Arial, sans-serif; font-weight: bold;">${hoy}</p>
+            <div style="margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 12px;">
+              <p style="font-size: 10px; color: #94a3b8; margin: 0; font-family: Arial, sans-serif;">Documento interno · Sin validez fiscal</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
+      <!-- INFO CLIENTE + VEHÍCULO -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-bottom: 1px solid #e5e7eb;">
+        <div style="padding: 22px 28px; background: #f0fdf4; border-right: 1px solid #bbf7d0;">
+          <p style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin: 0 0 10px; font-family: Arial, sans-serif;">Cliente</p>
+          <p style="font-size: 16px; font-weight: bold; color: #059669; margin: 0 0 4px; font-family: Arial, sans-serif;">${servicio.clientes?.nombre || "—"}</p>
+          ${servicio.clientes?.correo ? `<p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">${servicio.clientes.correo}</p>` : ""}
+          ${servicio.clientes?.telefono ? `<p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">${servicio.clientes.telefono}</p>` : ""}
+          ${servicio.clientes?.rfc ? `<p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">RFC: ${servicio.clientes.rfc}</p>` : ""}
+        </div>
+        <div style="padding: 22px 28px; background: #eff6ff;">
+          <p style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin: 0 0 10px; font-family: Arial, sans-serif;">Vehículo</p>
+          <p style="font-size: 16px; font-weight: bold; color: #1d4ed8; margin: 0 0 4px; font-family: Arial, sans-serif;">${servicio.vehiculos?.marca} ${servicio.vehiculos?.modelo}</p>
+          <p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">Año: ${servicio.vehiculos?.anio} • Color: ${servicio.vehiculos?.color || "—"}</p>
+          <p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">Placas: <strong>${servicio.vehiculos?.placas || "—"}</strong></p>
+          ${servicio.vehiculos?.vin ? `<p style="font-size: 11px; color: #555; margin: 2px 0; font-family: Arial, sans-serif;">VIN: ${servicio.vehiculos.vin}</p>` : ""}
+        </div>
+      </div>
 
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      <!-- FECHAS -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-bottom: 1px solid #e5e7eb;">
+        <div style="padding: 14px 28px; background: #fffbeb; border-right: 1px solid #fde68a;">
+          <p style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin: 0 0 4px; font-family: Arial, sans-serif;">Fecha de Ingreso</p>
+          <p style="font-size: 13px; font-weight: bold; color: #d97706; margin: 0; font-family: Arial, sans-serif;">${new Date(servicio.fecha_ingreso).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}</p>
+        </div>
+        <div style="padding: 14px 28px; background: #f9fafb;">
+          <p style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin: 0 0 4px; font-family: Arial, sans-serif;">Fecha de Cierre</p>
+          <p style="font-size: 13px; font-weight: bold; color: #374151; margin: 0; font-family: Arial, sans-serif;">${servicio.fecha_cierre ? new Date(servicio.fecha_cierre).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" }) : "En proceso"}</p>
+        </div>
+      </div>
 
-      let heightLeft = imgHeight;
-      let position = 10;
+      <div style="padding: 36px 50px;">
 
-      pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight - 20;
+        <!-- DESCRIPCIÓN -->
+        ${servicio.descripcion ? `
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #3b82f6; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Descripción del Servicio</h2>
+          </div>
+          <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb;">
+            <p style="font-size: 13px; color: #374151; margin: 0; font-family: Arial, sans-serif; line-height: 1.6;">${servicio.descripcion}</p>
+          </div>
+        </div>
+        ` : ""}
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 10, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight - 20;
+        <!-- OBSERVACIONES -->
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #8b5cf6; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Observaciones</h2>
+          </div>
+          ${observacionesRows || `
+            <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb; text-align: center;">
+              <p style="font-size: 12px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">No hay observaciones registradas</p>
+            </div>
+          `}
+        </div>
+
+        <!-- COTIZACIÓN -->
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #10b981; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Cotización</h2>
+            ${cotizacion ? `
+              <span style="margin-left: auto; font-size: 11px; background: ${cotizacion.estado === "aprobada" ? "#d1fae5" : "#fef3c7"}; color: ${cotizacion.estado === "aprobada" ? "#065f46" : "#92400e"}; padding: 3px 10px; border-radius: 20px; font-family: Arial, sans-serif; font-weight: bold;">
+                ${cotizacion.estado?.toUpperCase() || "PENDIENTE"}
+              </span>
+            ` : ""}
+          </div>
+          ${cotizacion ? `
+            <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+              <thead>
+                <tr style="background: #1a1a2e;">
+                  <th style="padding: 11px 14px; text-align: left; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Descripción</th>
+                  <th style="padding: 11px 14px; text-align: center; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Cant.</th>
+                  <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">P. Unit</th>
+                  <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${cotItemsRows}
+              </tbody>
+            </table>
+            <div style="background: #f8f9fa; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb; border-top: none; padding: 16px 20px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Mano de obra</span>
+                <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_mano_obra || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Refacciones</span>
+                <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_refacc || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px dashed #d1d5db;">
+                <span style="font-size: 14px; font-weight: bold; color: #1a1a2e; font-family: Arial, sans-serif;">Total</span>
+                <span style="font-size: 20px; font-weight: bold; color: #059669; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_total || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          ` : `
+            <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb; text-align: center;">
+              <p style="font-size: 12px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">No hay cotizaciones disponibles</p>
+            </div>
+          `}
+        </div>
+
+      </div>
+
+      <!-- PIE -->
+      <div style="background: #f8f9fa; border-top: 1px solid #e5e7eb; padding: 16px 50px; display: flex; justify-content: space-between; align-items: center;">
+        <p style="font-size: 10px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">© ${new Date().getFullYear()} Stathmos · Documento generado automáticamente</p>
+        <p style="font-size: 10px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">Este reporte no tiene validez fiscal oficial</p>
+      </div>
+    `;
+
+    document.body.appendChild(container);
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      logging: false,
+      useCORS: true,
+      allowTaint: true,
+      windowWidth: 794,
+    });
+
+    document.body.removeChild(container);
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    if (pdfHeight <= pageHeight) {
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    } else {
+      let yOffset = 0;
+      while (yOffset < pdfHeight) {
+        if (yOffset > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -yOffset, pdfWidth, pdfHeight);
+        yOffset += pageHeight;
       }
+    }
 
-      pdf.save(`Historial_${servicio.vehiculos?.placas}_${new Date().toISOString().split("T")[0]}.pdf`);
+    pdf.save(`Historial_${servicio.vehiculos?.placas || servicio.id}_${new Date().toISOString().split("T")[0]}.pdf`);
     } catch (error) {
       console.error("Error al generar PDF:", error);
     } finally {
@@ -484,15 +603,7 @@ export default function HistorialServiciosAdmin({
                 <div className={`border-t ${darkMode ? "border-zinc-700" : "border-gray-200"} p-4 space-y-6`}>
                   <style>{`
                     @media print {
-                      .detail-ref-pdf {
-                        padding: 24px;
-                        border: 1px dashed #9ca3af;
-                        background: #ffffff;
-                        color: #111111;
-                        border-radius: 12px;
-                        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                      }
+                      .detail-ref-pdf { padding: 24px; border: 1px dashed #9ca3af; background: #ffffff; color: #111111; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
                       body { background: #ffffff !important; }
                       body * { visibility: hidden !important; }
                       .detail-ref-pdf, .detail-ref-pdf * { visibility: visible !important; }
@@ -500,85 +611,258 @@ export default function HistorialServiciosAdmin({
                     }
                   `}</style>
                   <div ref={detailRef} className="detail-ref-pdf">
-                    {/* Sección de Información General */}
+
+                    {/* ── Info General ── */}
                     <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}> Información General</h4>
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Información General</h4>
                       <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
                         <div>
-                          <p className={`text-xs ${textSecondary} font-medium`}>CLIENTE</p>
+                          <p className={`text-xs ${textSecondary} font-medium mb-1`}>CLIENTE</p>
                           <p className={`${textPrimary} font-semibold`}>{servicio.clientes?.nombre || "—"}</p>
-                          <p className={`text-xs ${textSecondary}`}>{servicio.clientes?.correo}</p>
-                          <p className={`text-xs ${textSecondary}`}>{servicio.clientes?.telefono}</p>
+                          {servicio.clientes?.correo && <p className={`text-xs ${textSecondary}`}>{servicio.clientes.correo}</p>}
+                          {servicio.clientes?.telefono && <p className={`text-xs ${textSecondary}`}>{servicio.clientes.telefono}</p>}
                           {servicio.clientes?.rfc && <p className={`text-xs ${textSecondary}`}>RFC: {servicio.clientes.rfc}</p>}
+                          {servicio.clientes?.direccion && <p className={`text-xs ${textSecondary}`}>{servicio.clientes.direccion}</p>}
                         </div>
                         <div>
-                          <p className={`text-xs ${textSecondary} font-medium`}>VEHÍCULO</p>
-                          <p className={`${textPrimary} font-semibold`}>
-                            {servicio.vehiculos?.marca} {servicio.vehiculos?.modelo}
-                          </p>
-                          <p className={`text-xs ${textSecondary}`}>Año: {servicio.vehiculos?.anio}</p>
-                          <p className={`text-xs ${textSecondary}`}>Placas: {servicio.vehiculos?.placas}</p>
-                          <p className={`text-xs ${textSecondary}`}>Color: {servicio.vehiculos?.color}</p>
+                          <p className={`text-xs ${textSecondary} font-medium mb-1`}>VEHÍCULO</p>
+                          <p className={`${textPrimary} font-semibold`}>{servicio.vehiculos?.marca} {servicio.vehiculos?.modelo}</p>
+                          {servicio.vehiculos?.anio && <p className={`text-xs ${textSecondary}`}>Año: {servicio.vehiculos.anio}</p>}
+                          <p className={`text-xs ${textSecondary}`}>Placas: {servicio.vehiculos?.placas || "—"}</p>
+                          {servicio.vehiculos?.color && <p className={`text-xs ${textSecondary}`}>Color: {servicio.vehiculos.color}</p>}
                           {servicio.vehiculos?.vin && <p className={`text-xs ${textSecondary}`}>VIN: {servicio.vehiculos.vin}</p>}
+                        </div>
+                        {servicio.empleados?.nombre && (
+                          <div>
+                            <p className={`text-xs ${textSecondary} font-medium mb-1`}>MECÁNICO</p>
+                            <p className={`${textPrimary}`}>{servicio.empleados.nombre}</p>
+                          </div>
+                        )}
+                        <div>
+                          <p className={`text-xs ${textSecondary} font-medium mb-1`}>FECHAS</p>
+                          <p className={`text-xs ${textSecondary}`}>Ingreso: {formatDateWorkshop(servicio.fecha_ingreso)}</p>
+                          {servicio.fecha_aprobacion && <p className={`text-xs ${textSecondary}`}>Aprobación: {formatDateWorkshop(servicio.fecha_aprobacion)}</p>}
+                          {servicio.fecha_cierre && <p className={`text-xs ${textSecondary}`}>Cierre: {formatDateWorkshop(servicio.fecha_cierre)}</p>}
                         </div>
                       </div>
                     </div>
 
-                    {/* Sección de Descripción */}
+                    {/* ── Descripción ── */}
                     {servicio.descripcion && (
                       <div className="mb-6">
-                        <h4 className={`font-semibold ${textPrimary} mb-3`}> Descripción del Servicio</h4>
-                        <div className={`p-4 rounded ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
+                        <h4 className={`font-semibold ${textPrimary} mb-3`}>Descripción del Proyecto</h4>
+                        <div className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                          <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{servicio.descripcion}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Diagnóstico Inicial ── */}
+                    {(() => {
+                      const diagInicial = Array.isArray(servicio.diagnosticos)
+                        ? servicio.diagnosticos.find(d => d.tipo === "inicial")
+                        : null;
+                      if (!diagInicial) return null;
+                      return (
+                        <div className="mb-6">
+                          <h4 className={`font-semibold ${textPrimary} mb-3`}>Diagnóstico Inicial</h4>
+                          <div className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                            {diagInicial.tipo_operacion && (
+                              <p className={`text-xs ${textSecondary} mb-2`}>
+                                Tipo: <span className="font-medium capitalize">{diagInicial.tipo_operacion.replace(/_/g, " ")}</span>
+                              </p>
+                            )}
+                            {diagInicial.sintomas && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Síntomas</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagInicial.sintomas}</p>
+                              </div>
+                            )}
+                            {diagInicial.descripcion && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Descripción</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagInicial.descripcion}</p>
+                              </div>
+                            )}
+                            {diagInicial.causa_raiz && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Causa Raíz</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagInicial.causa_raiz}</p>
+                              </div>
+                            )}
+                            <p className={`text-xs mt-2 ${textSecondary}`}>
+                              {diagInicial.empleados?.nombre ? `Registrado por ${diagInicial.empleados.nombre}` : ""}
+                              {diagInicial.created_at ? ` • ${formatDateTimeWorkshop(diagInicial.created_at)}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── Cotización ── */}
+                    <div className="mb-6">
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Cotización</h4>
+                      {Array.isArray(servicio.cotizaciones) && servicio.cotizaciones.length > 0 ? (
+                        <div className="space-y-3">
+                          {[...servicio.cotizaciones]
+                            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                            .map((cot, idx) => (
+                            <div key={cot.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <p className={`text-sm font-semibold ${textPrimary}`}>
+                                    Cotización #{idx + 1} • {formatDateWorkshop(cot.fecha_emision || cot.created_at)}
+                                  </p>
+                                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold border ${
+                                    cot.estado === "aprobada"
+                                      ? darkMode ? "bg-emerald-900/30 text-emerald-300 border-emerald-700" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : cot.estado === "rechazada"
+                                        ? darkMode ? "bg-red-900/30 text-red-300 border-red-700" : "bg-red-50 text-red-700 border-red-200"
+                                        : darkMode ? "bg-amber-900/30 text-amber-300 border-amber-700" : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}>
+                                    {cot.estado === "aprobada" ? "✓ APROBADA" : cot.estado === "rechazada" ? "✗ RECHAZADA" : "⏳ PENDIENTE"}
+                                  </span>
+                                </div>
+                              </div>
+                              {Array.isArray(cot.cotizacion_items) && cot.cotizacion_items.length > 0 && (
+                                <div className="mb-3 overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                        <th className={`text-left py-2 px-2 ${textSecondary}`}>Descripción</th>
+                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Cant.</th>
+                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Precio</th>
+                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Subtotal</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {cot.cotizacion_items.map((item, i) => (
+                                        <tr key={item.id || i} className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                          <td className={`py-2 px-2 ${textPrimary}`}>{item.descripcion}</td>
+                                          <td className={`text-right py-2 px-2 ${textSecondary}`}>{item.cantidad}</td>
+                                          <td className={`text-right py-2 px-2 ${textSecondary}`}>${Number(item.precio_unit || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+                                          <td className={`text-right py-2 px-2 ${textPrimary} font-semibold`}>${Number(item.subtotal || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              <div className={`pt-3 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"} space-y-1`}>
+                                <div className="flex justify-between text-sm">
+                                  <span className={textSecondary}>Mano de obra:</span>
+                                  <span className={textPrimary}>${Number(cot.monto_mano_obra || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className={textSecondary}>Refacciones:</span>
+                                  <span className={textPrimary}>${Number(cot.monto_refacc || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between text-sm font-bold">
+                                  <span className={textPrimary}>Total:</span>
+                                  <span className={`text-base ${darkMode ? "text-emerald-400" : "text-emerald-600"}`}>
+                                    ${Number(cot.monto_total || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              </div>
+                              {cot.notas && (
+                                <div className={`mt-3 p-2 rounded text-xs ${darkMode ? "bg-zinc-700/50" : "bg-gray-100"} ${textSecondary}`}>
+                                  <span className="font-medium">Notas:</span> {cot.notas}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
+                          <p className={`text-sm ${textSecondary}`}>Sin cotización registrada</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Observaciones del proyecto ── */}
+                    {servicio.observaciones && (
+                      <div className="mb-6">
+                        <h4 className={`font-semibold ${textPrimary} mb-3`}>Observaciones</h4>
+                        <div className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                          <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{servicio.observaciones}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Diagnóstico Final ── */}
+                    {(() => {
+                      const diagFinal = Array.isArray(servicio.diagnosticos)
+                        ? servicio.diagnosticos.find(d => d.tipo === "final")
+                        : null;
+                      if (!diagFinal) return null;
+                      return (
+                        <div className="mb-6">
+                          <h4 className={`font-semibold ${textPrimary} mb-3`}>Diagnóstico Final</h4>
+                          <div className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+                            {diagFinal.sintomas && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Síntomas</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagFinal.sintomas}</p>
+                              </div>
+                            )}
+                            {diagFinal.descripcion && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Descripción</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagFinal.descripcion}</p>
+                              </div>
+                            )}
+                            {diagFinal.causa_raiz && (
+                              <div className="mb-2">
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-1`}>Causa Raíz</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{diagFinal.causa_raiz}</p>
+                              </div>
+                            )}
+                            <p className={`text-xs mt-2 ${textSecondary}`}>
+                              {diagFinal.empleados?.nombre ? `Registrado por ${diagFinal.empleados.nombre}` : ""}
+                              {diagFinal.created_at ? ` • ${formatDateTimeWorkshop(diagFinal.created_at)}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── Refacciones asignadas ── */}
+                    {Array.isArray(servicio.proyecto_refacciones) && servicio.proyecto_refacciones.length > 0 && (
+                      <div className="mb-6">
+                        <h4 className={`font-semibold ${textPrimary} mb-3`}>Refacciones Utilizadas</h4>
+                        <div className={`rounded border overflow-hidden ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
                           <table className="w-full text-sm">
-                            <thead>
-                              <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                                <th className={`text-left py-2 px-2 ${textSecondary}`}>Descripción</th>
-                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Cantidad</th>
-                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Precio</th>
-                                <th className={`text-right py-2 px-2 ${textSecondary}`}>Subtotal</th>
+                            <thead className={darkMode ? "bg-zinc-800" : "bg-gray-50"}>
+                              <tr>
+                                <th className={`text-left py-2 px-3 ${textSecondary}`}>Refacción</th>
+                                <th className={`text-right py-2 px-3 ${textSecondary}`}>Cant.</th>
+                                <th className={`text-right py-2 px-3 ${textSecondary}`}>Precio unit.</th>
+                                <th className={`text-right py-2 px-3 ${textSecondary}`}>Subtotal</th>
                               </tr>
                             </thead>
                             <tbody>
-                              <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                                <td colSpan="4" className={`py-2 px-2 ${textPrimary}`}>{servicio.descripcion}</td>
-                              </tr>
+                              {servicio.proyecto_refacciones.map((r) => (
+                                <tr key={r.id} className={`border-t ${darkMode ? "border-zinc-700" : "border-gray-100"}`}>
+                                  <td className={`py-2 px-3 ${textPrimary}`}>
+                                    {r.refacciones?.nombre || "—"}
+                                    {r.refacciones?.numero_parte && <span className={`ml-1 text-xs ${textSecondary}`}>#{r.refacciones.numero_parte}</span>}
+                                  </td>
+                                  <td className={`text-right py-2 px-3 ${textSecondary}`}>{r.cantidad}</td>
+                                  <td className={`text-right py-2 px-3 ${textSecondary}`}>${Number(r.precio_unitario || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+                                  <td className={`text-right py-2 px-3 ${textPrimary} font-semibold`}>${(Number(r.precio_unitario || 0) * Number(r.cantidad || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>
                       </div>
                     )}
 
-                    {/* Sección de Observaciones del Proyecto */}
+                    {/* ── Fotos ── */}
                     <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}> Observaciones del Proyecto</h4>
-                      {Array.isArray(servicio.diagnosticos) && servicio.diagnosticos.filter((d) => d.tipo === "final").length > 0 ? (
-                        <div className="space-y-3">
-                          {servicio.diagnosticos
-                            .filter((d) => d.tipo === "final")
-                            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                            .map((obs, idx) => (
-                              <div key={obs.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
-                                <p className={`text-xs font-medium mb-2 ${textSecondary}`}>Observación {idx + 1}</p>
-                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{
-                                  [obs.sintomas, obs.descripcion, obs.causa_raiz].filter(Boolean).join("\n") || "Sin contenido"
-                                }</p>
-                                <p className={`text-xs mt-2 ${textSecondary}`}>
-                                  {obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : "Observación registrada"}
-                                  {obs.created_at ? ` • ${formatDateTimeWorkshop(obs.created_at)}` : ""}
-                                </p>
-                              </div>
-                            ))}
-                        </div>
-                      ) : (
-                        <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
-                          <p className={`text-sm ${textSecondary}`}>No hay observaciones registradas</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sección de Fotos */}
-                    <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Fotos del Servicio</h4>
+                      <h4 className={`font-semibold ${textPrimary} mb-3`}>
+                        Fotografías {fotos[servicio.id]?.length > 0 && `(${fotos[servicio.id].length})`}
+                      </h4>
                       {loadingFotos[servicio.id] ? (
                         <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
                           <p className={`text-sm ${textSecondary}`}>Cargando fotos...</p>
@@ -586,39 +870,26 @@ export default function HistorialServiciosAdmin({
                       ) : fotos[servicio.id]?.length > 0 ? (
                         <div className="space-y-4">
                           {["antes", "durante", "despues"].map((momento) => {
-                            const fotosMomento = fotos[servicio.id].filter((f) => f.momento === momento);
+                            const fotosMomento = fotos[servicio.id].filter(f => f.momento === momento);
                             if (!fotosMomento.length) return null;
-
+                            const momentoLabels = { antes: "Antes", durante: "Durante", despues: "Después" };
+                            const momentoBadgeColor = {
+                              antes: darkMode ? "bg-amber-900/70 text-amber-200 border-amber-700" : "bg-amber-100 text-amber-800 border-amber-200",
+                              durante: darkMode ? "bg-sky-900/70 text-sky-200 border-sky-700" : "bg-sky-100 text-sky-800 border-sky-200",
+                              despues: darkMode ? "bg-emerald-900/70 text-emerald-200 border-emerald-700" : "bg-emerald-100 text-emerald-800 border-emerald-200",
+                            };
                             return (
                               <div key={momento}>
-                                <p className={`text-xs font-medium ${textSecondary} uppercase mb-2`}>
-                                  {momento === "antes" && (
-                                    <span className="flex items-center gap-1">
-                                      <Icon name="check" className="w-3 h-3 text-emerald-500" /> Antes
-                                    </span>
-                                  )}
-                                  {momento === "durante" && (
-                                    <span className="flex items-center gap-1">
-                                      <Icon name="clock" className="w-3 h-3 text-blue-500" /> Durante
-                                    </span>
-                                  )}
-                                  {momento === "despues" && (
-                                    <span className="flex items-center gap-1">
-                                      <Icon name="check" className="w-3 h-3 text-emerald-500" /> Después
-                                    </span>
-                                  )}
-                                </p>
+                                <p className={`text-xs font-medium uppercase tracking-widest ${textSecondary} mb-2`}>{momentoLabels[momento]}</p>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                  {fotosMomento.map((foto) => (
-                                    <div key={foto.id} className="relative group cursor-pointer">
-                                      <div
-                                        onClick={() => setLightbox(foto)}
-                                        className={`aspect-square rounded-lg overflow-hidden border ${
-                                          darkMode ? "border-zinc-700" : "border-gray-200"
-                                        } hover:shadow-lg transition`}
-                                      >
+                                  {fotosMomento.map(foto => (
+                                    <div key={foto.id} className="relative group cursor-pointer" onClick={() => setLightbox(foto)}>
+                                      <div className={`aspect-square rounded-lg overflow-hidden border ${darkMode ? "border-zinc-700" : "border-gray-200"} hover:shadow-lg transition`}>
                                         <img src={foto.url} alt={foto.descripcion || momento} className="w-full h-full object-cover" />
                                       </div>
+                                      <span className={`absolute top-2 left-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${momentoBadgeColor[momento]}`}>
+                                        {momentoLabels[momento]}
+                                      </span>
                                       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-black/40 rounded-lg flex items-center justify-center transition">
                                         <Icon name="eye" className="w-5 h-5 text-white" />
                                       </div>
@@ -639,108 +910,6 @@ export default function HistorialServiciosAdmin({
                       )}
                     </div>
 
-                    {/* Sección de Cotizaciones/Facturas */}
-                    <div className="mb-6">
-                      <h4 className={`font-semibold ${textPrimary} mb-3`}>Cotizaciones y Facturas</h4>
-                      {Array.isArray(servicio.cotizaciones) && servicio.cotizaciones.length > 0 ? (
-                        <div className="space-y-3">
-                          {servicio.cotizaciones.map((cot, idx) => (
-                            <div key={cot.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
-                              <div className="flex items-start justify-between mb-3">
-                                <div>
-                                  <p className={`text-sm font-semibold ${textPrimary}`}>
-                                    Cotización #{idx + 1} • {formatDateWorkshop(cot.fecha_emision || cot.created_at)}
-                                  </p>
-                                  <span
-                                    className={`inline-block mt-1 px-2 py-1 rounded text-xs font-medium border ${
-                                      cot.estado === "aprobada"
-                                        ? darkMode
-                                          ? "bg-emerald-900/30 text-emerald-300 border-emerald-700"
-                                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : cot.estado === "rechazada"
-                                          ? darkMode
-                                            ? "bg-red-900/30 text-red-300 border-red-700"
-                                            : "bg-red-50 text-red-700 border-red-200"
-                                          : darkMode
-                                            ? "bg-amber-900/30 text-amber-300 border-amber-700"
-                                            : "bg-amber-50 text-amber-700 border-amber-200"
-                                    }`}
-                                  >
-                                    {cot.estado === "aprobada" ? (
-                                      <span className="flex items-center gap-1 text-emerald-500 font-bold">
-                                        <Icon name="check" className="w-3 h-3" /> APROBADA
-                                      </span>
-                                    ) : cot.estado === "rechazada" ? (
-                                      <span className="flex items-center gap-1 text-red-500 font-bold">
-                                        <Icon name="x" className="w-3 h-3" /> RECHAZADA
-                                      </span>
-                                    ) : (
-                                      <span className="flex items-center gap-1 text-amber-500 font-bold">
-                                        <Icon name="clock" className="w-3 h-3" /> PENDIENTE
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Items de la cotización */}
-                              {Array.isArray(cot.cotizacion_items) && cot.cotizacion_items.length > 0 && (
-                                <div className="mb-3">
-                                  <table className="w-full text-sm">
-                                    <thead>
-                                      <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                                        <th className={`text-left py-2 px-2 ${textSecondary}`}>Descripción</th>
-                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Cantidad</th>
-                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Precio</th>
-                                        <th className={`text-right py-2 px-2 ${textSecondary}`}>Subtotal</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {cot.cotizacion_items.map((item, i) => (
-                                        <tr key={i} className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                                          <td className={`py-2 px-2 ${textPrimary}`}>{item.descripcion}</td>
-                                          <td className={`text-right py-2 px-2 ${textSecondary}`}>{item.cantidad}</td>
-                                          <td className={`text-right py-2 px-2 ${textSecondary}`}>${item.precio_unit}</td>
-                                          <td className={`text-right py-2 px-2 ${textPrimary} font-semibold`}>${item.subtotal}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-
-                              {/* Resumen de montos */}
-                              <div className={`pt-3 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"} space-y-1`}>
-                                <div className="flex justify-between text-sm">
-                                  <span className={textSecondary}>Mano de obra:</span>
-                                  <span className={textPrimary}>${parseFloat(cot.monto_mano_obra).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                  <span className={textSecondary}>Refacciones:</span>
-                                  <span className={textPrimary}>${parseFloat(cot.monto_refacc).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-                                </div>
-                                <div className="flex justify-between text-sm font-bold">
-                                  <span className={textPrimary}>Total:</span>
-                                  <span className={`text-base ${darkMode ? "text-emerald-400" : "text-emerald-600"}`}>
-                                    ${parseFloat(cot.monto_total).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {cot.notas && (
-                                <div className={`mt-3 p-2 rounded text-xs ${darkMode ? "bg-zinc-700/50" : "bg-gray-100"} ${textSecondary}`}>
-                                  <span className="font-medium">Notas:</span> {cot.notas}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className={`p-4 rounded text-center ${darkMode ? "bg-zinc-800/50" : "bg-gray-50"}`}>
-                          <p className={`text-sm ${textSecondary}`}>No hay cotizaciones disponibles</p>
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   {/* Botones de acción */}
