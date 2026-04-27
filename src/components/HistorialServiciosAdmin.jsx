@@ -270,8 +270,26 @@ export default function HistorialServiciosAdmin({
       day: "numeric", month: "long", year: "numeric",
     });
 
-    const cotizacion = getLatestCotizacion(servicio.cotizaciones);
+    const cotizacionesOrdenadas = Array.isArray(servicio.cotizaciones)
+      ? [...servicio.cotizaciones].sort(
+          (a, b) =>
+            new Date(a?.created_at || a?.fecha_emision || 0).getTime() -
+            new Date(b?.created_at || b?.fecha_emision || 0).getTime()
+        )
+      : [];
+    const cotizacionInicial = cotizacionesOrdenadas[0] || null;
+    const cotizacionFinal = cotizacionesOrdenadas[cotizacionesOrdenadas.length - 1] || null;
     const utilidadColor = "#059669";
+
+    const diagnosticoInicial = Array.isArray(servicio.diagnosticos)
+      ? servicio.diagnosticos.find((d) => d.tipo === "inicial")
+      : null;
+
+    const diagnosticoFinal = Array.isArray(servicio.diagnosticos)
+      ? [...servicio.diagnosticos]
+          .filter((d) => d.tipo === "final")
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null
+      : null;
 
     // Diagnósticos finales
     const observacionesRows = Array.isArray(servicio.diagnosticos)
@@ -290,17 +308,105 @@ export default function HistorialServiciosAdmin({
           `).join("")
       : "";
 
-    // Items de cotización
-    const cotItemsRows = cotizacion && Array.isArray(cotizacion.cotizacion_items)
-      ? cotizacion.cotizacion_items.map((item, i) => `
-          <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
-            <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${item.descripcion}</td>
-            <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${item.cantidad}</td>
-            <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.precio_unit).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
-            <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #1e40af; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.subtotal).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
-          </tr>
-        `).join("")
-      : `<tr><td colspan="4" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin items registrados</td></tr>`;
+    const diagnosticoInicialRow = diagnosticoInicial
+      ? `
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #3b82f6; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Diagnóstico Inicial</h2>
+          </div>
+          <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb;">
+            ${diagnosticoInicial.tipo_operacion ? `<p style="font-size: 11px; color: #6b7280; margin: 0 0 8px; font-family: Arial, sans-serif;">Tipo: <strong>${String(diagnosticoInicial.tipo_operacion).replace(/_/g, " ")}</strong></p>` : ""}
+            ${diagnosticoInicial.sintomas ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0 0 8px; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Síntomas:</strong> ${diagnosticoInicial.sintomas}</p>` : ""}
+            ${diagnosticoInicial.descripcion ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0 0 8px; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Descripción:</strong> ${diagnosticoInicial.descripcion}</p>` : ""}
+            ${diagnosticoInicial.causa_raiz ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Causa raíz:</strong> ${diagnosticoInicial.causa_raiz}</p>` : ""}
+          </div>
+        </div>
+      `
+      : `
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #3b82f6; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Diagnóstico Inicial</h2>
+          </div>
+          <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb; text-align: center;">
+            <p style="font-size: 12px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">Sin diagnóstico inicial registrado</p>
+          </div>
+        </div>
+      `;
+
+    const diagnosticoFinalRow = diagnosticoFinal
+      ? `
+        <div style="margin-bottom: 32px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <div style="width: 3px; height: 18px; background: #8b5cf6; border-radius: 2px;"></div>
+            <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Diagnóstico Final</h2>
+          </div>
+          <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb;">
+            ${diagnosticoFinal.sintomas ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0 0 8px; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Síntomas:</strong> ${diagnosticoFinal.sintomas}</p>` : ""}
+            ${diagnosticoFinal.descripcion ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0 0 8px; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Descripción:</strong> ${diagnosticoFinal.descripcion}</p>` : ""}
+            ${diagnosticoFinal.causa_raiz ? `<p style="font-size: 12px; color: #1a1a2e; margin: 0; white-space: pre-wrap; font-family: Arial, sans-serif;"><strong>Causa raíz:</strong> ${diagnosticoFinal.causa_raiz}</p>` : ""}
+          </div>
+        </div>
+      `
+      : "";
+
+    const renderCotizacionPdf = (cot, label) => {
+      if (!cot) return "";
+
+      const cotItemsRows = Array.isArray(cot.cotizacion_items)
+        ? cot.cotizacion_items.map((item, i) => `
+            <tr style="background: ${i % 2 === 0 ? "#f8f9fa" : "#ffffff"};">
+              <td style="padding: 9px 14px; font-size: 12px; color: #1a1a2e; font-family: Arial, sans-serif;">${item.descripcion}</td>
+              <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: center;">${item.cantidad}</td>
+              <td style="padding: 9px 14px; font-size: 12px; color: #555; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.precio_unit || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+              <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #1e40af; font-family: Arial, sans-serif; text-align: right;">$${parseFloat(item.subtotal || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</td>
+            </tr>
+          `).join("")
+        : `<tr><td colspan="4" style="padding: 14px; text-align: center; color: #9ca3af; font-family: Arial, sans-serif; font-size: 12px;">Sin items registrados</td></tr>`;
+
+      const badgeBg = cot.estado === "aprobada" ? "#d1fae5" : cot.estado === "rechazada" ? "#fee2e2" : "#fef3c7";
+      const badgeColor = cot.estado === "aprobada" ? "#065f46" : cot.estado === "rechazada" ? "#991b1b" : "#92400e";
+
+      return `
+        <div style="margin-bottom: 18px;">
+          <div style="display: flex; align-items: center; margin-bottom: 10px; gap: 8px;">
+            <p style="font-size: 12px; font-weight: bold; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">${label}</p>
+            <span style="font-size: 10px; color: #6b7280; font-family: Arial, sans-serif;">• ${new Date(cot.fecha_emision || cot.created_at).toLocaleDateString("es-MX")}</span>
+            <span style="margin-left: auto; font-size: 11px; background: ${badgeBg}; color: ${badgeColor}; padding: 3px 10px; border-radius: 20px; font-family: Arial, sans-serif; font-weight: bold;">
+              ${cot.estado?.toUpperCase() || "PENDIENTE"}
+            </span>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <thead>
+              <tr style="background: #1a1a2e;">
+                <th style="padding: 11px 14px; text-align: left; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Descripción</th>
+                <th style="padding: 11px 14px; text-align: center; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Cant.</th>
+                <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">P. Unit</th>
+                <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cotItemsRows}
+            </tbody>
+          </table>
+          <div style="background: #f8f9fa; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb; border-top: none; padding: 16px 20px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Mano de obra</span>
+              <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cot.monto_mano_obra || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Refacciones</span>
+              <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cot.monto_refacc || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px dashed #d1d5db;">
+              <span style="font-size: 14px; font-weight: bold; color: #1a1a2e; font-family: Arial, sans-serif;">Total</span>
+              <span style="font-size: 20px; font-weight: bold; color: #059669; font-family: Arial, sans-serif;">$${parseFloat(cot.monto_total || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    };
 
     const estadoLabel = servicio.estado.replace(/_/g, " ").toUpperCase();
     const estadoColors = {
@@ -387,6 +493,10 @@ export default function HistorialServiciosAdmin({
         </div>
         ` : ""}
 
+        ${diagnosticoInicialRow}
+
+        ${diagnosticoFinalRow}
+
         <!-- OBSERVACIONES -->
         <div style="margin-bottom: 32px;">
           <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
@@ -405,40 +515,14 @@ export default function HistorialServiciosAdmin({
           <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
             <div style="width: 3px; height: 18px; background: #10b981; border-radius: 2px;"></div>
             <h2 style="font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #1a1a2e; margin: 0; font-family: Arial, sans-serif;">Cotización</h2>
-            ${cotizacion ? `
-              <span style="margin-left: auto; font-size: 11px; background: ${cotizacion.estado === "aprobada" ? "#d1fae5" : "#fef3c7"}; color: ${cotizacion.estado === "aprobada" ? "#065f46" : "#92400e"}; padding: 3px 10px; border-radius: 20px; font-family: Arial, sans-serif; font-weight: bold;">
-                ${cotizacion.estado?.toUpperCase() || "PENDIENTE"}
-              </span>
-            ` : ""}
           </div>
-          ${cotizacion ? `
-            <table style="width: 100%; border-collapse: collapse; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb;">
-              <thead>
-                <tr style="background: #1a1a2e;">
-                  <th style="padding: 11px 14px; text-align: left; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Descripción</th>
-                  <th style="padding: 11px 14px; text-align: center; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Cant.</th>
-                  <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">P. Unit</th>
-                  <th style="padding: 11px 14px; text-align: right; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #94a3b8; font-family: Arial, sans-serif;">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${cotItemsRows}
-              </tbody>
-            </table>
-            <div style="background: #f8f9fa; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb; border-top: none; padding: 16px 20px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Mano de obra</span>
-                <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_mano_obra || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <span style="font-size: 12px; color: #6b7280; font-family: Arial, sans-serif;">Refacciones</span>
-                <span style="font-size: 12px; color: #374151; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_refacc || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px dashed #d1d5db;">
-                <span style="font-size: 14px; font-weight: bold; color: #1a1a2e; font-family: Arial, sans-serif;">Total</span>
-                <span style="font-size: 20px; font-weight: bold; color: #059669; font-family: Arial, sans-serif;">$${parseFloat(cotizacion.monto_total || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-              </div>
-            </div>
+          ${cotizacionesOrdenadas.length > 0 ? `
+            ${cotizacionesOrdenadas.length === 1
+              ? renderCotizacionPdf(cotizacionInicial, "Cotización Única")
+              : `
+                ${renderCotizacionPdf(cotizacionInicial, "Cotización Inicial")}
+                ${renderCotizacionPdf(cotizacionFinal, "Cotización Final")}
+              `}
           ` : `
             <div style="background: #f8f9fa; border-radius: 10px; padding: 16px 20px; border: 1px solid #e5e7eb; text-align: center;">
               <p style="font-size: 12px; color: #9ca3af; margin: 0; font-family: Arial, sans-serif;">No hay cotizaciones disponibles</p>
@@ -551,6 +635,25 @@ export default function HistorialServiciosAdmin({
         ) : (
           <div className="space-y-4">
             {serviciosFiltrados.map((servicio) => (
+              (() => {
+                const diagInicial = Array.isArray(servicio.diagnosticos)
+                  ? servicio.diagnosticos.find((d) => d.tipo === "inicial")
+                  : null;
+                const diagFinal = Array.isArray(servicio.diagnosticos)
+                  ? [...servicio.diagnosticos]
+                      .filter((d) => d.tipo === "final")
+                      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null
+                  : null;
+                const cotizacionesOrdenadas = Array.isArray(servicio.cotizaciones)
+                  ? [...servicio.cotizaciones].sort(
+                      (a, b) =>
+                        new Date(a.created_at || a.fecha_emision || 0) -
+                        new Date(b.created_at || b.fecha_emision || 0)
+                    )
+                  : [];
+                const cotizacionInicial = cotizacionesOrdenadas[0] || null;
+                const cotizacionFinal = cotizacionesOrdenadas[cotizacionesOrdenadas.length - 1] || null;
+                return (
               <div
                 key={servicio.id}
               className={`rounded-lg border overflow-hidden transition ${bgCard} hover:shadow-md`}
@@ -586,6 +689,19 @@ export default function HistorialServiciosAdmin({
                     <p>
                       <span className="font-medium">Fechas:</span> Ingreso: {formatDateWorkshop(servicio.fecha_ingreso)}
                       {servicio.fecha_cierre && ` • Cierre: ${formatDateWorkshop(servicio.fecha_cierre)}`}
+                    </p>
+                    <p>
+                      <span className="font-medium">Diagnóstico inicial:</span> {diagInicial ? "Sí" : "No"}
+                      {diagFinal ? " • Diagnóstico final: Sí" : " • Diagnóstico final: No"}
+                    </p>
+                    <p>
+                      <span className="font-medium">Cotización inicial:</span>{" "}
+                      {cotizacionInicial
+                        ? formatDateWorkshop(cotizacionInicial.fecha_emision || cotizacionInicial.created_at)
+                        : "No"}
+                      {cotizacionFinal
+                        ? ` • Cotización final: ${formatDateWorkshop(cotizacionFinal.fecha_emision || cotizacionFinal.created_at)}`
+                        : " • Cotización final: No"}
                     </p>
                   </div>
                 </div>
@@ -702,16 +818,21 @@ export default function HistorialServiciosAdmin({
                     {/* ── Cotización ── */}
                     <div className="mb-6">
                       <h4 className={`font-semibold ${textPrimary} mb-3`}>Cotización</h4>
-                      {Array.isArray(servicio.cotizaciones) && servicio.cotizaciones.length > 0 ? (
+                      {cotizacionesOrdenadas.length > 0 ? (
                         <div className="space-y-3">
-                          {[...servicio.cotizaciones]
-                            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                            .map((cot, idx) => (
+                          {cotizacionesOrdenadas.map((cot, idx) => (
                             <div key={cot.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
                               <div className="flex items-start justify-between mb-3">
                                 <div>
                                   <p className={`text-sm font-semibold ${textPrimary}`}>
-                                    Cotización #{idx + 1} • {formatDateWorkshop(cot.fecha_emision || cot.created_at)}
+                                    {cotizacionesOrdenadas.length === 1
+                                      ? "Cotización Única"
+                                      : idx === 0
+                                        ? "Cotización Inicial"
+                                        : idx === cotizacionesOrdenadas.length - 1
+                                          ? "Cotización Final"
+                                          : `Cotización Intermedia #${idx}`}
+                                    {" "}• {formatDateWorkshop(cot.fecha_emision || cot.created_at)}
                                   </p>
                                   <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold border ${
                                     cot.estado === "aprobada"
@@ -935,6 +1056,8 @@ export default function HistorialServiciosAdmin({
                 </div>
               )}
             </div>
+                );
+              })()
             ))}
           </div>
         )}
