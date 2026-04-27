@@ -31,12 +31,14 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
     stock: "",
     stock_minimo: "1",
     activo: true,
+    proveedor_id: "",
   });
   const [editTarget, setEditTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingSave, setPendingSave] = useState(null);
+  const [proveedores, setProveedores] = useState([]);
 
   const fetchRefacciones = useCallback(async () => {
     setLoading(true);
@@ -45,9 +47,15 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
     setLoading(false);
   }, []);
 
+  const fetchProveedores = useCallback(async () => {
+    const { data } = await supabase.from("proveedores").select("id, nombre").eq("activo", true).order("nombre");
+    setProveedores(data || []);
+  }, []);
+
   useEffect(() => {
     fetchRefacciones();
-  }, [fetchRefacciones]);
+    fetchProveedores();
+  }, [fetchRefacciones, fetchProveedores]);
 
   useSupabaseRealtime("refacciones", fetchRefacciones);
 
@@ -87,22 +95,42 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
       stock: String(item.stock ?? ""),
       stock_minimo: String(item.stock_minimo ?? "1"),
       activo: Boolean(item.activo),
+      proveedor_id: "",
     });
+    // Cargar proveedor principal de esta refaccion
+    supabase
+      .from("refaccion_proveedores")
+      .select("proveedor_id")
+      .eq("refaccion_id", item.id)
+      .eq("es_principal", true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.proveedor_id) setForm(prev => ({ ...prev, proveedor_id: data.proveedor_id }));
+      });
   };
 
   const submitSave = async (payload) => {
     setSaving(true);
     try {
+      let refaccionId = editTarget?.id;
       if (editTarget?.id) {
         const { error } = await supabase.from("refacciones").update(payload).eq("id", editTarget.id);
         if (error) throw error;
         showStatus("success", "Refaccion actualizada.");
       } else {
-        const { error } = await supabase.from("refacciones").insert([payload]);
+        const { data: nueva, error } = await supabase.from("refacciones").insert([payload]).select("id").maybeSingle();
         if (error) throw error;
+        refaccionId = nueva?.id;
         showStatus("success", "Refaccion creada.");
       }
-      await fetchAll();
+      // Guardar proveedor principal (upsert: quitar principal anterior y poner el nuevo)
+      if (refaccionId && form.proveedor_id) {
+        await supabase.from("refaccion_proveedores").update({ es_principal: false }).eq("refaccion_id", refaccionId);
+        await supabase.from("refaccion_proveedores").upsert([
+          { refaccion_id: refaccionId, proveedor_id: form.proveedor_id, es_principal: true, activo: true }
+        ], { onConflict: "refaccion_id,proveedor_id" });
+      }
+      await fetchRefacciones();
       setEditTarget(null);
       setShowForm(false);
       setForm({
@@ -114,6 +142,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
         stock: "",
         stock_minimo: "1",
         activo: true,
+        proveedor_id: "",
       });
     } catch (err) {
       showStatus("error", err?.message || "Error al guardar refaccion.");
@@ -126,6 +155,46 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
     showStatus("", "");
     if (!form.nombre) {
       showStatus("error", "Nombre es requerido en refacciones.");
+      return;
+    }
+
+    // Validar campos obligatorios
+    if (!form.numero_parte?.trim()) {
+      showStatus("error", "El número de parte es requerido.");
+      return;
+    }
+    if (form.precio_compra === "" || form.precio_compra === null) {
+      showStatus("error", "El precio de compra es requerido.");
+      return;
+    }
+    if (Number(form.precio_compra) < 0) {
+      showStatus("error", "El precio de compra no puede ser negativo.");
+      return;
+    }
+    if (form.precio_venta === "" || form.precio_venta === null) {
+      showStatus("error", "El precio de venta es requerido.");
+      return;
+    }
+    if (Number(form.precio_venta) < 0) {
+      showStatus("error", "El precio de venta no puede ser negativo.");
+      return;
+    }
+    if (form.stock === "" || form.stock === null) {
+      showStatus("error", "El stock es requerido.");
+      return;
+    }
+    if (form.stock_minimo === "" || form.stock_minimo === null) {
+      showStatus("error", "El stock mínimo es requerido.");
+      return;
+    }
+    // Validar nombre duplicado
+    const { data: duplicados } = await supabase
+      .from("refacciones")
+      .select("id")
+      .ilike("nombre", form.nombre.trim());
+    const hayDuplicado = (duplicados || []).some(r => r.id !== editTarget?.id);
+    if (hayDuplicado) {
+      showStatus("error", `Ya existe una refacción con el nombre "${form.nombre.trim()}".`);
       return;
     }
 
@@ -174,7 +243,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
     }
     try {
       await supabase.from("refacciones").update({ activo: !item.activo, updated_at: new Date().toISOString() }).eq("id", item.id);
-      await fetchAll();
+      await fetchRefacciones();
     } catch (err) {
       showStatus("error", err?.message || "Error al actualizar refaccion.");
     }
@@ -240,32 +309,41 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Nombre</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Nombre <span className="text-red-500">*</span></label>
               <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Numero de parte</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Numero de parte <span className="text-red-500">*</span></label>
               <Input value={form.numero_parte} onChange={(e) => setForm({ ...form, numero_parte: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio compra</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio compra <span className="text-red-500">*</span></label>
               <Input type="number" min="0" step="0.01" value={form.precio_compra} onChange={(e) => setForm({ ...form, precio_compra: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio venta</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Precio venta <span className="text-red-500">*</span></label>
               <Input type="number" min="0" step="0.01" value={form.precio_venta} onChange={(e) => setForm({ ...form, precio_venta: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock <span className="text-red-500">*</span></label>
               <Input type="number" min="0" step="1" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} darkMode={darkMode} />
             </div>
             <div>
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock minimo</label>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Stock minimo <span className="text-red-500">*</span></label>
               <Input type="number" min="0" step="1" value={form.stock_minimo} onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })} darkMode={darkMode} />
             </div>
             <div className="md:col-span-2">
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Descripcion</label>
               <Textarea rows={2} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} darkMode={darkMode} />
+            </div>
+            <div>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Proveedor principal *</label>
+              <Select value={form.proveedor_id} onChange={(e) => setForm({ ...form, proveedor_id: e.target.value })} darkMode={darkMode}>
+                <option value="">Sin proveedor</option>
+                {proveedores.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </Select>
             </div>
             <div>
               <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Activo</label>
