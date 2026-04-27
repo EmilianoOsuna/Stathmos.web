@@ -57,6 +57,12 @@ const isValidRFC = (rfc) => {
   return rfcRegex.test(rfc.toUpperCase());
 };
 
+const isValidVIN = (vin) => {
+  if (!vin || !vin.trim()) return true; // VIN es opcional
+  const vinRegex = /^[A-HJ-NPR-Z0-9]{17}$/i;
+  return vinRegex.test(vin.trim());
+};
+
 const isValidPhone = (tel) => {
   const clean = String(tel || "").replace(/\D/g, "");
   const phoneRegex = /^\d{10}$/;
@@ -527,6 +533,19 @@ const ClientesModule = ({ darkMode, session }) => {
       return;
     }
 
+    // Validar duplicidad de RFC
+    if (form.rfc) {
+      const { data: rfcExistente } = await supabase
+        .from("clientes")
+        .select("id")
+        .eq("rfc", form.rfc.trim().toUpperCase())
+        .maybeSingle();
+      if (rfcExistente && rfcExistente.id !== editTarget?.id) {
+        setFormError("Ya existe un cliente registrado con ese RFC.");
+        return;
+      }
+    }
+
     setSaving(true);
     setFormError("");
 
@@ -800,11 +819,19 @@ const fetchAll = useCallback(async () => {
         setSaving(false); return;
       }
 
+      // Validar duplicidad RFC en empleados (editar)
+      const { data: rfcExistenteEmp } = await supabase
+        .from("empleados").select("id").eq("rfc", form.rfc.trim().toUpperCase()).maybeSingle();
+      if (rfcExistenteEmp && rfcExistenteEmp.id !== editTarget?.id) {
+        setFormError("Ya existe un empleado registrado con ese RFC.");
+        setSaving(false); return;
+      }
+
       if (!isValidPhone(form.telefono)) {
         setFormError("El teléfono debe tener 10 dígitos numéricos.");
         setSaving(false); return;
       }
-      
+
       const payload = {
         nombre: normalizeForSAT(form.nombre),
         telefono: form.telefono.trim() || null,
@@ -826,6 +853,14 @@ const fetchAll = useCallback(async () => {
       
       if (!isValidRFC(form.rfc)) {
         setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
+        setSaving(false); return;
+      }
+
+      // Validar duplicidad RFC en empleados (crear)
+      const { data: rfcExistenteNuevo } = await supabase
+        .from("empleados").select("id").eq("rfc", form.rfc.trim().toUpperCase()).maybeSingle();
+      if (rfcExistenteNuevo) {
+        setFormError("Ya existe un empleado registrado con ese RFC.");
         setSaving(false); return;
       }
 
@@ -1087,6 +1122,19 @@ const VehiculosModule = ({ darkMode }) => {
     }
     if (form.anio && (isNaN(form.anio) || form.anio < 1900 || form.anio > new Date().getFullYear() + 1)) {
       setFormError("Año inválido."); return;
+    }
+    if (form.vin && !isValidVIN(form.vin)) {
+      setFormError("El VIN no es válido. Debe tener exactamente 17 caracteres alfanuméricos (sin I, O ni Q)."); return;
+    }
+    if (form.vin) {
+      const { data: vinExistente } = await supabase
+        .from("vehiculos")
+        .select("id")
+        .eq("vin", form.vin.trim().toUpperCase())
+        .maybeSingle();
+      if (vinExistente && vinExistente.id !== editTarget?.id) {
+        setFormError("Ya existe un vehículo registrado con ese VIN."); return;
+      }
     }
     setSaving(true); setFormError("");
     const payload = {
@@ -1820,6 +1868,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         : tieneCot
           ? "pendiente_aprobacion"
           : "pendiente_cotizacion";
+
+      // Al editar, recalcular estado solo si está en etapas tempranas donde el diagnóstico/cotización lo mueven
+      const estadosAutoRecalculables = ["pendiente_diagnostico", "pendiente_cotizacion"];
+      const estadoFinalEdit = estadosAutoRecalculables.includes(form.estado)
+        ? estadoInicial
+        : form.estado;
     const payload = {
       titulo: normalizeForSAT(form.titulo),
       descripcion: form.descripcion || null,
@@ -1827,7 +1881,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       vehiculo_id: form.vehiculo_id,
       mecanico_id: form.mecanico_id || null,
       cita_id: form.cita_id || null, 
-      estado: editTarget ? form.estado : estadoInicial,
+      estado: editTarget ? estadoFinalEdit : estadoInicial,
       bloqueado: form.bloqueado,
       updated_at: new Date().toISOString()
     };
@@ -1869,12 +1923,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         });
       }
 
-      if (!error && form.estado !== editTarget.estado) {
+      if (!error && estadoFinalEdit !== editTarget.estado) {
         await notifyClientStateChange({
           proyectoId: editTarget.id,
           clienteId: form.cliente_id,
           tituloProyecto: form.titulo,
-          nuevoEstado: form.estado,
+          nuevoEstado: estadoFinalEdit,
           session,
         });
       }
@@ -1906,15 +1960,26 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             .update(quotePayload)
             .eq("id", existingCotizacion.id);
           error = quoteUpdate.error;
+
+          // Mover a pendiente_aprobacion si hay cotización activa (cambiada o no) y el proyecto está en etapa temprana
           if (!error) {
-            if (quoteChangedInDb) {
+            const estadosCotizacionActiva = ["pendiente", "modificada"];
+            const estadosQueRequierenAprobacion = ["pendiente_cotizacion", "pendiente_diagnostico"];
+            if (
+              estadosCotizacionActiva.includes(quoteChangedInDb ? quotePayload.estado : existingCotizacion.estado) &&
+              estadosQueRequierenAprobacion.includes(estadoFinalEdit)
+            ) {
               const { error: projectStatusErr } = await supabase
                 .from("proyectos")
                 .update({ estado: "pendiente_aprobacion", updated_at: new Date().toISOString() })
                 .eq("id", editTarget.id);
-              if (projectStatusErr) {
-                error = projectStatusErr;
-              }
+              if (projectStatusErr) error = projectStatusErr;
+            } else if (quoteChangedInDb) {
+              const { error: projectStatusErr } = await supabase
+                .from("proyectos")
+                .update({ estado: "pendiente_aprobacion", updated_at: new Date().toISOString() })
+                .eq("id", editTarget.id);
+              if (projectStatusErr) error = projectStatusErr;
             }
           }
           if (!error) {
@@ -2061,10 +2126,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     setDeleteTarget(null); fetchAll();
   };
 
+  const ESTADOS_ACTIVOS = ["pendiente_diagnostico","pendiente_cotizacion","pendiente_aprobacion","en_progreso","pendiente_refaccion","terminado"];
+  const ESTADOS_INACTIVOS = ["entregado","no_aprobado","cancelado"];
+
   const filtered = proyectos.filter((p) => {
     const q = search.toLowerCase();
-    return (p.titulo?.toLowerCase().includes(q) || p.clientes?.nombre?.toLowerCase().includes(q) || p.vehiculos?.placas?.toLowerCase().includes(q))
-      && (filterEstado === "todos" || p.estado === filterEstado);
+    const matchSearch = p.titulo?.toLowerCase().includes(q) || p.clientes?.nombre?.toLowerCase().includes(q) || p.vehiculos?.placas?.toLowerCase().includes(q);
+    if (filterEstado === "todos") return matchSearch && ESTADOS_ACTIVOS.includes(p.estado);
+    if (filterEstado === "archivados") return matchSearch && ESTADOS_INACTIVOS.includes(p.estado);
+    return matchSearch && p.estado === filterEstado;
   });
 
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
@@ -2139,8 +2209,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       <ModuleHeader
         title="Proyectos"
-        count={proyectos.length}
-        countLabel="proyectos"
+        count={filtered.length}
+        countLabel="proyectos activos"
         darkMode={darkMode}
         action={isAdmin && <BtnAccent onClick={openCreate} color={C_RED}>+ Nuevo Proyecto</BtnAccent>}
       />
@@ -2151,20 +2221,18 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
       {/* Stats strip */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-4 no-scrollbar pr-4">
-        {/* Card Todos */}
         <Card key="todos" darkMode={darkMode}
           className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${filterEstado === "todos" ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
           onClick={() => setFilterEstado("todos")}
         >
-          <p className={`text-base font-bold ${t}`}>{proyectos.length}</p>
-          <p className={`text-[10px] uppercase tracking-wider font-semibold ${st} mt-1`}>Todos</p>
+          <p className={`text-base font-bold ${t}`}>{proyectos.filter(p => ESTADOS_ACTIVOS.includes(p.estado)).length}</p>
+          <p className={`text-[10px] uppercase tracking-wider font-semibold ${st} mt-1`}>Activos</p>
         </Card>
 
-        {ESTADOS_PROYECTO.map((e) => {
+        {ESTADOS_ACTIVOS.map((e) => {
           const count = proyectos.filter((p) => p.estado === e).length;
           const isActive = filterEstado === e;
           const badgeColors = estadoBadge(e, darkMode).split(" ")[1];
-          
           return (
             <Card key={e} darkMode={darkMode}
               className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${isActive ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
@@ -2175,6 +2243,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </Card>
           );
         })}
+
+        <Card key="archivados" darkMode={darkMode}
+          className={`px-2 py-2.5 text-center cursor-pointer transition-all hover:scale-[1.02] flex-1 min-w-[85px] max-w-[160px] flex flex-col justify-center items-center ${filterEstado === "archivados" ? (darkMode ? "ring-2 ring-blue-500 bg-blue-500/10" : "ring-2 ring-blue-500 bg-blue-50") : ""}`}
+          onClick={() => setFilterEstado(filterEstado === "archivados" ? "todos" : "archivados")}
+        >
+          <p className={`text-base font-bold ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>{proyectos.filter(p => ESTADOS_INACTIVOS.includes(p.estado)).length}</p>
+          <p className={`text-[9px] uppercase tracking-wider font-semibold ${st} mt-1`}>Archivados</p>
+        </Card>
       </div>
 
       <Card darkMode={darkMode} className="overflow-hidden">
@@ -2592,10 +2668,11 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           );
           })()}
 
-          <div className="flex items-center gap-3">
+          {/* Bloqueado oculto — se maneja automáticamente */}
+          {/* <div className="flex items-center gap-3">
             <input type="checkbox" id="bloqueado" checked={form.bloqueado} onChange={(e) => setForm({...form, bloqueado: e.target.checked})} className="w-4 h-4" style={{ accentColor: C_BLUE }} />
             <label htmlFor="bloqueado" className={`text-sm ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Bloqueado (entrega pendiente de pago)</label>
-          </div>
+          </div> */}
 
           {/* ── Secciones solo en edición ── */}
           {editTarget && (<>
@@ -3751,6 +3828,21 @@ const EditFotosSection = ({ proyecto, darkMode, session, canUpload }) => {
     }
   };
 
+  const handleDeleteFoto = async (foto) => {
+    try {
+      // Extraer path del storage desde la URL pública
+      const url = foto.url || "";
+      const match = url.match(/fotografias\/(.+)$/);
+      const path = match ? match[1] : null;
+      await supabase.from("fotografias").delete().eq("id", foto.id);
+      if (path) await supabase.storage.from("fotografias").remove([path]);
+      await fetchFotos();
+      if (lightbox === foto.url) setLightbox(null);
+    } catch (e) {
+      setErr(e?.message || "Error al eliminar foto.");
+    }
+  };
+
   const momentoGrupos = ["antes", "durante", "despues"];
 
   return (
@@ -3786,8 +3878,18 @@ const EditFotosSection = ({ proyecto, darkMode, session, canUpload }) => {
               <p className={`text-[10px] font-semibold uppercase tracking-widest mb-2 ${st} capitalize`}>{m === "despues" ? "Después" : m}</p>
               <div className="grid grid-cols-3 gap-2">
                 {grupo.map(f => (
-                  <img key={f.id} src={f.url} alt="" onClick={() => setLightbox(f.url)}
-                    className="w-full h-20 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity" />
+                  <div key={f.id} className="relative group">
+                    <img src={f.url} alt="" onClick={() => setLightbox(f.url)}
+                      className="w-full h-20 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity" />
+                    {canUpload && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteFoto(f); }}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        style={{ backgroundColor: C_RED }}
+                        title="Eliminar foto"
+                      >×</button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -3796,7 +3898,8 @@ const EditFotosSection = ({ proyecto, darkMode, session, canUpload }) => {
       )}
       {lightbox && createPortal(
         <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/90" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain" />
+          <img src={lightbox} alt="" className="rounded-xl object-contain" style={{ maxWidth: "85vw", maxHeight: "85vh" }} onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-white text-xl font-bold" style={{ backgroundColor: C_RED }}>×</button>
         </div>,
         document.body
       )}
@@ -4413,11 +4516,11 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
           <img
             src={lightbox}
             alt="Foto"
-            className="max-w-full max-h-full rounded-lg object-contain"
-            style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}
+            className="rounded-lg object-contain"
+            style={{ maxWidth: "85vw", maxHeight: "85vh", boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}
             onClick={(e) => e.stopPropagation()}
           />
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white text-2xl leading-none opacity-70 hover:opacity-100">×</button>
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-white text-xl font-bold" style={{ backgroundColor: C_RED }}>×</button>
         </div>,
         document.body
       )}
@@ -6340,14 +6443,12 @@ const DashboardMecanico = ({ session, darkMode }) => {
   const navItems = [
     { id: "citas",              label: "Citas",          icon: <LucideIcon name="calendar" /> },
     { id: "proyectos-mecanico", label: "Mis Proyectos",  icon: <LucideIcon name="tool" /> },
-    { id: "diagnosticos",       label: "Diagnósticos",   icon: <LucideIcon name="clipboard" /> },
     { id: "inventario", label: "Inventario", icon: <LucideIcon name="box" /> },
   ];
 
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico" onNotificationClick={handleNotificationClick}>
       {activeModule === "proyectos-mecanico" && <ProyectosMecanicoModule darkMode={darkMode} empleadoId={empleadoId} session={session} initialProjectId={notifProjectId} />}
-      {activeModule === "diagnosticos" && <MecanicoDiagnosticosModule darkMode={darkMode} session={session} />}
       {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
       {activeModule === "inventario" && <GestionInventario darkMode={darkMode} role="mecanico" />}
     </DashboardShell>
