@@ -89,7 +89,9 @@ export default function HistorialServiciosAdmin({
         diagnosticos (
           id,
           tipo,
-          hallazgos,
+          sintomas,
+          descripcion,
+          causa_raiz,
           created_at,
           empleados (
             nombre
@@ -137,7 +139,7 @@ export default function HistorialServiciosAdmin({
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
                 cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
+              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
             `)
             .in("cliente_id", clienteIds)
             .order("fecha_ingreso", { ascending: false });
@@ -165,7 +167,7 @@ export default function HistorialServiciosAdmin({
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
                 cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
+              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -193,7 +195,7 @@ export default function HistorialServiciosAdmin({
               vehiculos (id, marca, modelo, anio, placas, color, vin),
               cotizaciones (id, estado, created_at, fecha_emision, monto_mano_obra, monto_refacc, monto_total, 
                 cotizacion_items (descripcion, cantidad, precio_unit, subtotal)),
-              diagnosticos (id, tipo, hallazgos, created_at, empleados (nombre))
+              diagnosticos (id, tipo, sintomas, descripcion, causa_raiz, created_at, empleados (nombre))
             `)
             .in("vehiculo_id", vehiculoIds)
             .order("fecha_ingreso", { ascending: false });
@@ -557,7 +559,9 @@ export default function HistorialServiciosAdmin({
                             .map((obs, idx) => (
                               <div key={obs.id} className={`p-4 rounded border ${darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
                                 <p className={`text-xs font-medium mb-2 ${textSecondary}`}>Observación {idx + 1}</p>
-                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{cleanHallazgosText(obs.hallazgos || "") || "Sin contenido"}</p>
+                                <p className={`text-sm whitespace-pre-wrap ${textPrimary}`}>{
+                                  [obs.sintomas, obs.descripcion, obs.causa_raiz].filter(Boolean).join("\n") || "Sin contenido"
+                                }</p>
                                 <p className={`text-xs mt-2 ${textSecondary}`}>
                                   {obs.empleados?.nombre ? `Registrado por ${obs.empleados.nombre}` : "Observación registrada"}
                                   {obs.created_at ? ` • ${formatDateTimeWorkshop(obs.created_at)}` : ""}
