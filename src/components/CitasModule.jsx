@@ -156,7 +156,6 @@ export default function CitasModule({
   clienteId = null,
   canManage = false,
   onAppointmentCreated = null,
-  onAppointmentResolved = null,
 }) {
   const [citas, setCitas] = useState([]);
   const [vehiculos, setVehiculos] = useState([]);
@@ -624,8 +623,6 @@ export default function CitasModule({
     setSaving(true);
     setError("");
     try {
-      const citaObjetivo = (citas || []).find((cita) => cita.id === citaId) || null;
-
       // Intentar usar la Edge Function primero (recomendado para consistencia/notificaciones)
       const { data, error: invokeError } = await supabase.functions.invoke("resolver-cita", {
         body: { cita_id: citaId, accion },
@@ -652,15 +649,6 @@ export default function CitasModule({
         }
       } else if (!data?.success) {
         throw new Error(data?.error || "No se pudo procesar la cita.");
-      }
-
-      if (onAppointmentResolved && (accion === "aceptar" || accion === "rechazar")) {
-        onAppointmentResolved({
-          citaId,
-          clienteId: citaObjetivo?.cliente_id || null,
-          accion: accion === "aceptar" ? "confirmada" : "cancelada",
-          fechaHora: citaObjetivo?.fecha_hora ? formatDateTimeWorkshop(citaObjetivo.fecha_hora) : "fecha no disponible",
-        });
       }
 
       await fetchCitas();

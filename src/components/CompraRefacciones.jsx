@@ -132,7 +132,15 @@ export default function CompraRefacciones({ darkMode }) {
       </div>
 
       {status.message && (
-        <div className={`mb-4 rounded-md border px-4 py-3 text-sm ${status.type === "success" ? "bg-emerald-900/20 text-emerald-300" : "bg-red-900/20 text-red-300"}`}>
+        <div
+          className={`mb-4 rounded-md border px-4 py-3 text-sm ${status.type === "success"
+            ? (darkMode
+              ? "bg-emerald-950/30 border-emerald-700 text-emerald-200"
+              : "bg-emerald-50 border-emerald-200 text-emerald-800")
+            : (darkMode
+              ? "bg-red-950/30 border-red-700 text-red-200"
+              : "bg-red-50 border-red-200 text-red-800")}`}
+        >
           {status.message}
         </div>
       )}
