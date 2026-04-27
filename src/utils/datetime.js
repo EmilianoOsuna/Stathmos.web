@@ -1,5 +1,5 @@
-export const WORKSHOP_TIMEZONE = "America/Mexico_City";
-export const WORKSHOP_OFFSET = "-06:00";
+export const WORKSHOP_TIMEZONE = "America/Mazatlan";
+export const WORKSHOP_OFFSET = "-07:00";
 
 export const toWorkshopYmd = (value) => {
   const parts = new Intl.DateTimeFormat("en-US", {

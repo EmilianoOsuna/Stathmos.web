@@ -340,7 +340,7 @@ export default function CitasModule({
   }, [citas]);
 
   const citasPorDia = useMemo(() => {
-    const map = new Map();
+  const map = new Map();
     for (const c of citas) {
       if (!isCountableCalendarCita(c)) continue;
       const key = toWorkshopYmd(c.fecha_hora);
@@ -351,7 +351,9 @@ export default function CitasModule({
 
   const inhabilSet = useMemo(() => {
     const set = new Set();
-    for (const d of diasInhabiles) set.add(d.fecha);
+    for (const d of diasInhabiles) {
+      set.add(String(d.fecha).slice(0, 10));
+    }
     return set;
   }, [diasInhabiles]);
 
@@ -676,11 +678,11 @@ export default function CitasModule({
         // Fallback: Inserción directa
         const { error: insertError } = await supabase
           .from("dias_inhabiles")
-          .insert([{
+          .upsert([{
             fecha: inhabilForm.fecha,
             motivo: inhabilForm.motivo || null,
             activo: true
-          }]);
+        }], { onConflict: "fecha" });
 
         if (insertError) {
           const message = await getFunctionErrorMessage(invokeError, "No se pudo guardar el día inhábil.");
@@ -1160,7 +1162,7 @@ export default function CitasModule({
                   {diasInhabiles.map((dia) => (
                     <div key={dia.id} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${darkMode ? "border-zinc-800 bg-[#1d1d26]" : "border-gray-200 bg-white"}`}>
                       <div>
-                        <p className={`text-sm font-semibold ${t}`}>{formatDateWorkshop(dia.fecha, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</p>
+                        <p className={`text-sm font-semibold ${t}`}>{formatDateWorkshop(`${String(dia.fecha).slice(0,10)}T12:00:00`, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</p>
                         <p className={`text-xs ${st}`}>{dia.motivo || "Sin motivo"}</p>
                       </div>
                       <button
