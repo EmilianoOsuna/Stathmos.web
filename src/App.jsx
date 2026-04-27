@@ -1281,6 +1281,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
   const [modalOpen,    setModalOpen]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [entregadoError, setEntregadoError] = useState("");
   const [form, setForm] = useState({ titulo: "", descripcion: "", cliente_id: "", vehiculo_id: "", mecanico_id: "", estado: "pendiente_diagnostico", bloqueado: false, monto_mano_obra: "", monto_refacc: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -1471,7 +1472,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const adminManualStatusOptions = useMemo(() => {
     if (!editTarget) return [];
-    const base = ["en_progreso", "pendiente_refaccion", "terminado", "entregado", "cancelado"];
+    const cotizacionAprobada = editTarget.cotizaciones?.some(c => c.estado === "aprobada");
+    const base = cotizacionAprobada
+      ? ["en_progreso", "pendiente_refaccion", "terminado", "entregado", "cancelado"]
+      : ["cancelado"];
     const current = form.estado;
     return base.includes(current) ? base : [current, ...base];
   }, [editTarget, form.estado]);
@@ -1651,12 +1655,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           const hasApprovedPayment = await hasApprovedPaymentForProject(editTarget.id);
           if (!hasApprovedPayment) {
             setSaving(false);
-            setFormError("No puedes marcar como entregado sin un pago aprobado.");
+            setEntregadoError("No es posible marcar como entregado sin un pago aprobado.");
             return;
           }
         } catch (paymentCheckErr) {
           setSaving(false);
-          setFormError(paymentCheckErr?.message || "No se pudo validar el pago del proyecto.");
+          setEntregadoError(paymentCheckErr?.message || "No se pudo validar el pago del proyecto.");
           return;
         }
       }
@@ -2071,6 +2075,11 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
   const handleAdminEstadoChange = async (nextEstado) => {
     setFormError("");
+    const cotizacionAprobada = editTarget?.cotizaciones?.some(c => c.estado === "aprobada");
+    if (!cotizacionAprobada && nextEstado !== "cancelado") {
+      setFormError("No es posible cambiar el estado del proyecto sin una cotización aprobada. Solo puedes cancelarlo.");
+      return;
+    }
     if (!editTarget) {
       setForm((prev) => ({ ...prev, estado: nextEstado }));
       return;
@@ -2114,6 +2123,13 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       return;
     }
 
+    if (nextEstado === "en_progreso") {
+      const cotizacion = editTarget?.cotizaciones?.find(c => c.estado === "aprobada");
+      if (!cotizacion) {
+        setFormError("No puedes mover a En progreso sin una cotización aprobada por el cliente.");
+        return;
+      }
+    }
     setForm((prev) => ({ ...prev, estado: nextEstado }));
   };
 
@@ -2592,7 +2608,13 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
                   <p className="whitespace-pre-wrap">{editTarget.observaciones}</p>
                 </div>
               )}
-              <ObservacionesSection proyecto={editTarget} darkMode={darkMode} canUpload={isAdmin} session={session} />
+              <ObservacionesSection
+                proyecto={editTarget}
+                darkMode={darkMode}
+                canUpload={isAdmin}
+                session={session}
+                onGuardado={(nuevoTexto) => setEditTarget(prev => ({ ...prev, observaciones: nuevoTexto }))}
+              />
             </div>
 
             {/* Diagnóstico Final */}
@@ -2665,6 +2687,26 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
         canUpload={false} session={session}
         onProjectUpdated={handleProyectoActualizado}
       />
+    {entregadoError && (
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60">
+        <div className={`w-full max-w-sm rounded-xl p-6 ${darkMode ? "bg-[#1e1e28]" : "bg-white"}`}
+          style={{ boxShadow: "0 16px 48px rgba(0,0,0,0.3)" }}>
+          <h3 className={`font-semibold text-base mb-2 ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>
+            Acción no permitida
+          </h3>
+          <p className={`text-sm mb-4 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
+            {entregadoError}
+          </p>
+          <button
+            onClick={() => setEntregadoError("")}
+            className="w-full py-2 rounded-lg text-sm font-medium text-white"
+            style={{ backgroundColor: C_BLUE }}
+          >
+            Entendido
+          </button>
+        </div>
+      </div>
+    )}  
     </div>
   );
 };
@@ -2977,7 +3019,7 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
     </div>
   );
 };
-  const ObservacionesSection = ({ proyecto, darkMode, canUpload, session }) => {
+  const ObservacionesSection = ({ proyecto, darkMode, canUpload, session, onGuardado }) => {
     const valorGuardado = useRef(proyecto.observaciones || "");
     const [texto, setTexto]   = useState(valorGuardado.current);
     const [saving, setSaving] = useState(false);
@@ -2999,8 +3041,8 @@ const DiagnosticoInicialSection = ({ proyecto, darkMode, session, canUpload, dia
           .update({ observaciones: texto.trim(), updated_at: new Date().toISOString() })
           .eq("id", proyecto.id);
         if (error) throw error;
-        // ✅ Actualiza la referencia local sin necesitar recargar el padre
         valorGuardado.current = texto.trim();
+        if (onGuardado) onGuardado(texto.trim());
       } catch (e) {
         setErr(e?.message || "Error al guardar.");
       } finally {
@@ -3444,7 +3486,7 @@ const EditRefaccionesSection = React.forwardRef(function EditRefaccionesSection(
             precio_unit: Number(r.precio_unitario || 0),
             proyecto_id: proyecto.id,
           });
-          const { error: delErr } = await supabase.from("proyecto_refacciones").delete().eq("id", r.id);
+          const { error: delErr } = await supabase.from("proyecto_refacciones").update({ fue_usada: false }).eq("id", r.id);
           if (delErr) throw new Error("Error al eliminar refacción del proyecto: " + delErr.message);
         }
       }
@@ -3525,6 +3567,11 @@ const EditRefaccionesSection = React.forwardRef(function EditRefaccionesSection(
                 <p className={t}>{r.refacciones?.nombre || "—"}</p>
                 <p className={`text-xs ${st}`}>Cant: {r.cantidad} · ${Number(r.precio_unitario || 0).toFixed(2)} c/u</p>
               </div>
+              {!r.fue_usada && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-400 border-gray-200"}`}>
+                  No se necesitó
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -4277,9 +4324,14 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
               refaccionesAsignadas.map(r => (
                 <div key={r.id} className="flex justify-between items-center py-2 text-sm">
                   <div>
-                    <p className={t}>{r.refacciones?.nombre}</p>
+                    <p className={`${t} ${!r.fue_usada ? "opacity-50 line-through" : ""}`}>{r.refacciones?.nombre}</p>
                     <p className={st}>Cant: {r.cantidad}</p>
                   </div>
+                  {!r.fue_usada && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-400 border-gray-200"}`}>
+                      No se necesitó
+                    </span>
+                  )}
                 </div>
               ))
             )}
@@ -4892,7 +4944,7 @@ const MisVehiculosModule = ({ darkMode, clienteId }) => {
   );
 };
 //Modulo carrito de cliente
-const MiCarritoModule = ({darkMode, clienteId, session}) =>{
+const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4903,7 +4955,38 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [cardData, setCardData] = useState({ titular: "", numero: "", mes: "", ano: "", cvv: "" });
+  const [showPollingModal, setShowPollingModal] = useState(false);
+  const [pollingPagoId,    setPollingPagoId]    = useState(null);
+  const [pollingStatus,    setPollingStatus]    = useState("waiting");
   const [efectivoData, setEfectivoData] = useState({ confirmacion: false });
+    useEffect(() => {
+    if (!showPollingModal || !pollingPagoId) return;
+    let cancelled = false;
+    const TIMEOUT_MS = 2 * 60 * 1000;
+    const start = Date.now();
+
+    const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() - start > TIMEOUT_MS) {
+        if (!cancelled) setPollingStatus("timeout");
+        return;
+      }
+      const { data } = await supabase
+        .from("pagos")
+        .select("estado")
+        .eq("id", pollingPagoId)
+        .maybeSingle();
+
+      if (data?.estado === "completado") {
+        if (!cancelled) setPollingStatus("success");
+        return;
+      }
+      setTimeout(poll, 3000);
+    };
+
+    poll();
+    return () => { cancelled = true; };
+  }, [showPollingModal, pollingPagoId]);
 
   useEffect(() => {
     if (!clienteId) return;
@@ -5024,6 +5107,9 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
 
       const { data: json, error: invokeError } = await supabase.functions.invoke("crear-pago", {
         body: payload,
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
       });
 
       if (invokeError) {
@@ -5043,10 +5129,14 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
-
-      setTimeout(() => {
-        navigate(`/ticket/${selectedTicket.id}`);
-      }, 500);
+      if (metodo === "efectivo") {
+        setPollingPagoId(json?.pago?.id || null);
+        setShowPollingModal(true);
+      } else {
+        setTimeout(() => {
+          navigate(`/ticket/${selectedTicket.id}`);
+        }, 500);     
+      } 
     } catch (error) {
       console.error("Error al procesar pago:", error);
       setPaymentError("Error al procesar el pago: " + (error?.message || String(error)));
@@ -5054,7 +5144,7 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
       setProcessingPayment(false);
     }
   };
-
+  
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
 
@@ -5427,6 +5517,47 @@ const MiCarritoModule = ({darkMode, clienteId, session}) =>{
             </Card>
           )}
         </div>
+        {showPollingModal && createPortal(
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/70">
+            <div className={`w-full max-w-sm rounded-2xl p-8 flex flex-col items-center gap-5 ${darkMode ? "bg-[#1e1e28]" : "bg-white"}`}
+              style={{ boxShadow: "0 24px 64px rgba(0,0,0,0.4)" }}>
+              <LogoMark className="h-10 w-auto" darkMode={darkMode} />
+              {pollingStatus === "waiting" && (<>
+                <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
+                <div className="text-center">
+                  <p className={`font-semibold text-sm ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>Esperando validación de pago</p>
+                  <p className={`text-xs mt-1 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>El administrador está revisando tu pago. El ticket se generará automáticamente una vez validado.</p>
+                </div>
+                <button
+                  onClick={() => { setShowPollingModal(false); onNavigate("mis-tickets"); }}
+                  className={`text-xs px-4 py-2 rounded-lg border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>
+                  Omitir — ver mis tickets después
+                </button>
+              </>)}
+              {pollingStatus === "success" && (<>
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <LucideIcon name="check" className="w-6 h-6 text-emerald-500" />
+                </div>
+                <div className="text-center">
+                  <p className={`font-semibold text-sm ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>¡Pago validado!</p>
+                  <p className={`text-xs mt-1 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Tu pago fue confirmado. Redirigiendo a tu ticket…</p>
+                </div>
+                {(() => { setTimeout(() => { setShowPollingModal(false); navigate(`/ticket/${selectedTicket?.id}`); }, 1500); return null; })()}
+              </>)}
+              {pollingStatus === "timeout" && (<>
+                <p className={`font-semibold text-sm text-center ${darkMode ? "text-zinc-100" : "text-gray-800"}`}>El administrador aún no ha validado el pago.</p>
+                <p className={`text-xs text-center ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Puedes revisar el estado en "Mis Tickets" más tarde.</p>
+                <button
+                  onClick={() => { setShowPollingModal(false); onNavigate("mis-tickets"); }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                  style={{ backgroundColor: C_BLUE }}>
+                  Ir a mis tickets
+                </button>
+              </>)}
+            </div>
+          </div>,
+          document.body
+        )}  
       </div>
     );
   }
@@ -5813,7 +5944,8 @@ const DashboardCliente = ({ session, darkMode }) => {
     { id: "citas",         label: "Citas",          icon: <LucideIcon name="calendar" /> },
     { id: "mis-proyectos", label: "Mis Proyectos", icon: <LucideIcon name="tool" /> },
     { id: "mis-vehiculos", label: "Mis Vehículos",  icon: <LucideIcon name="car" /> },
-    { id: "mi-carrito",    label: "Mi carrito",icon: <LucideIcon name="shoppingcart" />},
+    { id: "mi-carrito",    label: "Mi carrito",   icon: <LucideIcon name="shoppingcart" /> },
+    { id: "mis-tickets",   label: "Mis Tickets",  icon: <LucideIcon name="receipt" /> },
   ];
 
   return (
@@ -5828,7 +5960,7 @@ const DashboardCliente = ({ session, darkMode }) => {
           session
         });
       }} />}
-      {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId} session={session}/>}
+      {activeModule === "mi-carrito" && <MiCarritoModule darkMode={darkMode} clienteId={clienteId} session={session} onNavigate={setActiveModule}/>}      {activeModule === "mis-tickets" && (<HistorialTicketsWrapper darkMode={darkMode} />)}     
     </DashboardShell>
   );
 };

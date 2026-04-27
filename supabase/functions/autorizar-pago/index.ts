@@ -15,6 +15,13 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+const toCanonicalRole = (value = "") => {
+  const role = normalizeRole(value);
+  if (["admin", "administrador"].includes(role)) return "administrador";
+  if (["mecanico", "mecanica", "mecanico/a"].includes(role)) return "mecanico";
+  return role;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -23,7 +30,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const authHeader = req.headers.get("authorization") || "";
@@ -43,34 +49,19 @@ serve(async (req) => {
       );
     }
 
-    const { data: perfil, error: perfilErr } = await supabaseAdmin
-      .from("usuarios")
-      .select("rol_id")
-      .eq("id", authData.user.id)
-      .maybeSingle();
-    if (perfilErr) throw perfilErr;
+    const role = toCanonicalRole(
+      authData.user?.app_metadata?.rol ||
+      authData.user?.user_metadata?.rol ||
+      ""
+    );
 
-    let rolNombre = "";
-    if (perfil?.rol_id) {
-      const { data: rolData, error: rolErr } = await supabaseAdmin
-        .from("roles")
-        .select("nombre")
-        .eq("id", perfil.rol_id)
-        .maybeSingle();
-      if (rolErr) throw rolErr;
-      rolNombre = normalizeRole(rolData?.nombre || "");
-    }
-
-    if (!["administrador", "admin"].includes(rolNombre)) {
+    if (role !== "administrador") {
       return new Response(
         JSON.stringify({ success: false, error: "Forbidden: solo administrador puede autorizar pagos" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
       );
     }
 
-    const supabaseUser = createClient(supabaseUrl, token);
-
-    // Obtener el cuerpo de la solicitud
     const body = await req.json();
     const { pago_id, cambiar_a_entregado } = body;
 
@@ -81,8 +72,7 @@ serve(async (req) => {
       );
     }
 
-    // Obtener el pago
-    const { data: pago, error: pagoErr } = await supabaseUser
+    const { data: pago, error: pagoErr } = await supabaseAdmin
       .from("pagos")
       .select("id, proyecto_id, estado")
       .eq("id", pago_id)
@@ -96,7 +86,6 @@ serve(async (req) => {
       );
     }
 
-    // Validar que el pago esté en estado "pendiente"
     if (pago.estado !== "pendiente") {
       return new Response(
         JSON.stringify({ success: false, error: `El pago ya está en estado: ${pago.estado}` }),
@@ -104,20 +93,16 @@ serve(async (req) => {
       );
     }
 
-    // Autorizar el pago (cambiar a "completado")
     const { data: pagoActualizado, error: pagoUpdateErr } = await supabaseAdmin
       .from("pagos")
-      .update({
-        estado: "completado",
-      })
+      .update({ estado: "completado" })
       .eq("id", pago_id)
       .select()
       .single();
 
     if (pagoUpdateErr) throw pagoUpdateErr;
 
-    // Si el admin eligió cambiar el estado del proyecto a "entregado"
-    if (cambiar_a_entregado) {
+    if (cambiar_a_entregado && pago.proyecto_id) {
       const { error: proyectoErr } = await supabaseAdmin
         .from("proyectos")
         .update({
@@ -126,35 +111,22 @@ serve(async (req) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", pago.proyecto_id);
-
       if (proyectoErr) throw proyectoErr;
     }
 
-    // Registrar en auditoría
-    const { data: userData } = await supabaseAdmin.auth.getUser(token);
-    const usuarioId = userData?.user?.id ?? null;
     const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
-
-    await supabaseAdmin
-      .from("auditoria")
-      .insert([
-        {
-          usuario_id: usuarioId,
-          tabla: "pagos",
-          operacion: "UPDATE",
-          registro_id: pago_id,
-          datos_antes: { estado: pago.estado },
-          datos_despues: { estado: "completado", cambiar_a_entregado },
-          ip,
-        },
-      ]);
+    await supabaseAdmin.from("auditoria").insert([{
+      usuario_id: authData.user.id,
+      tabla: "pagos",
+      operacion: "UPDATE",
+      registro_id: pago_id,
+      datos_antes: { estado: pago.estado },
+      datos_despues: { estado: "completado", cambiar_a_entregado },
+      ip,
+    }]);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        pago: pagoActualizado,
-        cambiar_a_entregado,
-      }),
+      JSON.stringify({ success: true, pago: pagoActualizado, cambiar_a_entregado }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
