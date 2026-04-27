@@ -5699,8 +5699,8 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
       <div className="mb-6">
         <h2 className={`text-lg font-semibold flex items-center gap-2 ${t}`}>
-          <LucideIcon name="clipboard" className="w-5 h-5" />
-          Mis Tickets
+          <LucideIcon name="shoppingcart" className="w-5 h-5" />
+          Mi Carrito
         </h2>
         <p className={`text-xs ${st} mt-0.5`}>{tickets.length} en total</p>
       </div>
