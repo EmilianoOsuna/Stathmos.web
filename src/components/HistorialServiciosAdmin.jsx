@@ -577,16 +577,6 @@ export default function HistorialServiciosAdmin({
     }
   };
 
-  const imprimirTicketServicio = (servicioId) => {
-    const ticketUrl = `${window.location.origin}/ticket/${servicioId}?autoprint=1`;
-    const popup = window.open(ticketUrl, "_blank", "noopener,noreferrer");
-
-    // If popup is blocked, fallback to same-tab navigation.
-    if (!popup) {
-      window.location.assign(ticketUrl);
-    }
-  };
-
   const estados = [
     { value: "todos", label: "Todos" },
     { value: "activo", label: "Activo" },
@@ -1036,17 +1026,9 @@ export default function HistorialServiciosAdmin({
                   {/* Botones de acción */}
                   <div className={`flex flex-wrap gap-2 pt-4 px-4 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
                     <Button
-                      onClick={() => imprimirTicketServicio(servicio.id)}
-                      variant="primary"
-                      className="flex items-center gap-2"
-                    >
-                      <Icon name="printer" className="w-4 h-4" />
-                      Imprimir Ticket
-                    </Button>
-                    <Button
                       onClick={() => generarPDFServicio(servicio)}
                       disabled={generandoPDF[servicio.id]}
-                      variant="secondary"
+                      variant="primary"
                       className="flex items-center gap-2"
                     >
                       <Icon name="download" className="w-4 h-4" />
