@@ -168,8 +168,9 @@ const useUserNotifications = (session) => {
     setLoading(true);
     const { data } = await supabase
       .from("notificaciones")
-      .select("id, titulo, mensaje, leida, proyecto_id, created_at")
+      .select("id, titulo, mensaje, leida, proyecto_id, cita_id, created_at")
       .eq("usuario_id", userId)
+      .limit(30)
       .order("created_at", { ascending: false });
     setNotificaciones(data || []);
     setLoading(false);
@@ -244,7 +245,10 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
     }
     const finalName = name || "Un cliente";
 
-    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    const { data: admins } = await supabase
+      .from("usuarios")
+      .select("id")
+      .or("rol.eq.Administrador,rol.ilike.administrador");
     if (!admins || admins.length === 0) return;
 
     const titulo = "Nueva cita agendada";
@@ -263,7 +267,10 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
 
 const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }) => {
   try {
-    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    const { data: admins } = await supabase
+      .from("usuarios")
+      .select("id")
+      .or("rol.eq.Administrador,rol.ilike.administrador");
     if (!admins || admins.length === 0) return;
 
     const titulo = "Pago recibido";
@@ -281,6 +288,8 @@ const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }
 };
 
 const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
+  const ESTADOS_NOTIFICAR_CLIENTE = ["en_progreso", "terminado", "entregado", "cancelado"];
+  if (!ESTADOS_NOTIFICAR_CLIENTE.includes(nuevoEstado)) return;
   if (!clienteId) return;
   try {
     const { data: cliente } = await supabase
@@ -310,6 +319,145 @@ const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, 
     });
   } catch (err) {
     console.warn("[notifyClientStateChange] error:", err);
+  }
+};
+
+const notifyClientCotizacion = async ({ proyectoId, clienteId, tituloProyecto, session }) => {
+  if (!clienteId) return;
+  try {
+    const { data: cliente } = await supabase
+      .from("clientes")
+      .select("usuario_id, correo")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    let usuarioId = cliente?.usuario_id;
+    if (!usuarioId && cliente?.correo) {
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("id")
+        .eq("correo", cliente.correo)
+        .maybeSingle();
+      usuarioId = usuario?.id;
+    }
+
+    if (!usuarioId) return;
+
+    await invokeEdgeFunction("enviar-notificacion", {
+      body: {
+        usuario_id: usuarioId,
+        proyecto_id: proyectoId,
+        titulo: "Cotizacion lista para revisar",
+        mensaje: `Tu cotizacion para el proyecto "${tituloProyecto}" esta lista. Revisala y aprueba o rechaza.`,
+      },
+      userToken: session?.access_token || "",
+    });
+  } catch (err) {
+    console.warn("[notifyClientCotizacion] error:", err);
+  }
+};
+
+const notifyAdminCotizacionRespuesta = async ({ proyectoId, tituloProyecto, accion, mecanicoUsuarioId, session }) => {
+  try {
+    const { data: admins } = await supabase
+      .from("usuarios")
+      .select("id")
+      .or("rol.eq.Administrador,rol.ilike.administrador");
+
+    const recipients = new Set((admins || []).map((a) => a.id).filter(Boolean));
+    if (mecanicoUsuarioId) recipients.add(mecanicoUsuarioId);
+    if (recipients.size === 0) return;
+
+    const titulo = accion === "aprobada" ? "Cotizacion aprobada" : "Cotizacion rechazada";
+    const mensaje = `El cliente ha ${accion} la cotizacion del proyecto "${tituloProyecto}".`;
+
+    for (const usuarioId of recipients) {
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: { usuario_id: usuarioId, proyecto_id: proyectoId, titulo, mensaje },
+        userToken: session?.access_token || "",
+      });
+    }
+  } catch (err) {
+    console.warn("[notifyAdminCotizacionRespuesta] error:", err);
+  }
+};
+
+const notifyAdminProyectoTerminado = async ({ proyectoId, tituloProyecto, mecanicoNombre, session }) => {
+  try {
+    const { data: admins } = await supabase
+      .from("usuarios")
+      .select("id")
+      .or("rol.eq.Administrador,rol.ilike.administrador");
+    if (!admins || admins.length === 0) return;
+
+    const titulo = "Proyecto listo para entrega";
+    const mensaje = `El mecanico ${mecanicoNombre || "asignado"} ha marcado el proyecto "${tituloProyecto}" como terminado.`;
+
+    for (const admin of admins) {
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: { usuario_id: admin.id, proyecto_id: proyectoId, titulo, mensaje },
+        userToken: session?.access_token || "",
+      });
+    }
+  } catch (err) {
+    console.warn("[notifyAdminProyectoTerminado] error:", err);
+  }
+};
+
+const notifyAdminDiagnostico = async ({ proyectoId, tituloProyecto, mecanicoNombre, session }) => {
+  try {
+    const { data: admins } = await supabase
+      .from("usuarios")
+      .select("id")
+      .or("rol.eq.Administrador,rol.ilike.administrador");
+    if (!admins || admins.length === 0) return;
+
+    const titulo = "Diagnostico registrado";
+    const mensaje = `Se registro un diagnostico inicial en el proyecto "${tituloProyecto}" por ${mecanicoNombre || "mecanico"}.`;
+
+    for (const admin of admins) {
+      await invokeEdgeFunction("enviar-notificacion", {
+        body: { usuario_id: admin.id, proyecto_id: proyectoId, titulo, mensaje },
+        userToken: session?.access_token || "",
+      });
+    }
+  } catch (err) {
+    console.warn("[notifyAdminDiagnostico] error:", err);
+  }
+};
+
+const notifyClientCitaResuelta = async ({ citaId, clienteId, accion, fechaHora, session }) => {
+  if (!clienteId) return;
+  try {
+    const { data: cliente } = await supabase
+      .from("clientes")
+      .select("usuario_id, correo")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    let usuarioId = cliente?.usuario_id;
+    if (!usuarioId && cliente?.correo) {
+      const { data: usuario } = await supabase
+        .from("usuarios")
+        .select("id")
+        .eq("correo", cliente.correo)
+        .maybeSingle();
+      usuarioId = usuario?.id;
+    }
+
+    if (!usuarioId) return;
+
+    const titulo = accion === "confirmada" ? "Cita confirmada" : "Cita cancelada";
+    const mensaje = accion === "confirmada"
+      ? `Tu cita del ${fechaHora} ha sido confirmada.`
+      : `Tu cita del ${fechaHora} ha sido cancelada.`;
+
+    await invokeEdgeFunction("enviar-notificacion", {
+      body: { usuario_id: usuarioId, cita_id: citaId, titulo, mensaje },
+      userToken: session?.access_token || "",
+    });
+  } catch (err) {
+    console.warn("[notifyClientCitaResuelta] error:", err);
   }
 };
 
@@ -1954,6 +2102,19 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
           nuevoEstado: estadoFinalEdit,
           session,
         });
+
+        if (isMecanico && estadoFinalEdit === "terminado") {
+          const mecanicoNombre = session?.user?.user_metadata?.nombre
+            || empleados.find((e) => e.id === form.mecanico_id)?.nombre
+            || empleados.find((e) => e.correo === session?.user?.email)?.nombre
+            || "Mecanico";
+          await notifyAdminProyectoTerminado({
+            proyectoId: editTarget.id,
+            tituloProyecto: form.titulo,
+            mecanicoNombre,
+            session,
+          });
+        }
       }
 
       if (!error) {
@@ -1983,6 +2144,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
             .update(quotePayload)
             .eq("id", existingCotizacion.id);
           error = quoteUpdate.error;
+
+          if (!error && quoteChangedInDb) {
+            await notifyClientCotizacion({
+              proyectoId: editTarget.id,
+              clienteId: form.cliente_id,
+              tituloProyecto: form.titulo,
+              session,
+            });
+          }
 
           // Mover a pendiente_aprobacion si hay cotización activa (cambiada o no) y el proyecto está en etapa temprana
           if (!error) {
@@ -2016,6 +2186,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
             .select("id")
             .single();
           error = quoteInsert.error;
+          if (!error) {
+            await notifyClientCotizacion({
+              proyectoId: editTarget.id,
+              clienteId: form.cliente_id,
+              tituloProyecto: form.titulo,
+              session,
+            });
+          }
           if (!error) {
             const { error: projectStatusErr } = await supabase
               .from("proyectos")
@@ -2064,6 +2242,14 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
           .select("id")
           .single();
         error = quoteInsert.error;
+        if (!error) {
+          await notifyClientCotizacion({
+            proyectoId: createdProject.id,
+            clienteId: form.cliente_id,
+            tituloProyecto: form.titulo,
+            session,
+          });
+        }
         if (!error) {
           const syncErr = await syncRefaccionItems(quoteInsert.data?.id, createdProject.id);
           if (syncErr) error = syncErr;
@@ -2119,6 +2305,19 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
             }]);
             diagSaved = true;
           }
+        }
+
+        if (diagSaved) {
+          const mecanicoNombre = session?.user?.user_metadata?.nombre
+            || empleados.find((e) => e.id === mecId)?.nombre
+            || empleados.find((e) => e.correo === session?.user?.email)?.nombre
+            || "Mecanico";
+          await notifyAdminDiagnostico({
+            proyectoId: proyectoIdFinal,
+            tituloProyecto: form.titulo,
+            mecanicoNombre,
+            session,
+          });
         }
       }
     }
@@ -2871,6 +3070,20 @@ const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
   const [open, setOpen, ref] = useClickOutside();
   const { notificaciones, unreadCount, refresh } = useUserNotifications(session);
 
+  const getNotificationIcon = (titulo = "") => {
+    const key = String(titulo || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    if (key.includes("cita")) return "📅";
+    if (key.includes("pago")) return "💳";
+    if (key.includes("cotizacion")) return "📋";
+    if (key.includes("proyecto") || key.includes("estado")) return "🔧";
+    if (key.includes("foto")) return "📷";
+    return "🔔";
+  };
+
   const handleMarkRead = async (id) => {
     if (!id) return;
     await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
@@ -2893,7 +3106,12 @@ const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
       >
         <LucideIcon name="bell" className={`w-5 h-5 ${darkMode ? "text-zinc-400" : "text-gray-500"}`} />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 border-2" style={{ borderColor: darkMode ? "#12121a" : "#ffffff" }}></span>
+          <span
+            className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 border-2 text-[9px] leading-[12px] text-white font-semibold flex items-center justify-center"
+            style={{ borderColor: darkMode ? "#12121a" : "#ffffff" }}
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
         )}
       </button>
 
@@ -2923,7 +3141,10 @@ const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
                   className={`p-3 rounded-lg flex flex-col gap-1 transition-colors cursor-pointer ${darkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-50"} ${!n.leida ? (darkMode ? "bg-zinc-800/80" : "bg-blue-50/80") : ""}`}
                 >
                   <div className="flex justify-between items-start gap-2">
-                    <p className={`text-xs font-semibold ${darkMode ? "text-zinc-200" : "text-gray-800"} ${!n.leida ? "font-bold" : ""}`}>{n.titulo}</p>
+                    <div className="flex items-start gap-2 min-w-0">
+                      <span className="text-sm leading-none mt-0.5">{getNotificationIcon(n.titulo)}</span>
+                      <p className={`text-xs font-semibold ${darkMode ? "text-zinc-200" : "text-gray-800"} ${!n.leida ? "font-bold" : ""}`}>{n.titulo}</p>
+                    </div>
                     {!n.leida && <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1"></span>}
                   </div>
                   <p className={`text-[11px] leading-relaxed ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>{n.mensaje}</p>
@@ -4682,6 +4903,8 @@ const Dashboard = ({ session, darkMode }) => {
     if (n.proyecto_id) {
       setNotifProjectId(n.proyecto_id);
       setActiveModule("proyectos");
+    } else if (n.cita_id) {
+      setActiveModule("citas");
     }
   };
 
@@ -4711,6 +4934,14 @@ const Dashboard = ({ session, darkMode }) => {
             clienteId: data.clienteId,
             fechaHora: `${data.fecha} ${data.hora}`,
             session
+          });
+        }} onAppointmentResolved={(data) => {
+          notifyClientCitaResuelta({
+            citaId: data.citaId,
+            clienteId: data.clienteId,
+            accion: data.accion,
+            fechaHora: data.fechaHora,
+            session,
           });
         }} />
       )}
@@ -5876,6 +6107,29 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
     const nextEstado = json?.estado || (decision === "aprobar" ? "aprobada" : "rechazada");
     const nowIso = new Date().toISOString();
 
+    let mecanicoUsuarioId = null;
+    if (proyecto?.mecanico_id) {
+      try {
+        const { data: emp } = await supabase
+          .from("empleados")
+          .select("usuario_id, correo")
+          .eq("id", proyecto.mecanico_id)
+          .maybeSingle();
+
+        mecanicoUsuarioId = emp?.usuario_id || null;
+        if (!mecanicoUsuarioId && emp?.correo) {
+          const { data: usr } = await supabase
+            .from("usuarios")
+            .select("id")
+            .eq("correo", emp.correo)
+            .maybeSingle();
+          mecanicoUsuarioId = usr?.id || null;
+        }
+      } catch {
+        mecanicoUsuarioId = null;
+      }
+    }
+
     setProyectos((prev) => prev.map((p) => {
       if (p.id !== proyecto.id) return p;
       const existing = Array.isArray(p.cotizaciones) ? p.cotizaciones : [];
@@ -5915,6 +6169,15 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
         ? "Cotizacion aprobada correctamente."
         : "Cotizacion rechazada correctamente."
     );
+
+    await notifyAdminCotizacionRespuesta({
+      proyectoId: proyecto.id,
+      tituloProyecto: proyecto.titulo || "Sin titulo",
+      accion: decision === "aprobar" ? "aprobada" : "rechazada",
+      mecanicoUsuarioId,
+      session,
+    });
+
     setDecisionLoadingId(null);
   };
 
@@ -6058,6 +6321,8 @@ const DashboardCliente = ({ session, darkMode }) => {
     if (n.proyecto_id) {
       setNotifProjectId(n.proyecto_id);
       setActiveModule("mis-proyectos");
+    } else if (n.cita_id) {
+      setActiveModule("citas");
     }
   };
 
@@ -6442,6 +6707,8 @@ const DashboardMecanico = ({ session, darkMode }) => {
     if (n.proyecto_id) {
       setNotifProjectId(n.proyecto_id);
       setActiveModule("proyectos-mecanico");
+    } else if (n.cita_id) {
+      setActiveModule("citas");
     }
   };
 
@@ -6466,7 +6733,15 @@ const DashboardMecanico = ({ session, darkMode }) => {
   return (
     <DashboardShell session={session} darkMode={darkMode} navItems={navItems} activeModule={activeModule} setActiveModule={setActiveModule} rolLabel="Mecánico" onNotificationClick={handleNotificationClick}>
       {activeModule === "proyectos-mecanico" && <ProyectosModule darkMode={darkMode} session={session} empleadoId={empleadoId} initialProjectId={notifProjectId} />}
-      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage />}
+      {activeModule === "citas" && <CitasModule darkMode={darkMode} role="mecanico" canManage onAppointmentResolved={(data) => {
+        notifyClientCitaResuelta({
+          citaId: data.citaId,
+          clienteId: data.clienteId,
+          accion: data.accion,
+          fechaHora: data.fechaHora,
+          session,
+        });
+      }} />}
       {activeModule === "inventario" && <GestionInventario darkMode={darkMode} role="mecanico" />}
     </DashboardShell>
   );
