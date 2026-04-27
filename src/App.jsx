@@ -2124,10 +2124,12 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
     }
 
     setModalOpen(false);
-      const { data: freshProyectos } = await supabase
+      let freshQuery = supabase
         .from("proyectos")
         .select("*, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
         .order("created_at", { ascending: false });
+      if (empleadoId) freshQuery = freshQuery.eq("mecanico_id", empleadoId);
+      const { data: freshProyectos } = await freshQuery;
       if (freshProyectos) {
         setProyectos(freshProyectos);
         if (detalle) setDetalle(freshProyectos.find(p => p.id === detalle.id) || null);
