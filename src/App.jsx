@@ -1391,7 +1391,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
       supabase.from("vehiculos").select("id,cliente_id,marca,modelo,placas").eq("activo", true),
       supabase.from("empleados").select("id,nombre,correo,usuario_id").eq("activo", true).order("nombre"),
       supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,stock,activo").eq("activo", true).order("nombre"),
-      supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
+      supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado,proyectos(id)").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
     ]);
     setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);  // ← agrega setCitas
   }, []);
@@ -1909,11 +1909,25 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
 
       const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
       error = projectRes.error;
-      if (!error && form.cita_id) {  // solo si el proyecto se guardó bien
-        await supabase
-          .from("citas")
-          .update({ estado: "confirmada", updated_at: new Date().toISOString() })
-          .eq("id", form.cita_id);
+      if (!error) {
+        const citaAnterior = editTarget.cita_id;
+        const citaNueva = form.cita_id;
+        if (citaAnterior && citaAnterior !== citaNueva) {
+          await supabase.from("citas")
+            .update({ estado: "pendiente", updated_at: new Date().toISOString() })
+            .eq("id", citaAnterior);
+        }
+        if (citaNueva && citaNueva !== citaAnterior) {
+          await supabase.from("citas")
+            .update({ estado: "confirmada", updated_at: new Date().toISOString() })
+            .eq("id", citaNueva);
+        }
+        if (estadoFinalEdit === "entregado" && (citaNueva || citaAnterior)) {
+          const citaACompletar = citaNueva || citaAnterior;
+          await supabase.from("citas")
+            .update({ estado: "completada", updated_at: new Date().toISOString() })
+            .eq("id", citaACompletar);
+        }
       }
       if (!error && form.mecanico_id && form.mecanico_id !== prevMecanicoId) {
         await notifyMecanicoAsignacion({
@@ -2333,7 +2347,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
             </Select>
           </Field>
           <Field label="Vehículo" required darkMode={darkMode}>
-            <Select darkMode={darkMode} value={form.vehiculo_id} onChange={(e) => setForm({...form, vehiculo_id: e.target.value})} disabled={!form.cliente_id}>
+            <Select darkMode={darkMode} value={form.vehiculo_id} onChange={(e) => setForm({...form, vehiculo_id: e.target.value, cita_id: ""})} disabled={!form.cliente_id}>
               <option value="">{form.cliente_id ? "Seleccionar vehículo…" : "Primero selecciona un cliente"}</option>
               {filteredVehiculos.map((v) => <option key={v.id} value={v.id}>{v.marca} {v.modelo} · {v.placas}</option>)}
             </Select>
@@ -2342,7 +2356,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null }) => {
           {(() => {
             const citasFiltradas = citas.filter(
               (ci) => ci.cliente_id === form.cliente_id &&
-                      (!form.vehiculo_id || ci.vehiculo_id === form.vehiculo_id)
+                      (!form.vehiculo_id || ci.vehiculo_id === form.vehiculo_id) &&
+                      // Excluir citas ya vinculadas a otro proyecto (permitir la del proyecto actual en edición)
+                      (!ci.proyectos || ci.proyectos.length === 0 || (editTarget && ci.proyectos.some(p => p.id === editTarget.id)))
             );
             return (
               <Field label="Cita Vinculada (opcional)" darkMode={darkMode}>
@@ -5057,11 +5073,11 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
   const [processingPayment, setProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
-  const [cardData, setCardData] = useState({ titular: "", numero: "", mes: "", ano: "", cvv: "" });
   const [showPollingModal, setShowPollingModal] = useState(false);
   const [pollingPagoId,    setPollingPagoId]    = useState(null);
   const [pollingStatus,    setPollingStatus]    = useState("waiting");
   const [efectivoData, setEfectivoData] = useState({ confirmacion: false });
+  const [transferenciaData, setTransferenciaData] = useState({ confirmacion: false });
     useEffect(() => {
     if (!showPollingModal || !pollingPagoId) return;
     let cancelled = false;
@@ -5174,20 +5190,15 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
       setProcessingPayment(true);
       setPaymentError(null);
 
-      if (metodo === "tarjeta") {
-        if (!cardData.titular || !cardData.numero || !cardData.mes || !cardData.ano || !cardData.cvv) {
-          setPaymentError("Por favor completa todos los datos de la tarjeta");
-          setProcessingPayment(false);
-          return;
-        }
-        if (cardData.numero.replace(/\s/g, "").length !== 16) {
-          setPaymentError("El número de tarjeta debe tener 16 dígitos");
-          setProcessingPayment(false);
-          return;
-        }
-      } else if (metodo === "efectivo") {
+      if (metodo === "efectivo") {
         if (!efectivoData.confirmacion) {
           setPaymentError("Por favor confirma que pagarás en efectivo");
+          setProcessingPayment(false);
+          return;
+        }
+      } else if (metodo === "transferencia") {
+        if (!transferenciaData.confirmacion) {
+          setPaymentError("Por favor confirma que realizarás la transferencia");
           setProcessingPayment(false);
           return;
         }
@@ -5232,7 +5243,7 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
 
       setPaymentSuccess(true);
       setShowPaymentForm(false);
-      if (metodo === "efectivo") {
+      if (metodo === "efectivo" || metodo === "transferencia") {
         setPollingPagoId(json?.pago?.id || null);
         setShowPollingModal(true);
       } else {
@@ -5419,28 +5430,6 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
 
                 {!showPaymentForm ? (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Tarjeta */}
-                    <button
-                      onClick={() => {
-                        setSelectedPayment("tarjeta");
-                        setShowPaymentForm(true);
-                      }}
-                      disabled={processingPayment}
-                      className={`p-4 rounded-lg border-2 transition text-center ${
-                        selectedPayment === "tarjeta"
-                          ? "border-blue-500 bg-blue-900/10"
-                          : darkMode
-                          ? "border-zinc-700 bg-zinc-900/50 hover:border-blue-600"
-                          : "border-gray-300 bg-gray-50 hover:border-blue-500"
-                      }`}
-                    >
-                      <div className="flex justify-center mb-2">
-                        <LucideIcon name="creditcard" className="w-8 h-8 text-blue-500" />
-                      </div>
-                      <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Tarjeta</p>
-                      <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Débito o Crédito</p>
-                    </button>
-
                     {/* Efectivo */}
                     <button
                       onClick={() => {
@@ -5461,6 +5450,29 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
                       </div>
                       <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Efectivo</p>
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en caja</p>
+                    </button>
+
+                    {/* Transferencia */}
+                    <button
+                      onClick={() => {
+                        setSelectedPayment("transferencia");
+                        setShowPaymentForm(true);
+                        setTransferenciaData({ confirmacion: false });
+                      }}
+                      disabled={processingPayment}
+                      className={`p-4 rounded-lg border-2 transition text-center ${
+                        selectedPayment === "transferencia"
+                          ? "border-sky-500 bg-sky-900/10"
+                          : darkMode
+                          ? "border-zinc-700 bg-zinc-900/50 hover:border-sky-600"
+                          : "border-gray-300 bg-gray-50 hover:border-sky-500"
+                      }`}
+                    >
+                      <div className="flex justify-center mb-2">
+                        <LucideIcon name="bank" className="w-8 h-8 text-sky-500" />
+                      </div>
+                      <p className={`font-semibold ${darkMode ? "text-white" : "text-gray-900"}`}>Transferencia</p>
+                      <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Depósito bancario</p>
                     </button>
 
                     {/* Stripe */}
@@ -5485,65 +5497,7 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
                       <p className={`text-xs ${darkMode ? "text-zinc-400" : "text-gray-600"}`}>Pago en línea</p>
                     </button>
                   </div>
-                ) : selectedPayment === "tarjeta" ? (
-                  <div className="space-y-4">
-                    <input
-                      type="text"
-                      placeholder="Titular de la tarjeta"
-                      value={cardData.titular}
-                      onChange={(e) => setCardData({...cardData, titular: e.target.value})}
-                      className={`w-full px-3 py-2 rounded border ${darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Número de tarjeta (16 dígitos)"
-                      value={cardData.numero}
-                      onChange={(e) => setCardData({...cardData, numero: e.target.value.replace(/\D/g, '').slice(0, 16)})}
-                      maxLength="16"
-                      className={`w-full px-3 py-2 rounded border ${darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
-                    />
-                    <div className="grid grid-cols-3 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Mes"
-                        value={cardData.mes}
-                        onChange={(e) => setCardData({...cardData, mes: e.target.value.replace(/\D/g, '').slice(0, 2)})}
-                        maxLength="2"
-                        className={`px-3 py-2 rounded border ${darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Año"
-                        value={cardData.ano}
-                        onChange={(e) => setCardData({...cardData, ano: e.target.value.replace(/\D/g, '').slice(0, 2)})}
-                        maxLength="2"
-                        className={`px-3 py-2 rounded border ${darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
-                      />
-                      <input
-                        type="text"
-                        placeholder="CVV"
-                        value={cardData.cvv}
-                        onChange={(e) => setCardData({...cardData, cvv: e.target.value.replace(/\D/g, '').slice(0, 3)})}
-                        maxLength="3"
-                        className={`px-3 py-2 rounded border ${darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300"}`}
-                      />
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setShowPaymentForm(false)}
-                        className={`flex-1 px-4 py-2 rounded font-medium ${darkMode ? "bg-zinc-700 text-white hover:bg-zinc-600" : "bg-gray-300 text-gray-900 hover:bg-gray-400"}`}
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={() => handlePayment("tarjeta")}
-                        disabled={processingPayment}
-                        className="flex-1 px-4 py-2 rounded font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {processingPayment ? "Procesando..." : "Pagar"}
-                      </button>
-                    </div>
-                  </div>
+               
                 ) : selectedPayment === "efectivo" ? (
                   <div className="space-y-4">
                     <div className={`p-4 rounded border ${darkMode ? "bg-zinc-900/50 border-zinc-700" : "bg-yellow-50 border-yellow-200"}`}>
@@ -5573,6 +5527,42 @@ const MiCarritoModule = ({darkMode, clienteId, session, onNavigate}) =>{
                         className="flex-1 px-4 py-2 rounded font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                       >
                         {processingPayment ? "Procesando..." : "Confirmar Pago"}
+                      </button>
+                    </div>
+                  </div>
+                ) : selectedPayment === "transferencia" ? (
+                  <div className="space-y-4">
+                    <div className={`p-4 rounded border ${darkMode ? "bg-zinc-900/50 border-zinc-700" : "bg-sky-50 border-sky-200"}`}>
+                      <p className={`text-sm font-medium mb-3 ${darkMode ? "text-white" : "text-gray-900"}`}>
+                        Realiza una transferencia por <strong>${montoTotal.toFixed(2)}</strong> a la siguiente cuenta:
+                      </p>
+                      <div className={`rounded-lg px-4 py-3 text-center ${darkMode ? "bg-zinc-800" : "bg-white border border-sky-200"}`}>
+                        <p className={`text-xs uppercase tracking-widest mb-1 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>Número de cuenta</p>
+                        <p className={`text-xl font-bold tracking-widest ${darkMode ? "text-sky-400" : "text-sky-600"}`}>4152 3142 1223 9423</p>
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={transferenciaData.confirmacion}
+                        onChange={(e) => setTransferenciaData({ confirmacion: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className={darkMode ? "text-zinc-300" : "text-gray-700"}>Confirmo que realizaré la transferencia al número indicado</span>
+                    </label>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowPaymentForm(false)}
+                        className={`flex-1 px-4 py-2 rounded font-medium ${darkMode ? "bg-zinc-700 text-white hover:bg-zinc-600" : "bg-gray-300 text-gray-900 hover:bg-gray-400"}`}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => handlePayment("transferencia")}
+                        disabled={processingPayment}
+                        className="flex-1 px-4 py-2 rounded font-medium bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+                      >
+                        {processingPayment ? "Procesando..." : "Pago realizado"}
                       </button>
                     </div>
                   </div>
