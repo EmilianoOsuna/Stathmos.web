@@ -244,7 +244,8 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
     }
     const finalName = name || "Un cliente";
 
-    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    const { data: rolAdmin } = await supabase.from("roles").select("id").ilike("nombre", "administrador").maybeSingle();
+    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol_id", rolAdmin?.id || "");
     if (!admins || admins.length === 0) return;
 
     const titulo = "Nueva cita agendada";
@@ -260,10 +261,43 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
     console.warn("[notifyAdminNewAppointment] error:", err);
   }
 };
+const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
+  if (!clienteId) return;
+  try {
+    const { data: cliente } = await supabase
+      .from("clientes")
+      .select("usuario_id, correo")
+      .eq("id", clienteId)
+      .maybeSingle();
 
+    let usuarioId = cliente?.usuario_id;
+    if (!usuarioId && cliente?.correo) {
+      const { data: usuario } = await supabase
+        .from("usuarios").select("id").eq("correo", cliente.correo).maybeSingle();
+      usuarioId = usuario?.id;
+    }
+
+    if (!usuarioId) return;
+
+    const estadoStr = nuevoEstado?.replace(/_/g, " ") || nuevoEstado;
+    const isFinished = nuevoEstado === "entregado" || nuevoEstado === "terminado";
+    const titulo = isFinished ? "Proyecto finalizado" : "Actualización de tu proyecto";
+    const mensaje = isFinished
+      ? `Tu proyecto "${tituloProyecto}" ha sido finalizado. ¡Gracias por tu confianza!`
+      : `El estado de tu proyecto "${tituloProyecto}" ha cambiado a: ${estadoStr}.`;
+
+    await invokeEdgeFunction("enviar-notificacion", {
+      body: { usuario_id: usuarioId, proyecto_id: proyectoId, titulo, mensaje },
+      userToken: session?.access_token || "",
+    });
+  } catch (err) {
+    console.warn("[notifyClientStateChange] error:", err);
+  }
+};
 const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }) => {
   try {
-    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol", "Administrador");
+    const { data: rolAdmin } = await supabase.from("roles").select("id").ilike("nombre", "administrador").maybeSingle();
+    const { data: admins } = await supabase.from("usuarios").select("id").eq("rol_id", rolAdmin?.id || "");
     if (!admins || admins.length === 0) return;
 
     const titulo = "Pago recibido";
@@ -280,55 +314,37 @@ const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }
   }
 };
 
-const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
-  if (!clienteId) return;
+const notifyClientNewPhotos = async ({ proyectoId, clienteId, tituloProyecto, session }) => {
+  if (!proyectoId || !clienteId) return;
   try {
     const { data: cliente } = await supabase
       .from("clientes")
       .select("usuario_id, correo")
       .eq("id", clienteId)
       .maybeSingle();
-
     let usuarioId = cliente?.usuario_id;
     if (!usuarioId && cliente?.correo) {
-      const { data: usuario } = await supabase.from("usuarios").select("id").eq("correo", cliente.correo).maybeSingle();
+      const { data: usuario } = await supabase
+        .from("usuarios").select("id").eq("correo", cliente.correo).maybeSingle();
       usuarioId = usuario?.id;
     }
-
     if (!usuarioId) return;
-
-    const estadoStr = estadoLabel(nuevoEstado);
-    const isFinished = nuevoEstado === "entregado" || nuevoEstado === "terminado";
-    const titulo = isFinished ? "Proyecto finalizado" : "Actualización de tu proyecto";
-    const mensaje = isFinished
-      ? `Tu proyecto "${tituloProyecto}" ha sido finalizado. ¡Gracias por tu confianza!`
-      : `El estado de tu proyecto "${tituloProyecto}" ha cambiado a: ${estadoStr}.`;
-
     await invokeEdgeFunction("enviar-notificacion", {
-      body: { usuario_id: usuarioId, proyecto_id: proyectoId, titulo, mensaje },
+      body: {
+        usuario_id: usuarioId,
+        proyecto_id: proyectoId,
+        titulo: "Nuevas fotos de tu vehículo",
+        mensaje: `Se han subido nuevas fotos del avance en tu proyecto "${tituloProyecto}".`,
+      },
       userToken: session?.access_token || "",
     });
   } catch (err) {
-    console.warn("[notifyClientStateChange] error:", err);
+    console.warn("[notifyClientNewPhotos] error:", err);
   }
 };
 
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
-/*
-  CHANGES ADDED (compared to initial project state):
-  - `isPayable` helper: determines whether a proyecto/ticket is eligible for payment (added to centralize logic).
-  - Guards around `selectedTicket.items` rendering to avoid runtime crashes when cotizacion or items are missing.
-  - `handlePayment` changes: instead of inserting `pagos` directly from the browser (which failed due to RLS), the app now calls a server-side Edge Function `crear-pago` (located in `supabase/functions/crear-pago`) using the user's token. If network/CORS prevents calling the function, an offline fallback saves the pago in `localStorage` under `stathmos_offline_pagos` and updates the UI locally for testing.
-  - List-level "Pagar" button behavior: opening the ticket from the list now shows the payment selector (not an empty form) for better UX.
-  - Error handling & user feedback improved: shows actionable messages when RLS blocks inserts and provides offline fallback.
-
-  Files modified/added:
-  - `src/App.jsx`: helpers, guards, `handlePayment` integration with Edge Function and offline fallback, UI tweaks.
-  - `supabase/functions/crear-pago/index.ts`: new Edge Function (Deno) that inserts `pagos` using service_role and updates proyecto state.
-
-  Purpose: allow safe server-side creation of `pagos` (bypassing RLS securely) while providing a local offline mode for testing when Supabase access isn't available.
-*/
 
 const PAYMENT_ALLOWED_STATES = ["en_progreso", "pendiente_refaccion", "terminado"];
 
@@ -1904,17 +1920,6 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
         Number(latestFromTarget.monto_mano_obra || 0) !== manoObra ||
         Number(latestFromTarget.monto_refacc || 0) !== refacc
       );
-
-      {/* Esto ya no es necesario porque el estado cambia automáticamente segun el diagnóstico y la cotización, pero dejo la validación lista por si acaso cambiamos la lógica}
-      if (form.estado === "en_progreso") {
-        const canStart = Boolean(latestFromTarget && latestFromTarget.estado === "aprobada" && !quoteChanged);
-        if (!canStart) {
-          setSaving(false);
-          setFormError("No puedes iniciar ejecución sin cotización aprobada por el cliente.");
-          return;
-        }
-      }
-      */}
 
       const projectRes = await supabase.from("proyectos").update(payload).eq("id", editTarget.id);
       error = projectRes.error;
@@ -3876,6 +3881,12 @@ const EditFotosSection = ({ proyecto, darkMode, session, canUpload }) => {
         await supabase.from("fotografias").insert({ proyecto_id: proyecto.id, mecanico_id: mecId, momento, url: urlData.publicUrl });
       }
       await fetchFotos();
+      await notifyClientNewPhotos({
+        proyectoId: proyecto.id,
+        clienteId: proyecto.cliente_id,
+        tituloProyecto: proyecto.titulo,
+        session,
+      });
     } catch (e) {
       setErr(e?.message || "Error al subir fotos.");
     } finally {
@@ -4159,37 +4170,6 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     };
   }, [lightbox]);
 
-  const notifyClientNewPhotos = async () => {
-    if (!proyecto?.id) return;
-    try {
-      let targetId = proyecto.clientes?.usuario_id;
-      
-      // Si no viene en el objeto, lo buscamos rápidamente
-      if (!targetId) {
-        const { data: pData } = await supabase
-          .from("proyectos")
-          .select("clientes(usuario_id)")
-          .eq("id", proyecto.id)
-          .maybeSingle();
-        targetId = pData?.clientes?.usuario_id;
-      }
-
-      if (!targetId) return;
-
-      await invokeEdgeFunction("enviar-notificacion", {
-        body: {
-          usuario_id: targetId,
-          proyecto_id: proyecto.id,
-          titulo: "Nuevas fotos de tu vehículo",
-          mensaje: `Se han subido nuevas fotos del avance en tu proyecto "${proyecto.titulo}".`,
-        },
-        userToken: session?.access_token || "",
-      });
-    } catch (err) {
-      console.warn("[notifyClientNewPhotos] error:", err);
-    }
-  };
-
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -4257,7 +4237,12 @@ const ProyectoDetalleModal = ({ open, onClose, proyecto, darkMode, canUpload = f
     if (fileRef.current) fileRef.current.value = "";
     
     // Notificar al cliente
-    await notifyClientNewPhotos();
+    await notifyClientNewPhotos({
+      proyectoId: proyecto.id,
+      clienteId: proyecto.cliente_id,
+      tituloProyecto: proyecto.titulo,
+      session: session
+    });
   };
 
     const handleGuardarDescripcion = async () => {
@@ -4806,22 +4791,39 @@ const PagosAdminModule = ({ darkMode, session }) => {
           `Pago autorizado exitosamente. ${cambiarAEntregado ? "Proyecto marcado como entregado." : ""}`
         );
         
-        // Notificar al cliente que su pago fue autorizado
-        if (clienteData?.usuario_id) {
+          // Notificar al cliente que su pago fue autorizado
           try {
-            await invokeEdgeFunction("enviar-notificacion", {
-              body: {
-                usuario_id: clienteData.usuario_id,
-                proyecto_id: selectedPago.proyecto_id,
-                titulo: "Pago Autorizado",
-                mensaje: `Tu pago de $${Number(selectedPago.monto).toFixed(2)} para el proyecto "${proyectoTitle}" ha sido autorizado.${cambiarAEntregado ? " El proyecto ha sido marcado como entregado." : ""}`,
-              },
-              userToken: session?.access_token || "",
-            });
+            const clienteId = selectedPago.proyectos?.clientes?.id || selectedPago.proyectos?.cliente_id;
+            if (clienteId) {
+              const { data: cliente } = await supabase
+                .from("clientes")
+                .select("usuario_id, correo")
+                .eq("id", clienteId)
+                .maybeSingle();
+
+              let usuarioId = cliente?.usuario_id;
+              if (!usuarioId && cliente?.correo) {
+                const { data: usuario } = await supabase
+                  .from("usuarios").select("id").eq("correo", cliente.correo).maybeSingle();
+                usuarioId = usuario?.id;
+              }
+
+              if (usuarioId) {
+                await invokeEdgeFunction("enviar-notificacion", {
+                  body: {
+                    usuario_id: usuarioId,
+                    proyecto_id: selectedPago.proyecto_id,
+                    titulo: "Pago Autorizado",
+                    mensaje: `Tu pago de $${Number(selectedPago.monto).toFixed(2)} para el proyecto "${proyectoTitle}" ha sido autorizado.${cambiarAEntregado ? " El proyecto ha sido marcado como entregado." : ""}`,
+                  },
+                  userToken: session?.access_token || "",
+                });
+              }
+            }
           } catch (notificationErr) {
             console.warn("Error notificando al cliente:", notificationErr);
           }
-        }
+        
         
         setTimeout(() => {
           setShowAuthModal(false);
