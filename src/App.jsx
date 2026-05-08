@@ -1,8 +1,15 @@
+// ─── IMPORTS ──────────────────────────────────────────────────────────────
+// Core React hooks para state management, lifecycle, performance optimization
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+// Custom hook para suscripción a cambios en tiempo real de Supabase
 import useSupabaseRealtime from "./hooks/useSupabaseRealtime";
+// Portal para renderizar componentes en el DOM (modales, tooltips, etc)
 import { createPortal } from "react-dom";
+// Router de React para navegación multi-página y gestión de rutas
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+// Cliente Supabase para acceso a BD, autenticación y edge functions
 import supabase from "./supabase";
+// importe de páginas principales (autenticación, setup, etc)
 import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import CambiarContrasena from "./CambiarContrasena";
@@ -21,12 +28,15 @@ import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./
 import { Card, Select, Input, Field, Textarea, ModuleHeader, Button, Modal, Icon as LucideIcon, DatePicker } from "./components/UIPrimitives";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
+// Colores principales para botones y elementos visuales
 const C_BLUE = "#60aebb";
 const C_RED  = "#db3c1c";
+// Variables de entorno para autenticación y conexión a Supabase
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // ─── Text Normalization (SAT Compliance) ──────────────────────────────────────
+// Normaliza texto removiendo acentos, mayúsculas y espacios (cumplimiento SAT)
 const normalizeForSAT = (str) => {
   if (!str) return "";
   return str
@@ -36,6 +46,8 @@ const normalizeForSAT = (str) => {
     .trim();
 };
 
+// Normaliza texto para UI (mayúsculas, sin acentos)
+// Normaliza texto para interfaz (mayúsculas sin acentos)
 const normalizeUI = (str) => {
   if (!str) return "";
   return str
@@ -44,32 +56,37 @@ const normalizeUI = (str) => {
     .toUpperCase();
 };
 
-// ─── Validation Helpers ──────────────────────────────────────────────────────
+// FUNCIONES DE VALIDACIÓN: Verifican formato de datos antes de guardar
+
+// Valida formato de email
 const isValidEmail = (email) => {
   if (!email || !email.trim()) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email.toLowerCase());
 };
 
+// Valida formato de RFC (12-13 caracteres: 3-4 letras + 6 dígitos + 2-3 alfanuméricos)
 const isValidRFC = (rfc) => {
   if (!rfc || !rfc.trim()) return false;
   const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
   return rfcRegex.test(rfc.toUpperCase());
 };
 
+// Valida VIN (Vehicle Identification Number): 17 caracteres únicos (sin I, O, Q)
 const isValidVIN = (vin) => {
   if (!vin || !vin.trim()) return true; // VIN es opcional
   const vinRegex = /^[A-HJ-NPR-Z0-9]{17}$/i;
   return vinRegex.test(vin.trim());
 };
 
+// Valida teléfono: exactamente 10 dígitos numéricos
 const isValidPhone = (tel) => {
   const clean = String(tel || "").replace(/\D/g, "");
   const phoneRegex = /^\d{10}$/;
   return phoneRegex.test(clean);
 };
 
-// ─── Logo ─────────────────────────────
+// LOGO: SVG del logo de Stathmos con soporte para tema claro/oscuro
 const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
   <svg className={className} viewBox="0 0 6000 3375" xmlns="http://www.w3.org/2000/svg"
     style={{ fillRule:"evenodd", clipRule:"evenodd", strokeLinecap:"round", strokeLinejoin:"round", strokeMiterlimit:"22.926" }}
@@ -87,6 +104,7 @@ const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// Estados posibles de un proyecto a lo largo de su ciclo de vida
 const ESTADOS_PROYECTO = [
   "pendiente_diagnostico",
   "pendiente_cotizacion",
@@ -100,7 +118,8 @@ const ESTADOS_PROYECTO = [
   "activo",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// CONSTANTES Y HELPERS: Estados, etiquetas, y funciones auxiliares
+// Retorna clases Tailwind para badge de estado según tema (oscuro/claro)
 const estadoBadge = (estado, darkMode) => {
   const dark = {
     activo:                "bg-sky-900/50 text-sky-300 border-sky-800",
@@ -147,6 +166,7 @@ const ESTADO_LABELS = {
 
 const estadoLabel = (estado) => ESTADO_LABELS[estado] || (estado ? String(estado).replace(/_/g, " ") : "—");
 
+// Obtiene la cotización más reciente de un proyecto
 const getLatestCotizacion = (proyecto) => {
   const cotizaciones = Array.isArray(proyecto?.cotizaciones) ? proyecto.cotizaciones : [];
   if (!cotizaciones.length) return null;
@@ -158,11 +178,13 @@ const getLatestCotizacion = (proyecto) => {
   })[0];
 };
 
+// Hook personalizado para gestionar notificaciones del usuario en tiempo real
 const useUserNotifications = (session) => {
   const userId = session?.user?.id || null;
   const [notificaciones, setNotificaciones] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Consulta notificaciones del usuario desde BD
   const fetchNotifications = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -208,6 +230,7 @@ const useUserNotifications = (session) => {
   return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
 };
 
+// Ejecuta funciones serverless (Edge Functions) de Supabase
 const invokeEdgeFunction = async (name, { body, userToken }) => {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
@@ -234,7 +257,9 @@ const invokeEdgeFunction = async (name, { body, userToken }) => {
   return json;
 };
 
-// ─── Notification Helpers ──────────────────────────────────────────────────────
+// FUNCIONES DE NOTIFICACIÓN: Envían notificaciones a usuarios vía Edge Functions
+
+// Notifica a todos los administradores cuando un cliente agenda una cita
 const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fechaHora, session }) => {
   try {
     let name = clienteNombre;
@@ -261,6 +286,7 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
     console.warn("[notifyAdminNewAppointment] error:", err);
   }
 };
+// Notifica al cliente cuando el estado de su proyecto cambia
 const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
   if (!clienteId) return;
   try {
@@ -294,6 +320,7 @@ const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, 
     console.warn("[notifyClientStateChange] error:", err);
   }
 };
+// Notifica a todos los administradores cuando se registra un pago
 const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }) => {
   try {
     const { data: rolAdmin } = await supabase.from("roles").select("id").ilike("nombre", "administrador").maybeSingle();
@@ -314,6 +341,7 @@ const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }
   }
 };
 
+// Notifica al cliente cuando se suben fotos del avance de su proyecto
 const notifyClientNewPhotos = async ({ proyectoId, clienteId, tituloProyecto, session }) => {
   if (!proyectoId || !clienteId) return;
   try {
@@ -343,11 +371,15 @@ const notifyClientNewPhotos = async ({ proyectoId, clienteId, tituloProyecto, se
   }
 };
 
+// FUNCIONES DE VALIDACIÓN Y HELPERS: Lógica de negocio y utilidades varias
+
+// Valida si un proyecto tiene una cotización aprobada
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
-
+// Estados en los que se puede registrar un pago
 const PAYMENT_ALLOWED_STATES = ["en_progreso", "pendiente_refaccion", "terminado"];
 
+// Verifica si un ticket/proyecto puede recibir pagos
 const isPayable = (ticket) => {
   const estadoRaw = typeof ticket === "string" ? ticket : ticket?.estado;
   const cotizacion = typeof ticket === "object" && ticket
@@ -360,6 +392,7 @@ const isPayable = (ticket) => {
   return PAYMENT_ALLOWED_STATES.includes(estado) && cotizacionAprobada;
 };
 
+// Normaliza valores de rol (mayúscula a minúscula, sin acentos)
 const normalizeRole = (value = "") =>
   value
     .normalize("NFD")
@@ -367,6 +400,7 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+// Extrae el rol del usuario desde la sesión de autenticación
 const getRoleFromSession = (session) => {
   const appRole = session?.user?.app_metadata?.rol;
   const metaRole = session?.user?.user_metadata?.rol;
@@ -375,6 +409,7 @@ const getRoleFromSession = (session) => {
   return "";
 };
 
+// Extrae mensaje de error de una respuesta de Edge Function
 const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
   if (!invokeError) return fallbackMessage;
 
@@ -393,7 +428,9 @@ const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
   }
 };
 
-// ─── Global CSS animations (injected once) ────────────────────────────────────
+// CSS ANIMATIONS: Definición de animaciones globales reutilizables
+
+// Inyecta animaciones CSS globales (fadeUp, fadeIn, slideDown)
 const GlobalStyles = () => (
   <style>{`
     @keyframes fadeUp {
@@ -415,15 +452,8 @@ const GlobalStyles = () => (
   `}</style>
 );
 
-// UI components are now imported from UIPrimitives.jsx
-
-// UI components are now imported from UIPrimitives.jsx
-
-
-// UI components are now imported from UIPrimitives.jsx
-
-
-// ─── Error Boundary (captura errores de render en UI) ───────────────────────
+// ERROR BOUNDARY: Componente que captura errores de render en la UI
+// Component wrapper que captura errores de render en la UI y muestra fallback
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -452,18 +482,19 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// UI primitives are now imported from UIPrimitives.jsx
+// COMPONENTES DE BOTONES: Botones predefinidos reutilizables en todo el app
 
-
-// UI buttons are now using the Button component from UIPrimitives.jsx
+// Botón principal con color acentuado
 const BtnAccent = ({ onClick, disabled, color, children, className = "" }) => (
   <Button onClick={onClick} disabled={disabled} color={color} className={className}>{children}</Button>
 );
 
+// Botón genérico para editar registros
 const BtnEdit = ({ onClick, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick}>Editar</Button>
 );
 
+// Botón para activar/desactivar registros
 const BtnToggleActive = ({ onClick, isActive, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick} 
     className={isActive ? "hover:border-red-800 hover:text-red-400" : "hover:border-emerald-800 hover:text-emerald-400"}
@@ -472,13 +503,15 @@ const BtnToggleActive = ({ onClick, isActive, darkMode }) => (
   </Button>
 );
 
+// Botón para cancelar un proyecto
 const BtnCancelProject = ({ onClick, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick} className="hover:border-red-800 hover:text-red-400">
     Cancelar
   </Button>
 );
 
-// ─── ConfirmModal shorthand ────────────────────────────────────────────────────
+// ─── ConfirmModal Component ───────────────────────────────────────────────────
+// Modal de confirmación reutilizable para acciones críticas
 const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, confirmColor = C_RED, darkMode }) => (
   <Modal open={open} onClose={onClose} title={title} darkMode={darkMode}>
     <p className={`text-sm mb-5 ${darkMode ? "text-zinc-400" : "text-gray-500"}`} dangerouslySetInnerHTML={{ __html: message }} />
@@ -491,7 +524,8 @@ const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, 
   </Modal>
 );
 
-// ─── CLIENTES MODULE ──────────────────────────────────────────────────────────
+// ───MODULO CLIENTES ──────────────────────────────────────────────────────────
+// Módulo para gestionar clientes: crear, editar, buscar y cambiar estado
 const ClientesModule = ({ darkMode, session }) => {
   const [clientes,     setClientes]     = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -514,8 +548,7 @@ const ClientesModule = ({ darkMode, session }) => {
   const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true }); setFormError(""); setModalOpen(true); };
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
 
-// ClientesModule helpers consolidated at top level
-
+  // Maneja el guardado de clientes (crear o actualizar)
   const handleSave = async () => {
     // Validaciones de campos obligatorios
     if (!form.nombre || !form.nombre.trim()) {
@@ -604,12 +637,14 @@ const ClientesModule = ({ darkMode, session }) => {
     }
   };
 
+  // Activa/desactiva un cliente
   const handleToggle = async () => {
     if (!toggleTarget) return;
     await supabase.from("clientes").update({ activo: !toggleTarget.activo, updated_at: new Date().toISOString() }).eq("id", toggleTarget.id);
     setToggleTarget(null); fetchClientes();
   };
 
+  // Filtra clientes según término de búsqueda (nombre, teléfono, correo)
   const filtered = clientes.filter((c) =>
     c.nombre?.toLowerCase().includes(search.toLowerCase()) ||
     c.telefono?.includes(search) ||
@@ -743,7 +778,8 @@ const ClientesModule = ({ darkMode, session }) => {
   );
 };
 
-// ─── EMPLEADOS MODULE ────────────────────────────────────────────────────────
+// ─── MODULO EMPLEADOS ─────────────────────────────────────────────────────────
+// Módulo para gestionar empleados: crear, editar, buscar y cambiar disponibilidad
 const EmpleadosModule = ({ darkMode }) => {
   const [empleados,     setEmpleados]     = useState([]);
   const [usuarios,      setUsuarios]      = useState([]);
@@ -765,6 +801,7 @@ const EmpleadosModule = ({ darkMode }) => {
     activo: true,
   });
 
+
 const fetchAll = useCallback(async () => {
   setLoading(true);
   const { data: e, error: eErr } = await supabase
@@ -780,10 +817,10 @@ const fetchAll = useCallback(async () => {
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useSupabaseRealtime("empleados", fetchAll);
 
-  // Validar RFC con REGEX (formato mexicano)
+
 // EmpleadosModule helpers consolidated at top level
 
-
+// datos de usuario para asignar rol al crear empleado
   const openCreate = () => {
     setEditTarget(null);
     setForm({
@@ -801,6 +838,7 @@ const fetchAll = useCallback(async () => {
     setModalOpen(true);
   };
 
+  // Valores para editar empleado existente, se asignan al formulario y se abre modal
   const openEdit = (e) => {
     setEditTarget(e);
     setForm({
@@ -843,11 +881,13 @@ const fetchAll = useCallback(async () => {
         setSaving(false); return;
       }
 
+      // validación de telefono de 10 dígitos 
       if (!isValidPhone(form.telefono)) {
         setFormError("El teléfono debe tener 10 dígitos numéricos.");
         setSaving(false); return;
       }
 
+    
       const payload = {
         nombre: normalizeForSAT(form.nombre),
         telefono: form.telefono.trim() || null,
@@ -867,6 +907,7 @@ const fetchAll = useCallback(async () => {
         setSaving(false); return;
       }
       
+      // Validar formato RFC
       if (!isValidRFC(form.rfc)) {
         setFormError("El RFC no tiene un formato válido. Debe tener 12-13 caracteres (ej: GARC800101ABC).");
         setSaving(false); return;
@@ -880,11 +921,13 @@ const fetchAll = useCallback(async () => {
         setSaving(false); return;
       }
 
+      // validación de telefono de 10 dígitos
       if (!isValidPhone(form.telefono)) {
         setFormError("El teléfono debe tener 10 dígitos numéricos.");
         setSaving(false); return;
       }
 
+      // crear usuario empleado
       const { data, error } = await supabase.functions.invoke('crear-empleado', {
         body: {
           nombre: normalizeForSAT(form.nombre),

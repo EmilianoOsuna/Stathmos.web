@@ -3,6 +3,12 @@ import supabase from "../supabase";
 import { formatDateTimeWorkshop } from "../utils/datetime";
 import { Icon } from "./UIPrimitives";
 
+// HistorialRefacciones: componente que muestra el registro unificado
+// de movimientos de refacciones (ventas y compras). Se encarga de:
+// - consultar datos desde Supabase
+// - normalizar/etiquetar registros (tipo, badge, label)
+// - filtrar/ordenar en memoria según props
+// - renderizar la tabla de resultados
 export default function HistorialRefacciones({
   darkMode,
   searchTerm = "",
@@ -23,7 +29,7 @@ export default function HistorialRefacciones({
         supabase.from("compras_refacciones").select("*, refacciones(nombre), proyectos(titulo), proveedores(nombre)")
       ]);
 
-      // Etiquetamos cada tipo para la tabla unificada
+      // Mapear resultados de ventas y añadir metadata visual/etiquetas
       const ventas = (ventasRes.data || []).map(v => ({
         ...v,
         tipo_mov: 'VENTA',
@@ -32,6 +38,7 @@ export default function HistorialRefacciones({
         proyecto_titulo: v.proyectos?.titulo || 'Venta Directa' 
     }));
 
+      // Mapear resultados de compras y añadir metadata visual/etiquetas
       const compras = (comprasRes.data || []).map(c => ({
         ...c,
         tipo_mov: 'COMPRA',
@@ -39,7 +46,7 @@ export default function HistorialRefacciones({
         label: 'ENTRADA'
       }));
 
-      // Unimos y ordenamos por fecha (más reciente primero)
+      // Unimos ambas colecciones y ordenamos por `created_at` (descendente)
       const unificado = [...ventas, ...compras].sort((a, b) => 
         new Date(b.created_at) - new Date(a.created_at)
       );
@@ -52,20 +59,25 @@ export default function HistorialRefacciones({
     }
   };
 
+  // Cargamos los datos al montar el componente
   useEffect(() => { fetchHistorial(); }, []);
 
+  // Clases utilitarias para temas claros/oscuros
   const t = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
   const divider = darkMode ? "border-zinc-800" : "border-gray-100";
 
   // ─── Filtrado en memoria ────────────────────────────────────────────────
+  // Filtrado y ordenamiento en memoria según props
   const filtrados = useMemo(() => {
     let list = [...movimientos];
 
+    // Filtrar por tipo (VENTA/COMPRA) si se solicita
     if (filtroTipo !== "todos") {
       list = list.filter((m) => m.tipo_mov === filtroTipo);
     }
 
+    // Búsqueda por nombre de refacción, proyecto o proveedor
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       list = list.filter((m) =>
@@ -75,6 +87,7 @@ export default function HistorialRefacciones({
       );
     }
 
+    // Filtrar por rango de fechas si se proporcionan
     if (fechaInicio) {
       const inicio = new Date(fechaInicio + "T00:00:00");
       list = list.filter((m) => new Date(m.created_at) >= inicio);
@@ -84,6 +97,7 @@ export default function HistorialRefacciones({
       list = list.filter((m) => new Date(m.created_at) <= fin);
     }
 
+    // Ordenar según la preferencia (reciente/antiguo)
     list.sort((a, b) =>
       orden === "reciente"
         ? new Date(b.created_at) - new Date(a.created_at)
