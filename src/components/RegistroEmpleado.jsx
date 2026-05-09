@@ -1,3 +1,7 @@
+// ─── Componente: Registro de Empleados ───────────────────────────────────
+// Formulario para crear nuevos empleados (mecánicos, administradores, etc.)
+// Incluye: nombre, correo, teléfono, puesto, fecha de contratación y contraseña
+// Invoca Edge Function 'crear-empleado' para crear usuario en Supabase Auth
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { Input, Button, DatePicker } from './UIPrimitives';

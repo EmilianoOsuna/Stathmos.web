@@ -1,3 +1,9 @@
+// ─── Componente: Vista de Diagnósticos ────────────────────────────────
+// Muestra historial de diagnósticos registrados para un proyecto
+// Características:
+// - Lista expandible de diagnósticos con fecha y mecánico
+// - Información de síntomas, hallazgos y causa raíz
+// - Opción de editar diagnósticos
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import { Edit, AlertCircle } from "lucide-react";

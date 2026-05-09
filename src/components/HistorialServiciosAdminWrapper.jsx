@@ -1,3 +1,6 @@
+// ─── Wrapper para historial de servicios (vista administrador) ─────────────
+// Envuelve HistorialServiciosAdmin con contenedor de página y props iniciales
+// Soporta búsqueda por cliente/proyecto, filtrado por estado, y rango de fechas
 import HistorialServiciosAdmin from "./HistorialServiciosAdmin";
 
 export default function HistorialServiciosAdminWrapper({

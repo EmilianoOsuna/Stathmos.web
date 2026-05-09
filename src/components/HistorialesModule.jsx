@@ -1,3 +1,10 @@
+// ─── Módulo: Centralizador de Historiales ────────────────────────────────
+// Hub de navegación entre diferentes vistas de historial
+// Características:
+// - Tabs: Servicios, Refacciones, Tickets
+// - Filtros, búsqueda y ordenamiento dinámicos según tipo de historial
+// - Integración con HistorialRefacciones, HistorialTickets, HistorialServiciosAdmin
+// - Control de rango de fechas
 import { useState, useCallback } from "react";
 import { ModuleHeader, Icon, Input, Select, DatePicker } from "./UIPrimitives";
 import HistorialRefacciones from "./HistorialRefacciones";

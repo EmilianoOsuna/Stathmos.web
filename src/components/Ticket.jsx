@@ -1,3 +1,13 @@
+// ─── Componente: Vista Detallada de Ticket/Proyecto ────────────────────
+// Componente principal para visualizar y gestionar un proyecto completo
+// Características:
+// - Información general del vehículo y cliente
+// - Diagnósticos registrados por mecánicos
+// - Cotizaciones con aprobación de cliente
+// - Registro de refacciones utilizadas
+// - Fotos del antes/durante/después
+// - Procesamiento de pagos (Stripe)
+// - Generación de PDF con resumen del servicio
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import supabase from "../supabase";

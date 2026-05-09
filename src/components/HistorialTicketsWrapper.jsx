@@ -1,3 +1,6 @@
+// ─── Wrapper para historial de tickets completados/cancelados ──────────────
+// Envuelve HistorialTickets en un contenedor con estilos y estado inicial
+// Pasa props para búsqueda, filtrado y ordenamiento inicial
 import HistorialTickets from "./HistorialTickets";
 
 export default function HistorialTicketsWrapper({

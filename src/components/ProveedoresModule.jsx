@@ -1,3 +1,10 @@
+// ─── Módulo: Gestión de Proveedores ──────────────────────────────────
+// CRUD completo para administrar proveedores de refacciones
+// Características:
+// - Agregar, editar, eliminar proveedores
+// - Información de contacto (teléfono, correo, RFC)
+// - Sincronización en tiempo real
+// - Búsqueda y filtrado
 import { useEffect, useState } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

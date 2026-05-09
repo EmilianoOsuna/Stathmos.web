@@ -1,14 +1,15 @@
+// ─── Componente: Historial de Refacciones ─────────────────────────────
+// Vista unificada de movimientos de inventario (compras + ventas)
+// Características:
+// - Tabla de todas las transacciones de refacciones
+// - Búsqueda, filtrado por tipo y rango de fechas
+// - Códigos de color (entrada/salida)
+// - Información de proveedor y proyecto asociado
 import { useEffect, useState, useMemo } from "react";
 import supabase from "../supabase";
 import { formatDateTimeWorkshop } from "../utils/datetime";
 import { Icon } from "./UIPrimitives";
 
-// HistorialRefacciones: componente que muestra el registro unificado
-// de movimientos de refacciones (ventas y compras). Se encarga de:
-// - consultar datos desde Supabase
-// - normalizar/etiquetar registros (tipo, badge, label)
-// - filtrar/ordenar en memoria según props
-// - renderizar la tabla de resultados
 export default function HistorialRefacciones({
   darkMode,
   searchTerm = "",

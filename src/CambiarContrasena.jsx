@@ -1,3 +1,12 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// PANTALLA DE CAMBIO DE CONTRASEÑA
+// ═══════════════════════════════════════════════════════════════════════════════
+// Permite a usuarios cambiar su contraseña después de recuperación o primer login
+// Características:
+// - Indicador visual de fuerza de contraseña en tiempo real
+// - Validación de requisitos: 8 caracteres, mayúscula, minúscula, número/símbolo
+// - Pantalla de éxito con redirección automática al login
+// - Detección automática de dark mode
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";

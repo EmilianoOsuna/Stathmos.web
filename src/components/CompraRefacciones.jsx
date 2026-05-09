@@ -1,3 +1,11 @@
+// ─── Módulo: Compra de Refacciones ───────────────────────────────────
+// Permite registrar compras de refacciones a proveedores
+// Características:
+// - Seleccionar refacciones de catálogo
+// - Carrito de compra (agregar/eliminar items)
+// - Seleccionar proveedor y vinculación a proyecto (opcional)
+// - Sincronización automática de stock
+// - Generación de órdenes de compra
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import { Icon, Input, Select, Button } from "./UIPrimitives";

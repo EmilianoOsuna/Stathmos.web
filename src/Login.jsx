@@ -1,3 +1,13 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// PANTALLA DE LOGIN - Autenticación de usuarios
+// ═══════════════════════════════════════════════════════════════════════════════
+// Formulario de inicio de sesión con email/password
+// Características:
+// - Soporte para recuperación de contraseña vía email
+// - Detección automática de dark mode del sistema
+// - Animaciones de entrada y salida
+// - Validación de campos antes de enviar
+// - Integración con Supabase para autenticación
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
@@ -20,6 +30,11 @@ const Logo = ({ className = "", darkMode }) => (
 );
 
 export default function Login() {
+  // ─── Estado y navegación ──────────────────────────────────────────────────
+  // email, password: campos del formulario
+  // loading: indicador de envío/verificación
+  // error: mensaje de error para mostrar al usuario
+  // phase: animación de salida (idle → leaving)
   const navigate = useNavigate();
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +43,8 @@ export default function Login() {
   const [error,    setError]    = useState("");
   const [phase,    setPhase]    = useState("idle");
 
+  // ─── Detección de modo oscuro del sistema ──────────────────────────────
+  // Sincroniza automáticamente con preferencias del SO
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
   const [darkMode, setDarkMode] = useState(prefersDark);
   useEffect(() => {
@@ -37,6 +54,8 @@ export default function Login() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // ─── Función: Manejar login con email/password ────────────────────────
+  // Valida campos, intenta autenticar vía Supabase, redirige si es exitoso
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) { setError("Ingresa tu correo y contraseña."); return; }
     setLoading(true); setError("");
@@ -61,7 +80,7 @@ export default function Login() {
 
   const handleKey = (e) => { if (e.key === "Enter") handleLogin(); };
 
-  const bg    = darkMode ? "bg-[#18181f]"   : "bg-gray-100";
+  // ─── Estilos dinámicos según dark mode ─────────────────────────────────
   const card  = darkMode ? "bg-[#1e1e27] border-zinc-800" : "bg-white border-gray-200";
   const label = darkMode ? "text-zinc-500"  : "text-gray-400";
   const input = darkMode

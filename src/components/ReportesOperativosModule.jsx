@@ -1,3 +1,12 @@
+// ─── Módulo: Reportes Operativos ──────────────────────────────────────
+// Dashboard de análisis operativo con KPIs de productividad y eficiencia
+// Características:
+// - Resumen general: total proyectos, completados, en progreso, cancelados
+// - Carga de trabajo por mecánico (horas estimadas vs reales)
+// - Alertas de stock bajo y refacciones sin movimiento
+// - Rotación de refacciones (más vendidas)
+// - Flujo de citas y cuellos de botella
+// - Exportación a PDF y CSV
 import { useEffect, useMemo, useState, useRef } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

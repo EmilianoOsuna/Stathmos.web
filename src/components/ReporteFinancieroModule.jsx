@@ -1,3 +1,11 @@
+// ─── Módulo: Reporte Financiero ───────────────────────────────────────
+// Dashboard de análisis financiero con KPIs y estadísticas
+// Características:
+// - Ingresos totales y pendientes por cobrar
+// - Egresos y análisis de compras
+// - Utilidad bruta y valor de inventario
+// - Proyectos por cobrar con detalles de cotizaciones
+// - Exportación a PDF
 import { useEffect, useState, useMemo, useRef } from "react";
 import supabase from "../supabase";
 import { ModuleHeader, Card, Icon, Button, Badge } from "./UIPrimitives";

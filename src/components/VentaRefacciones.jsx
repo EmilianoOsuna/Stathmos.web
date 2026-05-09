@@ -1,3 +1,10 @@
+// ─── Módulo: Venta de Refacciones ────────────────────────────────────
+// Módulo para vender refacciones del inventario a clientes o talleres externos
+// Características:
+// - Búsqueda y filtrado de refacciones disponibles
+// - Carrito de compra con validación de stock
+// - Registro automático de salidas de inventario
+// - Historial de transacciones
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import { Icon, Input, Button } from "./UIPrimitives";

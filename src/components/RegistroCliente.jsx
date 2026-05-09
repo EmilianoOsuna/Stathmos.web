@@ -1,3 +1,7 @@
+// ─── Componente: Registro de Clientes ────────────────────────────────────
+// Formulario CRUD completo para registrar nuevos clientes
+// Valida email, RFC (opcional), y teléfono en formato mexicano
+// Almacena datos en Supabase vía Edge Function 'crear-cliente'
 import { useState } from 'react';
 import supabase from '../supabase';
 import { Input, Button } from './UIPrimitives';

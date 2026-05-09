@@ -1,3 +1,10 @@
+// ─── Componente: Historial de Tickets Finalizados/Cancelados ──────────
+// Vista de proyectos completados, entregados o cancelados
+// Características:
+// - Búsqueda, filtrado y ordenamiento de tickets
+// - Modal detallado con opción de reabrir tickets
+// - Generación de PDF con resumen del servicio
+// - Sincronización en tiempo real con Supabase
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

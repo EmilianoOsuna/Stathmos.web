@@ -1,3 +1,6 @@
+// ─── Módulo de Gestión de Inventario ──────────────────────────────────────
+// Tab switcher principal para gestionar refacciones, compras, ventas y proveedores
+// El rol del usuario determina si se muestra la pestaña de proveedores (solo admin)
 import { useState } from "react";
 import { ModuleHeader, Icon } from "./UIPrimitives";
 import RefaccionesModule from "./RefaccionesModule";

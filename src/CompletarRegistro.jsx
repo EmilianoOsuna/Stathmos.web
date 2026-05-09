@@ -1,3 +1,12 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// PANTALLA DE COMPLETAR REGISTRO
+// ═══════════════════════════════════════════════════════════════════════════════
+// Formulario para completar el registro inicial después de invitación
+// Características:
+// - Campos personalizables (nombre, correo, teléfono, RFC, dirección)
+// - Validación de email, RFC, y teléfono según formatos mexicanos
+// - Integración con Supabase para actualización de datos de usuario
+// - Redirects automáticas al dashboard después de completar
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";

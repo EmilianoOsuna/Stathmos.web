@@ -1,3 +1,6 @@
+// ─── Centro de Reportes ───────────────────────────────────────────────────
+// Tab switcher para acceder a reportes financieros y operativos
+// Proporciona análisis de ingresos, gastos, KPIs de productividad y estadísticas
 import { useState } from "react";
 import ReporteFinancieroModule from "./ReporteFinancieroModule";
 import ReportesOperativosModule from "./ReportesOperativosModule";

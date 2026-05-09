@@ -1,3 +1,12 @@
+// ─── Módulo: Gestión de Citas (Appointments) ──────────────────────────────
+// Sistema completo de citas/appointments con validación de disponibilidad
+// Características:
+// - Calendario de citas por mecánico
+// - Validación de horarios disponibles (no solapados, dentro de horario de taller)
+// - Respeto de días inhabiles
+// - Tipos de servicio predefinidos
+// - Confirmación de citas por cliente
+// - Notificaciones en tiempo real
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

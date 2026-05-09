@@ -1,3 +1,11 @@
+// ─── Componente: Historial de Servicios (Admin) ────────────────────────
+// Vista administrativa completa de todos los servicios realizados
+// Características:
+// - Búsqueda avanzada (cliente, proyecto, estado)
+// - Filtrado por rango de fechas y estado del proyecto
+// - Galería de fotos por servicio (antes/durante/después)
+// - Generación de PDF con detalles completos del servicio
+// - Sincronización en tiempo real con Supabase
 import { useState, useEffect, useCallback, useRef } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

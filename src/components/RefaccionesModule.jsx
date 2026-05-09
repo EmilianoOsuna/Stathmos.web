@@ -1,3 +1,11 @@
+// ─── Módulo: Gestión de Catálogo de Refacciones ──────────────────────────
+// CRUD completo para administrar el inventario de refacciones
+// Características:
+// - Agregar, editar, eliminar refacciones (solo admin)
+// - Control de stock con alertas de mínimos
+// - Sincronización en tiempo real con Supabase
+// - Búsqueda y filtrado de refacciones
+// - Integración con proveedores
 import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";

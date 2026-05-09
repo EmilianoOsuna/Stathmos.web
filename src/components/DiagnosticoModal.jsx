@@ -1,3 +1,7 @@
+// ─── Modal: Registrar Diagnóstico ────────────────────────────────────
+// Modal para que mecánicos documenten el diagnóstico de un vehículo
+// Campos: síntomas del cliente, hallazgos técnicos, causa raíz
+// Notifica automáticamente al cliente cuando se registra
 import { useState } from "react";
 import supabase from "../supabase";
 import { AlertCircle, CheckCircle } from "lucide-react";

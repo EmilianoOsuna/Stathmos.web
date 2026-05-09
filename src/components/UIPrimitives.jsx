@@ -1,10 +1,31 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIBRERÍA DE COMPONENTES PRIMITIVOS (UI Primitives)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Conjunto reutilizable de componentes base que forman la interfaz de la aplicación:
+// - Button: Botones con variantes (primary, accent, ghost, outline)
+// - Icon: Librería de iconos SVG (calendar, users, tools, chart, etc.)
+// - Input: Campos de entrada con validación y estilos dark mode
+// - Select: Selectores con opciones (especializado para formatos de fecha/hora)
+// - Modal: Componentes de diálogo con soporte de portales React
+// - Card: Contenedores con estilos consistentes
+// - Textarea: Campos de texto multilínea
+// - DatePicker: Selector de fechas con validación de rango
+// - Field: Wrapper para labels y validaciones
+// - ModuleHeader: Encabezado consistente para módulos
+// 
+// Colores globales: C_BLUE (#60aebb) y C_RED (#db3c1c)
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 
-// Colors
+// ─── Colores predefinidos para toda la aplicación ───────────────────────────
+// C_BLUE: Color primario (cyan/teal) usado en botones, links y elementos activos
+// C_RED: Color de acento/alerta usado en botones peligrosos y elementos críticos
 export const C_BLUE = "#60aebb";
 export const C_RED = "#db3c1c";
 
+// ─── Componente Button ─────────────────────────────────────────────────────
+// Botón reutilizable con 4 variantes: primary (default), accent, ghost, outline
+// Props: children (contenido), onClick, disabled, variant, color, className, darkMode
 export const Button = ({ children, onClick, disabled, variant = "primary", color, className = "", darkMode, ...props }) => {
   const base = "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
   
@@ -46,6 +67,12 @@ export const Button = ({ children, onClick, disabled, variant = "primary", color
   );
 };
 
+// ─── Componente Icon ──────────────────────────────────────────────────────
+// Librería de iconos SVG reutilizables - mapa de name → SVG
+// Incluye: calendar, users, tool, wrench, tag, receipt, shoppingcart, clipboard,
+//          scroll, chart, bell, checkcircle, dollar, creditcard, filetext, chevron,
+//          search, history, plus, más
+// Ejemplo: <Icon name="calendar" className="w-4 h-4" />
 export const Icon = ({ name, className = "w-4 h-4" }) => {
   const icons = {
     calendar: (
@@ -207,6 +234,9 @@ export const Icon = ({ name, className = "w-4 h-4" }) => {
   return icons[name] || null;
 };
 
+// ─── Componente Card ──────────────────────────────────────────────────────
+// Contenedor con bordes y sombra - base para muchos elementos de la UI
+// Soporta dark mode y clases CSS personalizadas
 export const Card = ({ darkMode, className = "", style = {}, children, ...props }) => (
   <div
     className={`rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"} ${className}`}
@@ -217,6 +247,9 @@ export const Card = ({ darkMode, className = "", style = {}, children, ...props 
   </div>
 );
 
+// ─── Componente Field ──────────────────────────────────────────────────────
+// Wrapper para labels con validación - encapsula label + input/select/textarea
+// Muestra asterisco rojo si es required
 export const Field = ({ label, required, children, darkMode }) => (
   <div className="flex flex-col gap-1.5">
     <label className={`text-[10px] font-semibold uppercase tracking-widest ${darkMode ? "text-zinc-500" : "text-gray-400"}`}>
@@ -226,6 +259,12 @@ export const Field = ({ label, required, children, darkMode }) => (
   </div>
 );
 
+  </div>
+);
+
+// ─── Componente Input ─────────────────────────────────────────────────────
+// Campo de entrada con soporte para íconos, focus styling y dark mode
+// Props opcionales: icon (nombre del icon a mostrar), más props HTML estándar
 const inputCls = (darkMode) =>
   `w-full rounded-md px-3 py-2 text-sm outline-none transition-colors border ${
     darkMode ? "bg-[#2a2a35] border-zinc-700 text-white placeholder-zinc-600" : "bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400"
@@ -246,6 +285,12 @@ export const Input = ({ darkMode, icon, ...props }) => (
   </div>
 );
 
+  </div>
+);
+
+// ─── Componente Select ────────────────────────────────────────────────────
+// Dropdown personalizado con portal para desplegable fuera del flujo
+// Soporta: options array, children <option>, onChange, value
 export const Select = ({ darkMode, value, onChange, options = [], children, ...props }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -333,6 +378,10 @@ export const Select = ({ darkMode, value, onChange, options = [], children, ...p
 };
 
 export const Modal = ({ open, onClose, title, subtitle, children, darkMode, maxWidth = "max-w-2xl" }) => {
+  // ─── Componente Modal ──────────────────────────────────────────────────
+  // Diálogo modal con backdrop, animación y scroll personalizado
+  // Props: open (boolean), onClose (callback), title, subtitle, children, darkMode, maxWidth
+  // Previene scroll del body cuando está abierto
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "unset";
@@ -373,6 +422,12 @@ export const Modal = ({ open, onClose, title, subtitle, children, darkMode, maxW
   );
 };
 
+  );
+};
+
+// ─── Componente ModuleHeader ──────────────────────────────────────────────
+// Encabezado consistente para módulos - muestra título, contador y botón de acción
+// Props: title, count (opcional), countLabel, action (JSX), darkMode
 export const ModuleHeader = ({ title, count, countLabel, action, darkMode }) => {
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
@@ -389,6 +444,12 @@ export const ModuleHeader = ({ title, count, countLabel, action, darkMode }) => 
   );
 };
 
+  );
+};
+
+// ─── Componente Textarea ──────────────────────────────────────────────────
+// Campo de texto multilínea con estilos dark mode y focus styling
+// Props estándar de HTML textarea más darkMode
 export const Textarea = ({ darkMode, ...props }) => (
   <textarea {...props}
     className={`${inputCls(darkMode)} resize-none`}
@@ -397,6 +458,13 @@ export const Textarea = ({ darkMode, ...props }) => (
   />
 );
 
+  </textarea>
+);
+
+// ─── Componente DatePicker ────────────────────────────────────────────────
+// Selector de fecha con calendario interactivo
+// Soporta: blocking dates (isBlockedDate), navegación mes anterior/siguiente, formato es-MX
+// Usa portal para desplegable fuera del flujo normal del documento
 export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkMode, placeholder = "Seleccionar fecha..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(value ? new Date(value + "T12:00:00") : new Date());
@@ -528,6 +596,12 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
   );
 };
 
+  );
+};
+
+// ─── Componente Badge ──────────────────────────────────────────────────
+// Etiqueta pequeña con variantes: primary, success, warning, danger
+// Usado para indicar estados, categorías y prioridades
 export const Badge = ({ children, variant = "primary", className = "", darkMode }) => {
   const variants = {
     primary: darkMode ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-700 border-blue-100",

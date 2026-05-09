@@ -37,17 +37,18 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // ─── Text Normalization (SAT Compliance) ──────────────────────────────────────
 // Normaliza texto removiendo acentos, mayúsculas y espacios (cumplimiento SAT)
+// Ejemplo: "José" → "JOSE", "Señor" → "SENOR"
 const normalizeForSAT = (str) => {
   if (!str) return "";
   return str
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remueve acentos
+    .replace(/[\u0300-\u036f]/g, "") // Remueve acentos diacríticos
     .toUpperCase()
     .trim();
 };
 
-// Normaliza texto para UI (mayúsculas, sin acentos)
-// Normaliza texto para interfaz (mayúsculas sin acentos)
+// Normaliza texto para interfaz de usuario (mayúsculas sin acentos)
+// Se usa para campos que se muestran en la UI
 const normalizeUI = (str) => {
   if (!str) return "";
   return str
@@ -57,29 +58,36 @@ const normalizeUI = (str) => {
 };
 
 // FUNCIONES DE VALIDACIÓN: Verifican formato de datos antes de guardar
+// Estas funciones se usan en formularios para evitar guardar datos inválidos en la BD
 
-// Valida formato de email
+// Valida formato de email usando expresión regular
+// Retorna: true si el formato es válido, false si no
 const isValidEmail = (email) => {
   if (!email || !email.trim()) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email.toLowerCase());
 };
 
-// Valida formato de RFC (12-13 caracteres: 3-4 letras + 6 dígitos + 2-3 alfanuméricos)
+// Valida formato de RFC (Registro Federal de Contribuyentes - México)
+// Formato válido: 12-13 caracteres (3-4 letras + 6 dígitos + 2-3 alfanuméricos)
+// Ejemplo: GARC800101ABC
 const isValidRFC = (rfc) => {
   if (!rfc || !rfc.trim()) return false;
   const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
   return rfcRegex.test(rfc.toUpperCase());
 };
 
-// Valida VIN (Vehicle Identification Number): 17 caracteres únicos (sin I, O, Q)
+// Valida VIN (Vehicle Identification Number): 17 caracteres identificadores únicos
+// Nota: No contiene las letras I, O, Q para evitar confusiones
+// Ejemplo: 1HGCM82633A123456
 const isValidVIN = (vin) => {
   if (!vin || !vin.trim()) return true; // VIN es opcional
   const vinRegex = /^[A-HJ-NPR-Z0-9]{17}$/i;
   return vinRegex.test(vin.trim());
 };
 
-// Valida teléfono: exactamente 10 dígitos numéricos
+// Valida teléfono: exactamente 10 dígitos numéricos (formato mexicano)
+// La función remueve caracteres especiales y cuenta solo dígitos
 const isValidPhone = (tel) => {
   const clean = String(tel || "").replace(/\D/g, "");
   const phoneRegex = /^\d{10}$/;
@@ -87,6 +95,10 @@ const isValidPhone = (tel) => {
 };
 
 // LOGO: SVG del logo de Stathmos con soporte para tema claro/oscuro
+// Este componente renderiza el icono de marca del sistema
+// Props:
+//   - className: clases Tailwind para dimensionar el logo
+//   - darkMode: boolean para cambiar color automáticamente (blanco en oscuro, negro en claro)
 const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
   <svg className={className} viewBox="0 0 6000 3375" xmlns="http://www.w3.org/2000/svg"
     style={{ fillRule:"evenodd", clipRule:"evenodd", strokeLinecap:"round", strokeLinejoin:"round", strokeMiterlimit:"22.926" }}
@@ -105,17 +117,18 @@ const LogoMark = ({ className = "h-6 w-auto", darkMode }) => (
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // Estados posibles de un proyecto a lo largo de su ciclo de vida
+// Estos estados representan cada fase del proceso de servicio automotriz
 const ESTADOS_PROYECTO = [
-  "pendiente_diagnostico",
-  "pendiente_cotizacion",
-  "pendiente_aprobacion",
-  "en_progreso",
-  "pendiente_refaccion",
-  "terminado",
-  "entregado",
-  "no_aprobado",
-  "cancelado",
-  "activo",
+  "pendiente_diagnostico",  // El proyecto fue creado, espera diagnóstico inicial
+  "pendiente_cotizacion",   // Tiene diagnóstico, falta crear cotización
+  "pendiente_aprobacion",   // Tiene cotización, espera aprobación del cliente
+  "en_progreso",            // Cliente aprobó cotización, trabajo en ejecución
+  "pendiente_refaccion",    // Trabajo pausado esperando refacciones faltantes
+  "terminado",              // Trabajo completado, listo para entrega
+  "entregado",              // Proyecto entregado al cliente (cierre final)
+  "no_aprobado",            // Cliente rechazó la cotización
+  "cancelado",              // Proyecto cancelado por admin o cliente
+  "activo",                 // Meta-estado: cualquier proyecto en trabajo
 ];
 
 // CONSTANTES Y HELPERS: Estados, etiquetas, y funciones auxiliares
@@ -167,6 +180,8 @@ const ESTADO_LABELS = {
 const estadoLabel = (estado) => ESTADO_LABELS[estado] || (estado ? String(estado).replace(/_/g, " ") : "—");
 
 // Obtiene la cotización más reciente de un proyecto
+// Los proyectos pueden tener múltiples cotizaciones (ej: si se rechaza y se crea nueva)
+// Esta función retorna la última creada, ordenada por fecha
 const getLatestCotizacion = (proyecto) => {
   const cotizaciones = Array.isArray(proyecto?.cotizaciones) ? proyecto.cotizaciones : [];
   if (!cotizaciones.length) return null;
@@ -179,6 +194,8 @@ const getLatestCotizacion = (proyecto) => {
 };
 
 // Hook personalizado para gestionar notificaciones del usuario en tiempo real
+// Obtiene notificaciones de la BD y se suscribe a nuevas mediante Realtime
+// Retorna: { notificaciones[], loading, unreadCount, refresh() }
 const useUserNotifications = (session) => {
   const userId = session?.user?.id || null;
   const [notificaciones, setNotificaciones] = useState([]);
@@ -201,6 +218,8 @@ const useUserNotifications = (session) => {
     if (!userId) return;
     fetchNotifications();
 
+    // Suscripción a cambios en tiempo real via Supabase Realtime
+    // Se gatilla cuando se inserta o actualiza una notificación del usuario
     const channel = supabase
       .channel(`notificaciones_channel_${userId}`)
       .on(
@@ -225,12 +244,15 @@ const useUserNotifications = (session) => {
     };
   }, [userId, fetchNotifications]);
 
+  // Cuenta notificaciones no leídas
   const unreadCount = notificaciones.filter((n) => !n.leida).length;
 
   return { notificaciones, loading, unreadCount, refresh: fetchNotifications };
 };
 
 // Ejecuta funciones serverless (Edge Functions) de Supabase
+// Las Edge Functions son código Node que corre en el servidor Supabase
+// Se usa para enviar emails, crear usuarios, llamadas a APIs externas, etc
 const invokeEdgeFunction = async (name, { body, userToken }) => {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
@@ -258,8 +280,10 @@ const invokeEdgeFunction = async (name, { body, userToken }) => {
 };
 
 // FUNCIONES DE NOTIFICACIÓN: Envían notificaciones a usuarios vía Edge Functions
+// Estas funciones se llaman después de eventos importantes en el sistema
 
 // Notifica a todos los administradores cuando un cliente agenda una cita
+// Se ejecuta en el flujo de agendar_cita
 const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fechaHora, session }) => {
   try {
     let name = clienteNombre;
@@ -287,6 +311,7 @@ const notifyAdminNewAppointment = async ({ citaId, clienteId, clienteNombre, fec
   }
 };
 // Notifica al cliente cuando el estado de su proyecto cambia
+// Se ejecuta cuando un admin o mecánico actualiza el estado
 const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, nuevoEstado, session }) => {
   if (!clienteId) return;
   try {
@@ -321,6 +346,7 @@ const notifyClientStateChange = async ({ proyectoId, clienteId, tituloProyecto, 
   }
 };
 // Notifica a todos los administradores cuando se registra un pago
+// Se ejecuta en el flujo de crear-pago
 const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }) => {
   try {
     const { data: rolAdmin } = await supabase.from("roles").select("id").ilike("nombre", "administrador").maybeSingle();
@@ -342,6 +368,7 @@ const notifyAdminPayment = async ({ proyectoId, tituloProyecto, monto, session }
 };
 
 // Notifica al cliente cuando se suben fotos del avance de su proyecto
+// Se ejecuta cuando un mecánico o admin carga fotografías en EditFotosSection
 const notifyClientNewPhotos = async ({ proyectoId, clienteId, tituloProyecto, session }) => {
   if (!proyectoId || !clienteId) return;
   try {
@@ -373,13 +400,14 @@ const notifyClientNewPhotos = async ({ proyectoId, clienteId, tituloProyecto, se
 
 // FUNCIONES DE VALIDACIÓN Y HELPERS: Lógica de negocio y utilidades varias
 
-// Valida si un proyecto tiene una cotización aprobada
+// Valida si un proyecto tiene una cotización aprobada por el cliente
 const hasApprovedQuote = (proyecto) => getLatestCotizacion(proyecto)?.estado === "aprobada";
 
-// Estados en los que se puede registrar un pago
+// Estados en los que se puede registrar un pago en un proyecto
 const PAYMENT_ALLOWED_STATES = ["en_progreso", "pendiente_refaccion", "terminado"];
 
 // Verifica si un ticket/proyecto puede recibir pagos
+// Requiere: estado permitido Y cotización aprobada
 const isPayable = (ticket) => {
   const estadoRaw = typeof ticket === "string" ? ticket : ticket?.estado;
   const cotizacion = typeof ticket === "object" && ticket
@@ -393,6 +421,7 @@ const isPayable = (ticket) => {
 };
 
 // Normaliza valores de rol (mayúscula a minúscula, sin acentos)
+// Se usa para comparaciones de roles independientemente de cómo se almacenen
 const normalizeRole = (value = "") =>
   value
     .normalize("NFD")
@@ -401,6 +430,8 @@ const normalizeRole = (value = "") =>
     .toLowerCase();
 
 // Extrae el rol del usuario desde la sesión de autenticación
+// Busca en app_metadata o user_metadata según lo que Supabase haya guardado
+// Retorna: "administrador", "mecanico", "cliente" o string vacío si es inválido
 const getRoleFromSession = (session) => {
   const appRole = session?.user?.app_metadata?.rol;
   const metaRole = session?.user?.user_metadata?.rol;
@@ -429,8 +460,11 @@ const getFunctionErrorMessage = async (invokeError, fallbackMessage) => {
 };
 
 // CSS ANIMATIONS: Definición de animaciones globales reutilizables
+// Estas animaciones se aplican a componentes mediante clases como 'anim-fadeUp'
 
-// Inyecta animaciones CSS globales (fadeUp, fadeIn, slideDown)
+// Inyecta animaciones CSS globales en la página
+// Incluye: fadeUp, fadeIn, slideDown y page-enter
+// Se renderiza una sola vez al montar la App
 const GlobalStyles = () => (
   <style>{`
     @keyframes fadeUp {
@@ -453,6 +487,8 @@ const GlobalStyles = () => (
 );
 
 // ERROR BOUNDARY: Componente que captura errores de render en la UI
+// Si algún componente hijo falla, muestra un mensaje de error en lugar de romper la app
+
 // Component wrapper que captura errores de render en la UI y muestra fallback
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -483,18 +519,21 @@ class ErrorBoundary extends React.Component {
 }
 
 // COMPONENTES DE BOTONES: Botones predefinidos reutilizables en todo el app
+// Estos botones encapsulan estilos comunes y se usan en módulos
 
-// Botón principal con color acentuado
+// Botón principal con color acentuado (azul o rojo según props)
 const BtnAccent = ({ onClick, disabled, color, children, className = "" }) => (
   <Button onClick={onClick} disabled={disabled} color={color} className={className}>{children}</Button>
 );
 
 // Botón genérico para editar registros
+// Abre el formulario de edición del registro seleccionado
 const BtnEdit = ({ onClick, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick}>Editar</Button>
 );
 
 // Botón para activar/desactivar registros
+// Cambia el estado 'activo' de un registro sin eliminarlo
 const BtnToggleActive = ({ onClick, isActive, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick} 
     className={isActive ? "hover:border-red-800 hover:text-red-400" : "hover:border-emerald-800 hover:text-emerald-400"}
@@ -504,6 +543,7 @@ const BtnToggleActive = ({ onClick, isActive, darkMode }) => (
 );
 
 // Botón para cancelar un proyecto
+// Solo visible para administradores
 const BtnCancelProject = ({ onClick, darkMode }) => (
   <Button variant="ghost" darkMode={darkMode} onClick={onClick} className="hover:border-red-800 hover:text-red-400">
     Cancelar
@@ -511,7 +551,14 @@ const BtnCancelProject = ({ onClick, darkMode }) => (
 );
 
 // ─── ConfirmModal Component ───────────────────────────────────────────────────
-// Modal de confirmación reutilizable para acciones críticas
+// Modal de confirmación reutilizable para acciones críticas (borrar, cancelar, etc)
+// Props:
+//   - open: boolean para mostrar/ocultar el modal
+//   - title: título del diálogo
+//   - message: mensaje con HTML soportado (usa dangerouslySetInnerHTML)
+//   - onConfirm: función a ejecutar cuando se confirma
+//   - confirmLabel: texto del botón de confirmación
+//   - confirmColor: color del botón (C_RED, C_BLUE, etc)
 const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, confirmColor = C_RED, darkMode }) => (
   <Modal open={open} onClose={onClose} title={title} darkMode={darkMode}>
     <p className={`text-sm mb-5 ${darkMode ? "text-zinc-400" : "text-gray-500"}`} dangerouslySetInnerHTML={{ __html: message }} />
@@ -525,7 +572,12 @@ const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, 
 );
 
 // ───MODULO CLIENTES ──────────────────────────────────────────────────────────
-// Módulo para gestionar clientes: crear, editar, buscar y cambiar estado
+// Módulo completo para gestionar clientes: crear, editar, buscar, desactivar
+// Funcionalidades:
+//   - Lista con búsqueda por nombre, teléfono o correo
+//   - Crear nuevos clientes (envía invitación por email vía Edge Function)
+//   - Editar información de cliente existente
+//   - Activar/desactivar clientes (no se eliminan, se conservan en la BD)
 const ClientesModule = ({ darkMode, session }) => {
   const [clientes,     setClientes]     = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -779,7 +831,13 @@ const ClientesModule = ({ darkMode, session }) => {
 };
 
 // ─── MODULO EMPLEADOS ─────────────────────────────────────────────────────────
-// Módulo para gestionar empleados: crear, editar, buscar y cambiar disponibilidad
+// Módulo para gestionar el personal (mecánicos y administradores)
+// Funcionalidades:
+//   - Crear nuevos empleados (se crea usuario en Supabase vía Edge Function)
+//   - Editar información de empleado existente
+//   - Cambiar disponibilidad (si está disponible para nuevos proyectos)
+//   - Cambiar estado activo/inactivo
+//   - Búsqueda por nombre, correo, teléfono o RFC
 const EmpleadosModule = ({ darkMode }) => {
   const [empleados,     setEmpleados]     = useState([]);
   const [usuarios,      setUsuarios]      = useState([]);
@@ -1149,6 +1207,13 @@ const fetchAll = useCallback(async () => {
 };
 
 // ─── VEHÍCULOS MODULE ─────────────────────────────────────────────────────────
+// Módulo para registrar y administrar vehículos de clientes
+// Funcionalidades:
+//   - Crear vehículos asociados a clientes
+//   - Editar información del vehículo (marca, modelo, placas, VIN, color)
+//   - Validar unicidad de VIN y placas
+//   - Activar/desactivar vehículos
+//   - Búsqueda por marca, modelo, placas o cliente propietario
 const VehiculosModule = ({ darkMode }) => {
   const [vehiculos,    setVehiculos]    = useState([]);
   const [clientes,     setClientes]     = useState([]);
@@ -1376,6 +1441,18 @@ const VehiculosModule = ({ darkMode }) => {
 };
 
 // ─── PROYECTOS MODULE ─────────────────────────────────────────────────────────
+// Módulo central para gestionar proyectos/ordenes de servicio (tickets)
+// Este es el módulo más complejo del sistema, gestiona todo el ciclo de vida
+// Funcionalidades principales:
+//   - Crear/editar proyectos con cliente, vehículo y mecánico asignado
+//   - Diagnóstico inicial (preventivo, correctivo, revisión)
+//   - Cotización con desglose de mano de obra y refacciones
+//   - Transición de estados (según permisos de rol)
+//   - Sincronización de refacciones con inventario (venta/compra automática)
+//   - Vincular/desvincularse de citas agendadas
+//   - Gestión de observaciones (notas), diagnóstico final y fotografías
+//   - Notificaciones automáticas a clientes y mecánicos
+//   - Solo administradores pueden crear; mecánicos solo editan asignados
 const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoId = null }) => {
   const [proyectos,  setProyectos]  = useState([]);
   const [clientes,   setClientes]   = useState([]);
@@ -1424,6 +1501,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   const editRefSeccionRef = useRef(null);
 
   // ─── Diagnóstico inicial en el modal ─────────────────────────────────────────
+  // El diagnóstico inicial (preventivo/correctivo) es obligatorio antes de crear cotización
+  // Estados: "inicial" (es el único tipo guardado desde el modal de crear/editar proyecto)
   const DIAG_TIPOS = ["inicial", "preventivo", "correctivo", "revision"];
   const diagFormInit = { tipo_operacion: "preventivo", sintomas: "", descripcion: "", causa_raiz: "" };
   const [diagForm,     setDiagForm]     = useState(diagFormInit);
@@ -1434,6 +1513,7 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   const [editandoDiag, setEditandoDiag] = useState(false);
 
   // ─── Obtener rol del usuario actual ───────────────────────────────────────────
+  // Determina permisos (solo admin crea, solo admin y mecánico ven sus propios)
   const metaRole = (session?.user?.user_metadata?.rol || session?.user?.app_metadata?.rol || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -1496,6 +1576,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
     refCart.reduce((sum, item) => sum + Number(item.precio_unit || 0) * Number(item.cantidad || 0), 0)
   ), [refCart]);
 
+  // Sincroniza automáticamente monto_refacc con el total del carrito de refacciones
+  // Se ejecuta cada vez que el carrito cambia
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
@@ -1504,11 +1586,15 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   }, [refCartTotal, refCart.length]);
 
   const openRefPicker = () => {
+    // Abre el modal picker de refacciones y prepara borrador del carrito
     setRefCartDraft(refCart);
     setRefPickerOpen(true);
     setRefSearch("");
   };
 
+  // Agrega una refacción al borrador del carrito
+  // Valida stock antes de agregar
+  // Soporta incrementar cantidad si ya existe
   const addRefToDraft = (refaccion) => {
     setRefCartDraft((prev) => {
       const list = Array.isArray(prev) ? prev : [];
@@ -1594,6 +1680,8 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   }, [editTarget, form.estado]);
 
   const openCreate = () => {
+    // Abre el modal para crear nuevo proyecto
+    // Solo disponible para administradores
     if (!isAdmin) {
       setFormError("Solo administradores pueden crear nuevos proyectos.");
       return;
@@ -1611,6 +1699,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
     setEditandoDiag(false);
     setModalOpen(true);
   };
+  
+  // Abre el modal para editar proyecto existente
+  // Carga toda la información actual: proyecto, cotización, refacciones, diagnóstico
   const openEdit = async (p) => {
     const cotizacion = getLatestCotizacion(p);
     setEditTarget(p);
@@ -1664,6 +1755,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
     setModalOpen(true);
   };
 
+  // Notifica al mecánico cuando le asignan un nuevo proyecto
+  // Busca el usuario ID del mecánico desde su correo/usuario_id
+  // Se ejecuta cuando se crea un nuevo proyecto o se cambia el mecánico asignado
   const notifyMecanicoAsignacion = async ({ proyectoId, mecanicoId, tituloProyecto }) => {
     if (!mecanicoId) return;
     try {
@@ -1713,8 +1807,10 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   };
 
   const handleSave = async () => {
+    // Valida datos básicos requeridos
     if (!form.titulo.trim() || !form.cliente_id || !form.vehiculo_id) { setFormError("Título, cliente y vehículo son obligatorios."); return; }
 
+    // Valida que el vehículo no esté ocupado en otro proyecto activo
     const vehiculoOcupado = proyectos.some((p) =>
       p.vehiculo_id === form.vehiculo_id &&
       !["entregado", "cancelado"].includes(p.estado) &&
@@ -1727,15 +1823,20 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
     }
 
     setSaving(true); setFormError("");
+    
+    // Calcula totales de cotización
     const manoObra = form.monto_mano_obra === "" ? 0 : Number(form.monto_mano_obra);
     const refacc = Number(refCartTotal || 0);
 
+    // Valida que los montos sean válidos (no negativos, números)
     if (!Number.isFinite(manoObra) || !Number.isFinite(refacc) || manoObra < 0 || refacc < 0) {
       setSaving(false);
       setFormError("La cotización debe contener montos válidos (mayores o iguales a 0).");
       return;
     }
 
+    // VALIDACIÓN DE CAMBIOS DE ESTADO (solo en edición)
+    // Mecánicos tienen transiciones limitadas, admins tienen más permisos
     if (editTarget && form.estado !== editTarget.estado) {
       if (isMecanico) {
         const mecAllowed = (() => {
@@ -2893,15 +2994,19 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
 };
 
 // ─── Protected Route ──────────────────────────────────────────────────────────
+// Componente wrapper que redirige a login si no hay sesión activa
+// Protege rutas que requieren autenticación
 const ProtectedRoute = ({ session, children }) => {
   if (!session) return <Navigate to="/login" replace />;
   return children;
 };
 
 // ─── User menu (top-right avatar + dropdown) ──────────────────────────────────
+// Componentes de menú y notificaciones en el navbar superior
 // UserMenuWithRef is used instead to handle click-outside properly.
 
-// Hook: close dropdown when clicking outside
+// Hook personalizado: cierra dropdown cuando se hace click fuera
+// Retorna: [open, setOpen, ref] para usar en un componente contenedor
 function useClickOutside() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -2914,7 +3019,9 @@ function useClickOutside() {
   return [open, setOpen, ref];
 }
 
-// Componente Dropdown de Notificaciones
+// Componente Dropdown de Notificaciones para la barra superior
+// Muestra campana con badge de notificaciones no leídas
+// Al hacer click en notificación, llama callback y navega si es necesario
 const NotificacionesDropdown = ({ session, darkMode, onNotificationClick }) => {
   const [open, setOpen, ref] = useClickOutside();
   const { notificaciones, unreadCount, refresh } = useUserNotifications(session);
@@ -4702,6 +4809,12 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 };
 
 // ─── Dashboard Admin ──────────────────────────────────────────────────────────
+// Panel principal para administradores
+// Incluye navegación a todos los módulos: Clientes, Empleados, Vehículos, 
+// Proyectos, Citas, Pagos, Inventario, Historiales, Reportes
+// Props:
+//   - session: sesión autenticada del usuario
+//   - darkMode: boolean para tema claro/oscuro
 const Dashboard = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("citas");
   const [notifProjectId, setNotifProjectId] = useState(null);
@@ -4749,6 +4862,11 @@ const Dashboard = ({ session, darkMode }) => {
 };
 
 // ─── Módulo de Autorización de Pagos (Admin) ─
+// Permite a administradores autorizar/rechazar pagos pendientes
+// Funcionalidades:
+//   - Ver pagos pendientes y completados
+//   - Autorizar pagos (cambia estado a "completado")
+//   - Opcionalmente marcar proyecto como "entregado" al autorizar
 const PagosAdminModule = ({ darkMode, session }) => {
   const [pagos, setPagos] = useState([]);
   const [pagosCompletados, setPagosCompletados] = useState([]);
@@ -6094,6 +6212,12 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
 };
 
 // ─── Dashboard Cliente ────────────────────────────────────────────────────────
+// Panel para clientes: visualizan sus proyectos y citas
+// Funcionalidades:
+//   - Ver lista de proyectos personales con estado y cotización
+//   - Ver fotos del avance
+//   - Agendar nuevas citas
+//   - Pagar proyectos (si cotización aprobada y estado lo permite)
 const DashboardCliente = ({ session, darkMode }) => {
   const [activeModule, setActiveModule] = useState("citas");
   const [clienteId,    setClienteId]    = useState(null);
@@ -6518,6 +6642,16 @@ const DashboardMecanico = ({ session, darkMode }) => {
 };
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPONENTE PRINCIPAL: App
+// ═══════════════════════════════════════════════════════════════════════════════
+// Componente raíz de la aplicación
+// Responsabilidades:
+//   - Obtener y mantener sesión autenticada de Supabase
+//   - Detectar tema oscuro/claro del navegador
+//   - Renderizar GlobalStyles (animaciones CSS)
+//   - Rutas con protección: login, dashboard, tickets, etc
+//   - Lógica de re-renderizado cuando sesión cambia
 export default function App() {
   const [session,     setSession]     = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -6546,6 +6680,10 @@ export default function App() {
     );
   }
 
+  // Determina qué dashboard renderizar según el rol del usuario
+  // Administrador → Dashboard (todas las funciones)
+  // Mecánico → DashboardMecanico (solo sus proyectos y refacciones)
+  // Cliente → DashboardCliente (solo sus proyectos y citas)
   const rol = getRoleFromSession(session);
 
   const renderDashboard = () => {
@@ -6557,11 +6695,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* ─── Rutas públicas (login y registro) ─── */}
         <Route path="/login"              element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route path="/completar-registro" element={<CompletarRegistro />} />
         <Route path="/cambiar-contrasena" element={<CambiarContrasena />} />
+        
+        {/* ─── Rutas protegidas (requieren sesión) ─── */}
         <Route path="/dashboard"          element={<ProtectedRoute session={session}><ErrorBoundary>{renderDashboard()}</ErrorBoundary></ProtectedRoute>} />
         <Route path="/ticket/:proyectoId" element={<ProtectedRoute session={session}><TicketWrapper darkMode={darkMode} /></ProtectedRoute>} />
+        
+        {/* ─── Ruta por defecto (catchall) ─── */}
         <Route path="*"                   element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>

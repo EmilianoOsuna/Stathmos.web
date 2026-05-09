@@ -1,3 +1,11 @@
+// ─── Módulo: Diagnósticos del Mecánico ───────────────────────────────
+// Interfaz para que mecánicos registren diagnósticos de vehículos
+// Características:
+// - Vista de proyectos asignados al mecánico actual
+// - Modal para registrar: síntomas, hallazgos, causa raíz
+// - Historial de diagnósticos por proyecto
+// - Notificaciones al cliente cuando se registra diagnóstico
+// - Sincronización en tiempo real
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
