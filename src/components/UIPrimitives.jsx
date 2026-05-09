@@ -259,8 +259,6 @@ export const Field = ({ label, required, children, darkMode }) => (
   </div>
 );
 
-  </div>
-);
 
 // ─── Componente Input ─────────────────────────────────────────────────────
 // Campo de entrada con soporte para íconos, focus styling y dark mode
@@ -282,9 +280,6 @@ export const Input = ({ darkMode, icon, ...props }) => (
       onFocus={(e) => { e.target.style.borderColor = C_BLUE; props.onFocus?.(e); }}
       onBlur={(e)  => { e.target.style.borderColor = ""; props.onBlur?.(e); }}
     />
-  </div>
-);
-
   </div>
 );
 
@@ -422,8 +417,6 @@ export const Modal = ({ open, onClose, title, subtitle, children, darkMode, maxW
   );
 };
 
-  );
-};
 
 // ─── Componente ModuleHeader ──────────────────────────────────────────────
 // Encabezado consistente para módulos - muestra título, contador y botón de acción
@@ -444,8 +437,6 @@ export const ModuleHeader = ({ title, count, countLabel, action, darkMode }) => 
   );
 };
 
-  );
-};
 
 // ─── Componente Textarea ──────────────────────────────────────────────────
 // Campo de texto multilínea con estilos dark mode y focus styling
@@ -456,9 +447,6 @@ export const Textarea = ({ darkMode, ...props }) => (
     onFocus={(e) => (e.target.style.borderColor = C_BLUE)}
     onBlur={(e)  => (e.target.style.borderColor = "")}
   />
-);
-
-  </textarea>
 );
 
 // ─── Componente DatePicker ────────────────────────────────────────────────
@@ -596,8 +584,6 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
   );
 };
 
-  );
-};
 
 // ─── Componente Badge ──────────────────────────────────────────────────
 // Etiqueta pequeña con variantes: primary, success, warning, danger

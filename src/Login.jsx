@@ -81,6 +81,7 @@ export default function Login() {
   const handleKey = (e) => { if (e.key === "Enter") handleLogin(); };
 
   // ─── Estilos dinámicos según dark mode ─────────────────────────────────
+  const bg    = darkMode ? "bg-[#0f0f12]" : "bg-gradient-to-br from-gray-50 to-gray-100";
   const card  = darkMode ? "bg-[#1e1e27] border-zinc-800" : "bg-white border-gray-200";
   const label = darkMode ? "text-zinc-500"  : "text-gray-400";
   const input = darkMode
@@ -121,18 +122,21 @@ export default function Login() {
         {/* Email / password */}
         <div className="w-full flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Correo</label>
+            <label htmlFor="email" className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Correo</label>
             <Input
+              id="email"
+              name="email"
               type="email" value={email}
               onChange={(e) => setEmail(e.target.value)} onKeyDown={handleKey}
               placeholder="admin@taller.com"
               darkMode={darkMode}
               icon="users"
+              autoComplete="email"
             />
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between items-center">
-              <label className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Contraseña</label>
+              <label htmlFor="password" className={`text-[10px] font-semibold uppercase tracking-widest ${label}`}>Contraseña</label>
               <button 
                 onClick={async () => {
                   if (!email.trim()) { setError("Ingresa tu correo para recuperar la contraseña."); return; }
@@ -150,10 +154,13 @@ export default function Login() {
               </button>
             </div>
             <Input
+              id="password"
+              name="password"
               type="password" value={password}
               onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey}
               placeholder="••••••••"
               darkMode={darkMode}
+              autoComplete="current-password"
             />
           </div>
 
