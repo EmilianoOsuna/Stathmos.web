@@ -22,9 +22,9 @@
 
 ## ¿Qué es Stathmos?
 
-Stathmos es una plataforma web integral para talleres automotrices mexicanos. Digitaliza y centraliza todo el ciclo de vida de un servicio vehicular: desde que el cliente agenda una cita hasta que recoge su carro con la factura en mano.
+Stathmos es una plataforma web integral para talleres automotrices mexicanos. Digitaliza y centraliza todo el ciclo de vida de un servicio vehicular: desde que el cliente agenda una cita hasta que recoge su carro con ticket en mano.
 
-Corre como **aplicación de escritorio** para el administrador y como **PWA instalable** para mecánicos y clientes, todos conectados en tiempo real a través de una base de datos centralizada en Supabase.
+Corre como **PWA instalable** para el administrador, mecánicos y clientes, todos conectados en tiempo real a través de una base de datos centralizada en Supabase.
 
 ---
 
