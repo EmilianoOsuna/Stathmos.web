@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/Document.pnggit a" alt="Stathmos Logo" width="180"/>
+  <img src="public/Document.png" alt="Stathmos Logo" width="180"/>
 </p>
 
 <h1 align="center">Stathmos</h1>
@@ -181,31 +181,31 @@ Proyecto desarrollado como proyecto integral del semestre en el **Instituto Tecn
   <tr>
     <td align="center">
       <a href="https://github.com/EddieAltamirano11">
-        <img src="https://github.com/EddieAltamirano11.png" width="80px" style="border-radius:50%" /><br/>
+        <img src="https://github.com/EddieAltamirano11.png?size=80" width="80px" /><br/>
         <sub><b>Eddie David Altamirano Plantillas</b></sub>
       </a>
     </td>
     <td align="center">
       <a href="https://github.com/EmilianoOsuna">
-        <img src="https://github.com/EmilianoOsuna.png" width="80px" style="border-radius:50%" /><br/>
+        <img src="https://github.com/EmilianoOsuna.png?size=80" width="80px" /><br/>
         <sub><b>Carlos Emiliano Osuna Langarica</b></sub>
       </a>
     </td>
     <td align="center">
       <a href="https://github.com/Moch236">
-        <img src="https://github.com/Moch236.png" width="80px" style="border-radius:50%" /><br/>
+        <img src="https://github.com/Moch236.png?size=80" width="80px" /><br/>
         <sub><b>Karla Natalia Jara Alvarez</b></sub>
       </a>
     </td>
     <td align="center">
       <a href="https://github.com/LuisonTwentyThree">
-        <img src="https://github.com/LuisonTwentyThree.png" width="80px" style="border-radius:50%" /><br/>
+        <img src="https://github.com/LuisonTwentyThree.png?size=80" width="80px" /><br/>
         <sub><b>Luis Carlos Durán Ocampo</b></sub>
       </a>
     </td>
     <td align="center">
       <a href="https://github.com/Liz-Kalu">
-        <img src="https://github.com/Liz-Kalu.png" width="80px" style="border-radius:50%" /><br/>
+        <img src="https://github.com/Liz-Kalu.png?size=80" width="80px" /><br/>
         <sub><b>Karime Lizbeth Rendón Vázquez</b></sub>
       </a>
     </td>
