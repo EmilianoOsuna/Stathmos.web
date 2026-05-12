@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/stathmos-logo.png" alt="Stathmos Logo" width="120" />
+  <img src="public/Document.pnggit a" alt="Stathmos Logo" width="180"/>
 </p>
 
 <h1 align="center">Stathmos</h1>
