@@ -279,16 +279,24 @@ export default function CitasModule({
       );
 
       if (overduePendings.length > 0) {
-        await Promise.all(
+        // Disparar cancelaciones en background para no bloquear la carga inicial ni causar ciclos infinitos
+        Promise.allSettled(
           overduePendings.map((cita) =>
             supabase.functions.invoke("resolver-cita", {
               body: { cita_id: cita.id, accion: "auto_cancelar" },
             })
           )
-        );
+        ).catch(console.error);
 
-        await fetchCitas();
-        return;
+        // Actualización optimista: Cambiamos localmente el estado a 'cancelada'
+        // para que la interfaz se actualice inmediatamente, sin depender de si la 
+        // petición falló o no, y evitamos el bucle de fetch.
+        currentCitas = currentCitas.map((cita) => 
+          (cita.estado === "pendiente" && new Date(cita.fecha_hora).getTime() <= Date.now()) 
+            ? { ...cita, estado: "cancelada" } 
+            : cita
+        );
+        setCitas(currentCitas);
       }
 
       // Siempre cargamos días inhábiles para que el calendario refleje bloqueos en gris.
