@@ -1,11 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/**
+ * Obtiene la URL de redirección para completar el registro de cliente.
+ * Prioriza la APP_URL configurada en variables de entorno, sino usa el origen de la solicitud.
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @returns {string} URL completa para redireccionar a la página de completar registro
+ */
 const getInviteRedirectTo = (req: Request): string => {
   const appUrl = Deno.env.get("APP_URL")?.trim();
   if (appUrl) {
@@ -16,19 +25,54 @@ const getInviteRedirectTo = (req: Request): string => {
   return `${origin.replace(/\/$/, "")}/completar-registro`;
 };
 
-// Validar RFC con REGEX (formato mexicano)
+/**
+ * Valida si un RFC tiene el formato correcto para México.
+ * Acepta RFC de 12-13 caracteres: 3-4 letras + 6 dígitos + 2 caracteres alfanuméricos + 1 opcional.
+ * @param {string} rfc - RFC a validar
+ * @returns {boolean} true si RFC es válido o vacío (RFC es opcional), false en caso contrario
+ */
 const isValidRFC = (rfc: string): boolean => {
   if (!rfc || rfc.trim() === "") return true; // RFC es opcional
   const rfcRegex = /^[A-ZÑ]{3,4}\d{6}[A-Z0-9]{2}[0-9A]?$/;
   return rfcRegex.test(rfc.toUpperCase());
 };
 
-// Validar email
+/**
+ * Valida si una cadena tiene formato válido de correo electrónico.
+ * @param {string} email - Correo electrónico a validar
+ * @returns {boolean} true si el email es válido, false en caso contrario
+ */
 const isValidEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email.toLowerCase());
 };
 
+/**
+ * Función Supabase: Crear Cliente
+ * 
+ * Crea un nuevo cliente en el sistema y envía una invitación por correo electrónico
+ * para que complete su registro. Valida los datos del cliente (nombre, email, teléfono, RFC).
+ * 
+ * Flujo:
+ * 1. Inserta un registro en la tabla clientes con estado invite_enviado=false
+ * 2. Envía una invitación por correo usando el sistema de auth de Supabase
+ * 3. Marca la invitación como enviada (invite_enviado=true) para registro futuro
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.nombre - Nombre del cliente (requerido)
+ * @param {string} req.body.correo - Correo electrónico del cliente (requerido, debe ser válido)
+ * @param {string} req.body.telefono - Teléfono del cliente (requerido)
+ * @param {string} [req.body.rfc] - RFC del cliente en formato mexicano (opcional, 12-13 caracteres)
+ * @param {string} [req.body.direccion] - Dirección del cliente (opcional)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Cliente creado y invitación enviada exitosamente
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error específico
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

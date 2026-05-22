@@ -1,9 +1,26 @@
 // ─── Componente: Vista de Diagnósticos ────────────────────────────────
-// Muestra historial de diagnósticos registrados para un proyecto
-// Características:
-// - Lista expandible de diagnósticos con fecha y mecánico
-// - Información de síntomas, hallazgos y causa raíz
-// - Opción de editar diagnósticos
+/**
+ * Componente React: DiagnosticoView
+ * 
+ * Muestra un historial expandible de diagnósticos registrados para un proyecto.
+ * Cada diagnóstico puede ser expandido para ver detalles completos incluidos
+ * síntomas, hallazgos, causa raíz y información del mecánico que lo realizó.
+ * 
+ * Características:
+ * - Lista expandible de diagnósticos con fecha y mecánico
+ * - Información de síntomas, hallazgos y causa raíz
+ * - Opción de editar diagnósticos (si onEdit está definido)
+ * - Soporte para tema oscuro/claro
+ * - Manejo de estados de carga y error
+ * 
+ * @component
+ * @param {Object} props - Props del componente
+ * @param {string} props.proyectoId - ID del proyecto cuyos diagnósticos mostrar (requerido)
+ * @param {string} [props.mecanico_id] - ID del mecánico (usado para filtrado opcional)
+ * @param {boolean} [props.darkMode=false] - Habilita tema oscuro
+ * @param {Function} [props.onEdit] - Callback cuando se hace click en editar diagnóstico
+ * @returns {JSX.Element} Vista de diagnósticos o mensaje de estado vacío/error
+ */
 import { useState, useEffect } from "react";
 import supabase from "../supabase";
 import { Edit, AlertCircle } from "lucide-react";
@@ -25,6 +42,11 @@ export default function DiagnosticoView({
     fetchDiagnosticos();
   }, [proyectoId]);
 
+  /**
+   * Obtiene el listado de diagnósticos del proyecto desde la base de datos.
+   * @async
+   * @returns {Promise<void>}
+   */
   const fetchDiagnosticos = async () => {
     setLoading(true);
     try {
@@ -49,6 +71,11 @@ export default function DiagnosticoView({
   const bgCard = darkMode ? "bg-zinc-800/50" : "bg-gray-50";
   const bgBorder = darkMode ? "border-zinc-700" : "border-gray-200";
 
+  /**
+   * Limpia el texto de hallazgos removiendo etiquetas de metadata.
+   * @param {string} [value=""] - Texto de hallazgos a limpiar
+   * @returns {string} Texto limpiado sin etiquetas
+   */
   const cleanHallazgosText = (value = "") =>
     String(value)
       .split("\n")

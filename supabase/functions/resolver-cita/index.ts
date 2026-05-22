@@ -2,12 +2,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+/**
+ * Normaliza un texto de rol eliminando acentos y caracteres especiales.
+ * @param {string} [value=""] - El texto del rol a normalizar
+ * @returns {string} Rol normalizado en minúsculas sin acentos
+ */
 const normalizeRole = (value = "") =>
   String(value)
     .normalize("NFD")
@@ -15,6 +23,27 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+/**
+ * Función Supabase: Resolver Cita
+ * 
+ * Resuelve el estado de una cita (aceptar, rechazar o cancelación automática).
+ * Solo administradores y mecánicos pueden aceptar/rechazar.
+ * La cancelación automática (auto_cancelar) es permitida sin restricciones de rol.
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer (requerido)
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.cita_id - ID de la cita a resolver (requerido)
+ * @param {string} req.body.accion - Acción a realizar: "aceptar", "rechazar", "auto_cancelar" (requerido)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Cita resuelta exitosamente
+ *   - cita: {id, estado, fecha_hora}
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error específico
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

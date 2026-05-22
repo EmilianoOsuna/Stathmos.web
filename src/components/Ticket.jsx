@@ -1,13 +1,29 @@
 // ─── Componente: Vista Detallada de Ticket/Proyecto ────────────────────
-// Componente principal para visualizar y gestionar un proyecto completo
-// Características:
-// - Información general del vehículo y cliente
-// - Diagnósticos registrados por mecánicos
-// - Cotizaciones con aprobación de cliente
-// - Registro de refacciones utilizadas
-// - Fotos del antes/durante/después
-// - Procesamiento de pagos (Stripe)
-// - Generación de PDF con resumen del servicio
+/**
+ * Componente React: Ticket
+ * 
+ * Componente principal para visualizar y gestionar un proyecto completo (ticket de servicio).
+ * Muestra información completa del vehículo, cliente, diagnósticos, cotizaciones, 
+ * refacciones utilizadas, fotos y procesamiento de pagos.
+ * 
+ * Características:
+ * - Información general del vehículo y cliente
+ * - Diagnósticos registrados por mecánicos
+ * - Cotizaciones con aprobación de cliente
+ * - Registro de refacciones utilizadas
+ * - Fotos del antes/durante/después
+ * - Procesamiento de pagos (Stripe)
+ * - Generación de PDF con resumen del servicio
+ * - Actualización en tiempo real de pagos
+ * 
+ * @component
+ * @param {Object} props - Props del componente
+ * @param {string} props.proyectoId - ID del proyecto/ticket a mostrar (requerido)
+ * @param {boolean} [props.darkMode=false] - Habilita tema oscuro
+ * @param {Function} [props.onClose] - Callback cuando se cierra el ticket
+ * @param {boolean} [props.showOmit=true] - Muestra botón para omitir/cerrar
+ * @returns {JSX.Element} Vista del ticket con información completa
+ */
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import supabase from "../supabase";
@@ -30,6 +46,11 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   const [paymentError, setPaymentError] = useState(null);
   const [generatingPDF, setGeneratingPDF] = useState(false);
 
+  /**
+   * Obtiene la cotización más reciente y aprobada.
+   * @param {Array} [cotizaciones=[]] - Array de cotizaciones del proyecto
+   * @returns {Object|null} Cotización aprobada o la más reciente, o null si no hay cotizaciones
+   */
   const getLatestCotizacion = (cotizaciones = []) => {
     const sorted = [...cotizaciones].sort((a, b) => {
       const ad = new Date(a?.created_at || a?.fecha_emision || 0).getTime();
@@ -61,6 +82,13 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
     fetchTicket();
   }, [proyectoId, rtTick]);
 
+  /**
+   * Obtiene los datos completos del ticket desde la base de datos.
+   * Incluye información del proyecto, cliente, vehículo, diagnósticos, 
+   * cotizaciones, refacciones y pagos.
+   * @async
+   * @returns {Promise<void>}
+   */
   const fetchTicket = async () => {
     try {
       setLoading(true);

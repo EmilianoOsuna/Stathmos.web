@@ -1,11 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/**
+ * Obtiene la URL de redirección para completar el registro de empleado.
+ * Prioriza la APP_URL configurada en variables de entorno, sino usa el origen de la solicitud.
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @returns {string} URL completa para redireccionar a la página de completar registro
+ */
 const getInviteRedirectTo = (req: Request): string => {
   const appUrl = Deno.env.get("APP_URL")?.trim();
   if (appUrl) {
@@ -16,6 +25,36 @@ const getInviteRedirectTo = (req: Request): string => {
   return `${origin.replace(/\/$/, "")}/completar-registro`;
 };
 
+/**
+ * Función Supabase: Crear Empleado
+ * 
+ * Crea un nuevo empleado en el sistema invitándolo por correo electrónico.
+ * Solo administradores pueden crear empleados. Valida el token de autenticación
+ * y la autorización antes de crear la invitación.
+ * 
+ * Flujo:
+ * 1. Valida que el usuario sea administrador
+ * 2. Envía invitación de auth por correo
+ * 3. Inserta registro en tabla empleados
+ * 4. En caso de error, limpia el usuario ghost creado por auth
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer del admin (requerido)
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.nombre - Nombre del empleado (requerido)
+ * @param {string} req.body.correo - Correo electrónico del empleado (requerido)
+ * @param {string} req.body.rol_destino - Rol del empleado: "Administrador" o "Mecánico" (requerido)
+ * @param {string} [req.body.telefono] - Teléfono del empleado (opcional)
+ * @param {string} [req.body.rfc] - RFC del empleado (opcional)
+ * @param {string} [req.body.fecha_contratacion] - Fecha de contratación YYYY-MM-DD (opcional)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Empleado creado y invitación enviada exitosamente
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error específico
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

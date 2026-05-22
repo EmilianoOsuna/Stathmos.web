@@ -2,6 +2,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -9,6 +12,28 @@ const corsHeaders = {
   "Access-Control-Allow-Credentials": "true",
 };
 
+/**
+ * Función Supabase: Enviar Notificación
+ * 
+ * Crea una nueva notificación en la base de datos para un usuario específico.
+ * Registra la operación en la tabla de auditoría para mantener un historial de cambios.
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer requerido
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.usuario_id - ID del usuario que recibirá la notificación (requerido)
+ * @param {string} [req.body.proyecto_id] - ID del proyecto asociado (opcional)
+ * @param {string} req.body.titulo - Título de la notificación (requerido)
+ * @param {string} req.body.mensaje - Contenido del mensaje (requerido)
+ * 
+ * @returns {Response} JSON con estructura: 
+ *   - success: true - Notificación creada exitosamente
+ *   - notificacion: {id, usuario_id, proyecto_id, titulo, mensaje, leida, created_at}
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

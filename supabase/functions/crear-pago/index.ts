@@ -5,6 +5,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -12,14 +15,40 @@ const corsHeaders = {
   "Access-Control-Allow-Credentials": "true",
 };
 
-// Esta función Edge se añadió para crear `pagos` de manera segura utilizando la clave del rol de servicio.
-// Flujo:
-//  - El frontend llama a esta función con el JWT del usuario (Authorization: Bearer <token>).
-//  - La función utiliza el token del usuario para verificar que el proyecto sea accesible (RLS aplicado).
-//  - Si es accesible, utiliza el cliente del rol de servicio (supabaseAdmin) para insertar el pago y
-//    actualizar el proyecto a `entregado` (eliminando RLS para la inserción/actualización).
-//  - Devuelve el pago creado al cliente.
-
+/**
+ * Función Supabase: Crear Pago
+ * 
+ * Crea un nuevo registro de pago para un proyecto con cotización aprobada.
+ * Verifica que el usuario autenticado tenga acceso al proyecto (RLS).
+ * Crea una factura automáticamente si no existe, luego registra el pago e inserta auditoria.
+ * Notifica a administradores sobre el pago pendiente de autorización.
+ * 
+ * Flujo:
+ * 1. Valida token de autenticación del usuario
+ * 2. Verifica que el usuario tenga acceso al proyecto (RLS aplicado)
+ * 3. Valida que la cotización esté aprobada
+ * 4. Crea o recupera la factura asociada
+ * 5. Inserta el registro de pago
+ * 6. Registra auditoría de la transacción
+ * 7. Notifica a administradores
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer (requerido)
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.proyecto_id - ID del proyecto (requerido)
+ * @param {number} req.body.monto - Monto del pago en formato decimal (requerido, debe ser > 0)
+ * @param {string} req.body.metodo_cobro - Método de pago: "efectivo", "tarjeta", "transferencia", "otro" (requerido)
+ * @param {string} [req.body.referencia] - Número de referencia del pago (opcional, auto-generado si no se proporciona)
+ * @param {string} [req.body.factura_id] - ID de factura existente (opcional, se crea una si no se proporciona)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Pago creado exitosamente
+ *   - pago: {id, proyecto_id, factura_id, monto, metodo_cobro, estado, referencia, created_at}
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error específico
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

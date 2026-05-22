@@ -2,12 +2,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+/**
+ * Normaliza un texto de rol eliminando acentos y caracteres especiales.
+ * Convierte a minúsculas y elimina espacios en blanco.
+ * @param {string} [value=""] - El texto del rol a normalizar
+ * @returns {string} Rol normalizado en minúsculas sin acentos
+ */
 const normalizeRole = (value = "") =>
   String(value)
     .normalize("NFD")
@@ -15,6 +24,12 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+/**
+ * Convierte un rol normalizado a su forma canónica estándar.
+ * Mapea variaciones de rol a valores estandarizados del sistema.
+ * @param {string} [value=""] - Rol normalizado
+ * @returns {string} Rol canónico: "administrador", "mecanico", "cliente" o el valor original
+ */
 const toCanonicalRole = (value = "") => {
   const role = normalizeRole(value);
   if (["admin", "administrador"].includes(role)) return "administrador";
@@ -23,19 +38,43 @@ const toCanonicalRole = (value = "") => {
   return role;
 };
 
+/**
+ * Convierte una hora en formato HH:mm a minutos totales desde medianoche.
+ * @param {string} hhmm - Hora en formato HH:mm (ej: "14:30")
+ * @returns {number} Total de minutos desde medianoche (ej: 870 para 14:30)
+ */
 const hmToMinutes = (hhmm: string) => {
   const [h, m] = String(hhmm || "").split(":").map(Number);
   return h * 60 + m;
 };
 
+/**
+ * Offset de zona horaria del taller mecánico
+ */
 const TALLER_TIMEZONE_OFFSET = "-06:00";
 
+/**
+ * Obtiene el día de la semana (0-6) para una fecha en formato YYYY-MM-DD.
+ * Donde 0=domingo, 1=lunes, ..., 6=sábado
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD
+ * @returns {number} Día de la semana (0-6) o NaN si la fecha es inválida
+ */
 const getDateDay = (fecha: string) => {
   const [year, month, day] = String(fecha || "").split("-").map(Number);
   if (!year || !month || !day) return Number.NaN;
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 };
 
+/**
+ * Valida si una fecha y hora propuesta es un horario válido para agendar cita.
+ * Verifica que:
+ * - La fecha sea posterior a hoy
+ * - No sea domingo
+ * - La hora esté dentro del horario comercial (9-14 o 17-20 de lunes a viernes, 9-14 sábado)
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD
+ * @param {string} hora - Hora en formato HH:mm
+ * @returns {boolean} true si el slot es válido, false en caso contrario
+ */
 const isValidSlot = (fecha: string, hora: string) => {
   if (!fecha || !hora) return false;
 
@@ -56,6 +95,33 @@ const isValidSlot = (fecha: string, hora: string) => {
   return false;
 };
 
+/**
+ * Función Supabase: Agendar Cita
+ * 
+ * Crea una nueva cita en el sistema para un vehículo del cliente.
+ * Valida que el horario sea válido, que el vehículo pertenezca al cliente,
+ * y que no exista otra cita en el mismo horario.
+ * 
+ * Solo administradores pueden especificar cliente_id. Clientes agendados se vinculan a su usuario.
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer (requerido)
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.fecha - Fecha de la cita (YYYY-MM-DD, requerido)
+ * @param {string} req.body.hora - Hora de la cita (HH:mm, requerido)
+ * @param {string} req.body.vehiculo_id - ID del vehículo (requerido)
+ * @param {string} req.body.servicio - Motivo/descripción del servicio (requerido)
+ * @param {string} [req.body.notas] - Notas adicionales (opcional)
+ * @param {string} [req.body.cliente_id] - ID del cliente (requerido solo para administrador)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Cita creada exitosamente
+ *   - cita: {id, fecha_hora, estado, motivo}
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });

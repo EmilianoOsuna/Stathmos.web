@@ -2,12 +2,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Encabezados CORS para permitir solicitudes desde cualquier origen
+ */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-user-token",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+/**
+ * Normaliza un texto de rol eliminando acentos y caracteres especiales.
+ * @param {string} [value=""] - El texto del rol a normalizar
+ * @returns {string} Rol normalizado en minúsculas sin acentos
+ */
 const normalizeRole = (value = "") =>
   String(value)
     .normalize("NFD")
@@ -15,6 +23,11 @@ const normalizeRole = (value = "") =>
     .trim()
     .toLowerCase();
 
+/**
+ * Convierte un rol normalizado a su forma canónica estándar.
+ * @param {string} [value=""] - Rol normalizado
+ * @returns {string} Rol canónico: "administrador", "mecanico", "cliente" o el valor original
+ */
 const toCanonicalRole = (value = "") => {
   const role = normalizeRole(value);
   if (["admin", "administrador"].includes(role)) return "administrador";
@@ -23,6 +36,15 @@ const toCanonicalRole = (value = "") => {
   return role;
 };
 
+/**
+ * Obtiene el rol de un usuario desde la base de datos o metadatos de autenticación.
+ * Prioriza el rol de la tabla usuarios en la BD, sino usa metadatos de Auth.
+ * @async
+ * @param {Object} supabaseAdmin - Cliente Supabase admin
+ * @param {Object} user - Objeto usuario de Supabase Auth
+ * @returns {Promise<string>} Rol canónico del usuario
+ * @throws {Error} Si hay error al consultar la BD
+ */
 const getUserRole = async (supabaseAdmin, user) => {
   let dbRole = "";
 
@@ -49,6 +71,15 @@ const getUserRole = async (supabaseAdmin, user) => {
   return dbRole || metadataRole;
 };
 
+/**
+ * Obtiene el ID del cliente asociado a un usuario.
+ * Busca primero por usuario_id, luego por correo si es necesario.
+ * @async
+ * @param {Object} supabaseAdmin - Cliente Supabase admin
+ * @param {Object} user - Objeto usuario de Supabase Auth
+ * @returns {Promise<string|null>} ID del cliente o null si no se encuentra
+ * @throws {Error} Si hay error al consultar la BD
+ */
 const getClienteIdForUser = async (supabaseAdmin, user) => {
   const { data: clienteByUserId, error: clienteByUserIdErr } = await supabaseAdmin
     .from("clientes")
@@ -72,6 +103,11 @@ const getClienteIdForUser = async (supabaseAdmin, user) => {
   return clienteByCorreo?.id || null;
 };
 
+/**
+ * Construye un listado de refacciones con stock insuficiente.
+ * @param {Array} [items=[]] - Items de la cotización con refacciones relacionadas
+ * @returns {Array} Array de objetos con información de faltantes
+ */
 const buildStockShortage = (items = []) =>
   items
     .filter((item) => {
@@ -87,6 +123,34 @@ const buildStockShortage = (items = []) =>
       cantidad_requerida: item?.cantidad ?? 0,
     }));
 
+/**
+ * Función Supabase: Resolver Cotización
+ * 
+ * Permite a clientes y administradores aprobar o rechazar una cotización.
+ * Si se aprueba, verifica disponibilidad de refacciones en stock.
+ * Si hay faltantes, retorna información sobre qué refacciones no hay disponibles.
+ * 
+ * @async
+ * @param {Request} req - Objeto de solicitud HTTP
+ * @param {string} req.headers.authorization - Token de autenticación Bearer (requerido)
+ * @param {string} [req.headers.x-user-token] - Token alternativo del usuario (opcional)
+ * @param {Object} req.body - Cuerpo de la solicitud en JSON
+ * @param {string} req.body.cotizacion_id - ID de la cotización (requerido)
+ * @param {string} req.body.accion|decision - Acción: "aprobar" o "rechazar" (requerido)
+ * @param {string} [req.body.notas] - Notas adicionales al resolver (opcional)
+ * @param {string} [req.body.cliente_id] - ID del cliente (para validación)
+ * 
+ * @returns {Response} JSON con estructura:
+ *   - success: true - Cotización resuelta exitosamente
+ *   - cotizacion: {id, estado}
+ *   O si hay faltantes:
+ *   - success: true
+ *   - warning: "Stock insuficiente"
+ *   - stock_shortage: Array de refacciones faltantes
+ *   O
+ *   - success: false - Error en la operación
+ *   - error: Descripción del error específico
+ */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
