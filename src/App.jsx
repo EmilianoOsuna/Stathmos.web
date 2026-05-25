@@ -13,6 +13,7 @@ import supabase from "./supabase";
 import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import CambiarContrasena from "./CambiarContrasena";
+import InstallPrompt from "./components/InstallPrompt";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
 import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdminWrapper";
@@ -6693,8 +6694,15 @@ export default function App() {
   };
 
   return (
-    <BrowserRouter>
-      <Routes>
+    <>
+      {session && <InstallPrompt 
+        appName="Stathmos"
+        bgColor={darkMode ? "bg-[#1E1E1E]" : "bg-white"}
+        textColor={darkMode ? "text-white" : "text-black"}
+        buttonBgColor={darkMode ? "bg-white text-black hover:bg-gray-200" : "bg-black text-white hover:bg-gray-800"}
+      />}
+      <BrowserRouter>
+        <Routes>
         {/* ─── Rutas públicas (login y registro) ─── */}
         <Route path="/login"              element={session ? <Navigate to="/dashboard" replace /> : <Login />} />
         <Route path="/completar-registro" element={<CompletarRegistro />} />
@@ -6708,5 +6716,6 @@ export default function App() {
         <Route path="*"                   element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>
+    </>
   );
 }
