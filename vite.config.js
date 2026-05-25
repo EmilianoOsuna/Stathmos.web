@@ -16,7 +16,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       manifestFilename: 'manifest.json',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'maskable-icon.png'],
+      includeAssets: ['stathmos.svg', 'maskable_icon.png'],
       devOptions: {
         enabled: true
       },
@@ -41,7 +41,7 @@ export default defineConfig({
             type: "image/png"
           },
           {
-            src: "maskable-icon.png",
+            src: "maskable_icon.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable"
