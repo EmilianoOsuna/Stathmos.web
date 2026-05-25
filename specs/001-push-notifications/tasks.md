@@ -20,9 +20,9 @@ description: "Task list for Push Notifications implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Preparar `vite.config.js` para asegurar que el Service Worker permite inyección de lógica (modo `injectManifest` o similar si es requerido para la Push API).
-- [ ] T002 [P] Crear el archivo base para las utilerías del cliente en `src/lib/pushUtils.js`.
-- [ ] T003 [P] Crear el archivo base para el hook en `src/hooks/usePushNotifications.js`.
+- [x] T001 Preparar `vite.config.js` para asegurar que el Service Worker permite inyección de lógica (modo `injectManifest` o similar si es requerido para la Push API).
+- [x] T002 [P] Crear el archivo base para las utilerías del cliente en `src/lib/pushUtils.js`.
+- [x] T003 [P] Crear el archivo base para el hook en `src/hooks/usePushNotifications.js`.
 
 ---
 
@@ -32,9 +32,9 @@ description: "Task list for Push Notifications implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Crear la tabla `push_subscriptions` en Supabase (ejecutando script SQL desde dashboard o CLI) de acuerdo a `data-model.md`.
-- [ ] T005 [P] Configurar las políticas RLS (Row Level Security) para `push_subscriptions` (Select, Insert, Delete).
-- [ ] T006 Generar el par de llaves VAPID públicas y privadas. Añadir la llave pública al `.env` del frontend y ambas al entorno de Supabase Edge Functions.
+- [x] T004 Crear la tabla `push_subscriptions` en Supabase (ejecutando script SQL desde dashboard o CLI) de acuerdo a `data-model.md`.
+- [x] T005 [P] Configurar las políticas RLS (Row Level Security) para `push_subscriptions` (Select, Insert, Delete).
+- [x] T006 Generar el par de llaves VAPID públicas y privadas. Añadir la llave pública al `.env` del frontend y ambas al entorno de Supabase Edge Functions.
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -48,10 +48,10 @@ description: "Task list for Push Notifications implementation"
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Implementar la función de conversión VAPID (`urlBase64ToUint8Array`) en `src/lib/pushUtils.js`.
-- [ ] T008 [US1] Implementar la lógica del ServiceWorker `pushManager.subscribe()` usando la llave pública dentro de `src/hooks/usePushNotifications.js`.
-- [ ] T009 [US1] Implementar la función en `usePushNotifications.js` que inserta la suscripción generada en la tabla `push_subscriptions` usando `@supabase/supabase-js`.
-- [ ] T010 [US1] Actualizar la UI (puede ser dentro de `src/components/InstallPrompt.jsx` o en la configuración de usuario) para invocar el hook y renderizar el botón de "Activar Notificaciones".
+- [x] T007 [P] [US1] Implementar la función de conversión VAPID en `src/lib/pushUtils.js`.
+- [x] T008 [US1] Implementar la lógica del ServiceWorker `pushManager.subscribe()` usando la llave pública dentro de `src/hooks/usePushNotifications.js`.
+- [x] T009 [US1] Implementar la función en `usePushNotifications.js` que inserta la suscripción en la tabla.
+- [x] T010 [US1] Actualizar la UI (`src/components/InstallPrompt.jsx` o similar) para integrar el hook y mostrar botones / manejar estados de error o navegador no soportado (degradación elegante).
 
 **Checkpoint**: At this point, User Story 1 should be fully functional y capaz de registrar dispositivos en la DB.
 
@@ -65,10 +65,10 @@ description: "Task list for Push Notifications implementation"
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Modificar el Service Worker generado o inyectado para añadir los event listeners de `push` y `notificationclick`.
-- [ ] T012 [P] [US2] Añadir y configurar la librería `web-push` en `supabase/functions/enviar-notificacion/index.ts` (u otra Edge function dedicada si prefieren separarlo).
-- [ ] T013 [US2] Modificar la lógica de la Edge Function para buscar las suscripciones en `push_subscriptions` del usuario destino.
-- [ ] T014 [US2] Enviar los payloads push utilizando la llave VAPID privada para cada suscripción encontrada.
+- [x] T011 [P] [US2] Modificar el Service Worker (`sw.js`) para añadir los event listeners `push` y `notificationclick` de acuerdo al payload dinámico definido en la especificación.
+- [x] T012 [P] [US2] Añadir y configurar `web-push` en las dependencias de la Edge Function (`supabase/functions/enviar-notificacion/index.ts` o la respectiva).
+- [x] T013 [US2] Modificar la lógica de la Edge Function para que, al buscar el `usuario_id`, obtenga los objetos `PushSubscription` guardados en la tabla `push_subscriptions`.
+- [x] T014 [US2] Enviar los payloads push iterando por todas las suscripciones válidas del usuario utilizando la llave VAPID privada y `web-push`.ara cada suscripción encontrada.
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently.
 
@@ -78,8 +78,8 @@ description: "Task list for Push Notifications implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T015 [P] Mejorar el manejo de errores en caso de que el usuario bloquee los permisos manualmente después de haberlos dado.
-- [ ] T016 Manejar el evento de des-suscripción (limpiar `push_subscriptions` de la DB si `pushManager.getSubscription()` retorna null o el backend detecta error HTTP 410 Gone de Google/Apple).
+- [x] T015 [P] Mejorar el manejo de errores en `usePushNotifications.js` si el usuario bloquea los permisos (ej. guiarlos a reactivarlos o degradación silenciosa).
+- [x] T016 Implementar lógica para el evento de des-suscripción (eliminar de DB si `web-push` devuelve un código de error de expiración como 410 o 404).`pushManager.getSubscription()` retorna null o el backend detecta error HTTP 410 Gone de Google/Apple).
 
 ---
 

@@ -1,6 +1,6 @@
-// @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push";
 
 /**
  * Encabezados CORS para permitir solicitudes desde cualquier origen
@@ -12,28 +12,6 @@ const corsHeaders = {
   "Access-Control-Allow-Credentials": "true",
 };
 
-/**
- * Función Supabase: Enviar Notificación
- * 
- * Crea una nueva notificación en la base de datos para un usuario específico.
- * Registra la operación en la tabla de auditoría para mantener un historial de cambios.
- * 
- * @async
- * @param {Request} req - Objeto de solicitud HTTP
- * @param {string} req.headers.authorization - Token de autenticación Bearer requerido
- * @param {Object} req.body - Cuerpo de la solicitud en JSON
- * @param {string} req.body.usuario_id - ID del usuario que recibirá la notificación (requerido)
- * @param {string} [req.body.proyecto_id] - ID del proyecto asociado (opcional)
- * @param {string} req.body.titulo - Título de la notificación (requerido)
- * @param {string} req.body.mensaje - Contenido del mensaje (requerido)
- * 
- * @returns {Response} JSON con estructura: 
- *   - success: true - Notificación creada exitosamente
- *   - notificacion: {id, usuario_id, proyecto_id, titulo, mensaje, leida, created_at}
- *   O
- *   - success: false - Error en la operación
- *   - error: Descripción del error
- */
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -43,6 +21,18 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    
+    // Configurar web-push
+    const vapidPublicKey = Deno.env.get("VITE_VAPID_PUBLIC_KEY") ?? "";
+    const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
+    
+    if (vapidPublicKey && vapidPrivateKey) {
+      webpush.setVapidDetails(
+        'mailto:soporte@stathmos.mx',
+        vapidPublicKey,
+        vapidPrivateKey
+      );
+    }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -69,7 +59,6 @@ serve(async (req) => {
     }
 
     const actorId = userData.user.id;
-
     const body = await req.json();
     const { usuario_id, proyecto_id, titulo, mensaje } = body || {};
 
@@ -80,6 +69,7 @@ serve(async (req) => {
       );
     }
 
+    // Guardar en la DB
     const { data: notificacion, error: insertError } = await supabaseAdmin
       .from("notificaciones")
       .insert([{ usuario_id, proyecto_id: proyecto_id ?? null, titulo, mensaje, leida: false }])
@@ -87,6 +77,40 @@ serve(async (req) => {
       .maybeSingle();
 
     if (insertError) throw insertError;
+
+    // Buscar suscripciones push del usuario
+    const { data: subscriptions } = await supabaseAdmin
+      .from("push_subscriptions")
+      .select("id, subscription")
+      .eq("user_id", usuario_id);
+
+    const enviosExitosos = [];
+    const enviosFallidos = [];
+
+    // Enviar a todas las suscripciones registradas
+    if (subscriptions && subscriptions.length > 0 && vapidPublicKey && vapidPrivateKey) {
+      const payload = JSON.stringify({
+        titulo,
+        cuerpo: mensaje,
+        icono: '/pwa-192x192.png',
+        url: proyecto_id ? `/ticket/${proyecto_id}` : '/'
+      });
+
+      for (const sub of subscriptions) {
+        try {
+          await webpush.sendNotification(sub.subscription, payload);
+          enviosExitosos.push(sub.id);
+        } catch (err) {
+          console.error(`Error enviando a sub ${sub.id}:`, err);
+          enviosFallidos.push({ id: sub.id, error: err });
+          
+          // T016: Si la suscripción expiró o es inválida (410/404), la eliminamos
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await supabaseAdmin.from("push_subscriptions").delete().eq("id", sub.id);
+          }
+        }
+      }
+    }
 
     const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
     await supabaseAdmin
@@ -102,7 +126,15 @@ serve(async (req) => {
       }]);
 
     return new Response(
-      JSON.stringify({ success: true, notificacion }),
+      JSON.stringify({ 
+        success: true, 
+        notificacion,
+        pushStats: {
+          intentados: subscriptions?.length || 0,
+          exitosos: enviosExitosos.length,
+          fallidos: enviosFallidos.length
+        }
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
@@ -112,4 +144,4 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
     );
   }
-});
+});

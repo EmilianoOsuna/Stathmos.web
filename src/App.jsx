@@ -14,6 +14,7 @@ import Login from "./Login";
 import CompletarRegistro from "./CompletarRegistro";
 import CambiarContrasena from "./CambiarContrasena";
 import InstallPrompt from "./components/InstallPrompt";
+import PushPrompt from "./components/PushPrompt";
 import TicketWrapper from "./components/TicketWrapper";
 import HistorialTicketsWrapper from "./components/HistorialTicketsWrapper";
 import HistorialServiciosAdminWrapper from "./components/HistorialServiciosAdminWrapper";
@@ -6696,6 +6697,12 @@ export default function App() {
   return (
     <>
       {session && <InstallPrompt 
+        appName="Stathmos"
+        bgColor={darkMode ? "bg-[#1E1E1E]" : "bg-white"}
+        textColor={darkMode ? "text-white" : "text-black"}
+        buttonBgColor={darkMode ? "bg-white text-black hover:bg-gray-200" : "bg-black text-white hover:bg-gray-800"}
+      />}
+      {session && <PushPrompt 
         appName="Stathmos"
         bgColor={darkMode ? "bg-[#1E1E1E]" : "bg-white"}
         textColor={darkMode ? "text-white" : "text-black"}

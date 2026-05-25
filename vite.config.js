@@ -10,12 +10,13 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       manifestFilename: 'manifest.json',
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
-      },
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'maskable-icon.png'],
       devOptions: {
         enabled: true
       },
@@ -26,6 +27,7 @@ export default defineConfig({
         theme_color: "#1a1a1a",
         background_color: "#ffffff",
         display: "standalone",
+        orientation: "portrait",
         start_url: "/",
         icons: [
           {
@@ -36,16 +38,18 @@ export default defineConfig({
           {
             src: "pwa-512x512.png",
             sizes: "512x512",
-            type: "image/png",
-            purpose: "any"
+            type: "image/png"
           },
           {
-            src: "pwa-512x512.png",
+            src: "maskable-icon.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable"
           }
         ]
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       }
     })
   ],
