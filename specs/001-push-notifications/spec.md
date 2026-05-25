@@ -5,6 +5,13 @@
 **Status**: Draft  
 **Input**: User description: "Necesito implementar push notifications al proyecto, analiza primeramente el stack tecnológico que tenemos"
 
+## Clarifications
+
+### Session 2026-05-25
+- Q: Acción al hacer clic en la notificación (notificationclick) → A: Abrir / enfocar la ruta específica enviada en el payload del push (comportamiento dinámico).
+- Q: Compatibilidad de Navegador → A: Ocultar silenciosamente el botón/opción de suscribirse (Degradación elegante).
+- Q: Estructura del Payload (Contenido) → A: Completamente Dinámico (el backend envía título, cuerpo, ícono y URL).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Opt-in a Notificaciones Push (Priority: P1)
@@ -42,6 +49,7 @@ Como usuario, quiero recibir alertas nativas en la pantalla de bloqueo o centro 
 - ¿Qué pasa si el usuario deniega los permisos de notificación desde el inicio? (Se debe ocultar el botón o mostrar instrucciones para reactivarlo manualmente desde la configuración del navegador).
 - ¿Cómo maneja el sistema múltiples dispositivos por usuario? (Ej. Un usuario inicia sesión en Laptop y iPhone. Ambos dispositivos deben generar y registrar sus propias suscripciones independientemente).
 - ¿Qué ocurre si la suscripción de un dispositivo expira o es revocada por el navegador? (El sistema debe detectar el fallo al enviar y limpiar esa suscripción inválida de la base de datos).
+- **Falta de soporte en el navegador**: Si el entorno del usuario (navegador antiguo, webview) no soporta la API Push, el sistema simplemente ocultará los botones y opciones de suscripción de manera silenciosa (degradación elegante).
 
 ## Requirements *(mandatory)*
 
@@ -50,9 +58,9 @@ Como usuario, quiero recibir alertas nativas en la pantalla de bloqueo o centro 
 - **FR-001**: El sistema DEBE solicitar permisos nativos del navegador para notificaciones.
 - **FR-002**: El sistema DEBE generar y almacenar las suscripciones VAPID (`PushSubscription`) por cada dispositivo de un usuario.
 - **FR-003**: El sistema DEBE permitir a un usuario tener múltiples dispositivos suscritos simultáneamente.
-- **FR-004**: El backend DEBE poder enviar cargas útiles (payloads) de notificaciones push firmadas con las llaves VAPID privadas hacia los servicios de push de los navegadores (Google, Apple, Mozilla).
+- **FR-004**: El backend DEBE poder enviar cargas útiles (payloads) de notificaciones push dinámicas firmadas con las llaves VAPID privadas. El payload debe contener: `título`, `cuerpo`, `ícono` y `url`.
 - **FR-005**: El Service Worker DEBE interceptar el evento "push" en segundo plano y mostrar la notificación nativa usando la API `showNotification`.
-- **FR-006**: El Service Worker DEBE manejar el evento de clic en la notificación (`notificationclick`) para redirigir al usuario o enfocar la pestaña de la PWA.
+- **FR-006**: El Service Worker DEBE manejar el evento de clic en la notificación (`notificationclick`) para redirigir al usuario a la ruta específica enviada en el payload dinámico del push (enfocando la pestaña de la PWA si existe).
 
 ### Key Entities
 
