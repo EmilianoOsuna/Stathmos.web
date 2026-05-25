@@ -10,7 +10,7 @@ export default function InstallPrompt({
   textColor = "text-white",
   accentColor = "text-[#D4AF37]",
   buttonBgColor = "bg-white text-black hover:bg-gray-100",
-  positionClass = "fixed bottom-24 left-5 right-5 z-[100] md:max-w-md md:left-auto md:right-10"
+  positionClass = "fixed bottom-6 left-5 right-5 z-[100] md:max-w-md md:left-auto md:right-6 md:bottom-6"
 }) {
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
