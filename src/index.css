@@ -103,3 +103,36 @@ input:-webkit-autofill {
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+/* Realtime Connection Status Indicator */
+.connection-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+.connection-indicator.connected {
+  background-color: #10b981; /* bg-emerald-500 */
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+.connection-indicator.connecting {
+  background-color: #f59e0b; /* bg-amber-500 */
+  animation: pulse-connecting 1.5s infinite ease-in-out;
+}
+.connection-indicator.disconnected {
+  background-color: #ef4444; /* bg-red-500 */
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes pulse-connecting {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.9);
+    box-shadow: 0 0 2px rgba(245, 158, 11, 0.1);
+  }
+}

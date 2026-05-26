@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import { Icon, Input, Button } from "./UIPrimitives";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 
 const C_RED = "#db3c1c";
 
@@ -45,6 +46,10 @@ export default function VentaRefacciones({ darkMode }) {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  useSupabaseRealtime("refacciones", fetchAll);
+  useSupabaseRealtime("clientes", fetchAll);
+  useSupabaseRealtime("proyectos", fetchAll);
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>

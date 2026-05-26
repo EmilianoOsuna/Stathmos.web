@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import { Icon, Input, Select, Button } from "./UIPrimitives";
+import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 
 const C_BLUE = "#60aebb";
 
@@ -51,6 +52,10 @@ export default function CompraRefacciones({ darkMode }) {
   useEffect(() => {
     fetchAll();
   }, []);
+
+  useSupabaseRealtime("refacciones", fetchAll);
+  useSupabaseRealtime("proveedores", fetchAll);
+  useSupabaseRealtime("proyectos", fetchAll);
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>
@@ -184,6 +189,13 @@ export default function CompraRefacciones({ darkMode }) {
               <Select value={proveedorId} onChange={(e) => setProveedorId(e.target.value)} darkMode={darkMode}>
                 <option value="">Sin proveedor</option>
                 {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className={`text-[10px] font-semibold uppercase tracking-widest ${st}`}>Proyecto (Opcional)</label>
+              <Select value={proyectoId} onChange={(e) => setProyectoId(e.target.value)} darkMode={darkMode}>
+                <option value="">Sin proyecto</option>
+                {proyectos.map((p) => <option key={p.id} value={p.id}>{p.titulo}</option>)}
               </Select>
             </div>
           </div>

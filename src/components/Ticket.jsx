@@ -39,11 +39,11 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   const location = useLocation();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPayment, setSelectedPayment] = useState(null);
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [processingPayment, setProcessingPayment] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [paymentError, setPaymentError] = useState(null);
+  const [_selectedPayment, _setSelectedPayment] = useState(null);
+  const [_showPaymentForm, _setShowPaymentForm] = useState(false);
+  const [_processingPayment, _setProcessingPayment] = useState(false);
+  const [_paymentSuccess, _setPaymentSuccess] = useState(false);
+  const [_paymentError, setPaymentError] = useState(null);
   const [generatingPDF, setGeneratingPDF] = useState(false);
 
   /**
@@ -63,7 +63,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   };
 
   // Datos formulario de pago
-  const [cardData, setCardData] = useState({
+  const [cardData, _setCardData] = useState({
     titular: "",
     numero: "",
     mes: "",
@@ -71,15 +71,19 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
     cvv: "",
   });
 
-  const [efectivoData, setEfectivoData] = useState({
+  const [efectivoData, _setEfectivoData] = useState({
     confirmacion: false,
   });
 
   const [rtTick, setRtTick] = useState(0);
   useSupabaseRealtime("pagos", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("cotizaciones", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
 
   useEffect(() => {
     fetchTicket();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoId, rtTick]);
 
   /**
@@ -264,9 +268,9 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   };
 
 
-  const handlePayment = async (metodo) => {
+  const _handlePayment = async (metodo) => {
     try {
-      setProcessingPayment(true);
+      _setProcessingPayment(true);
       setPaymentError(null);
 
       // Validaciones según método
@@ -279,19 +283,19 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
           !cardData.cvv
         ) {
           setPaymentError("Por favor completa todos los datos de la tarjeta");
-          setProcessingPayment(false);
+          _setProcessingPayment(false);
           return;
         }
         // Validación básica del número de tarjeta
         if (cardData.numero.replace(/\s/g, "").length !== 16) {
           setPaymentError("El número de tarjeta debe tener 16 dígitos");
-          setProcessingPayment(false);
+          _setProcessingPayment(false);
           return;
         }
       } else if (metodo === "efectivo") {
         if (!efectivoData.confirmacion) {
           setPaymentError("Por favor confirma que entiendes los términos");
-          setProcessingPayment(false);
+          _setProcessingPayment(false);
           return;
         }
       }
@@ -333,8 +337,8 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
         return { ...prev, estado: "entregado", pago: pagoResponse };
       });
 
-      setPaymentSuccess(true);
-      setShowPaymentForm(false);
+      _setPaymentSuccess(true);
+      _setShowPaymentForm(false);
 
       setTimeout(() => {
         if (onClose) onClose();
@@ -343,7 +347,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
       console.error("Error al procesar pago:", error);
       setPaymentError("Error al procesar el pago");
     } finally {
-      setProcessingPayment(false);
+      _setProcessingPayment(false);
     }
   };
 
@@ -384,7 +388,7 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
   const montoRefacciones = ticket.cotizacion?.monto_refacc || 0;
   const cotizacionAprobada = ticket.cotizacion?.estado === "aprobada";
   const proyectoEnProgreso = String(ticket.estado || "").toLowerCase().trim() === "en_progreso";
-  const pagoHabilitado = cotizacionAprobada && proyectoEnProgreso;
+  const _pagoHabilitado = cotizacionAprobada && proyectoEnProgreso;
 
   return (
     <div

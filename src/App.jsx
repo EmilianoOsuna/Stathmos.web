@@ -27,7 +27,7 @@ import HistorialesModule from "./components/HistorialesModule";
 import CentroReportes from "./components/CentroReportes";
 import { loadStripe } from '@stripe/stripe-js';
 import { formatDateWorkshop, formatDateTimeWorkshop, todayWorkshopYmd } from "./utils/datetime";
-import { Card, Select, Input, Field, Textarea, ModuleHeader, Button, Modal, Icon as LucideIcon, DatePicker } from "./components/UIPrimitives";
+import { Card, Select, Input, Field, Textarea, ModuleHeader, Button, Modal, Icon as LucideIcon, DatePicker, ConnectionStatusBadge } from "./components/UIPrimitives";
 
 // ─── Accent tokens ─────────────────────────────────────────────────────────────
 // Colores principales para botones y elementos visuales
@@ -1547,6 +1547,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   useSupabaseRealtime("proyectos", fetchAll);
   useSupabaseRealtime("cotizaciones", fetchAll);
   useSupabaseRealtime("fotografias", fetchAll);
+  useSupabaseRealtime("clientes", fetchAll);
+  useSupabaseRealtime("vehiculos", fetchAll);
+  useSupabaseRealtime("empleados", fetchAll);
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
@@ -4784,6 +4787,7 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <ConnectionStatusBadge darkMode={darkMode} />
           <NotificacionesDropdown session={session} darkMode={darkMode} onNotificationClick={onNotificationClick} />
           <UserMenuWithRef session={session} onLogout={handleLogout} darkMode={darkMode} rolLabel={rolLabel} />
         </div>

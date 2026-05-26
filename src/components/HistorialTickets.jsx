@@ -140,7 +140,6 @@ export default function HistorialTickets({
 
   const t = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
-  const inputBg = darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900";
 
   return (
     <div>

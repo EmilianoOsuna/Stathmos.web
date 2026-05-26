@@ -16,6 +16,7 @@
 // Colores globales: C_BLUE (#60aebb) y C_RED (#db3c1c)
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { useSupabaseConnectionState } from "../hooks/useSupabaseRealtime";
 
 // ─── Colores predefinidos para toda la aplicación ───────────────────────────
 // C_BLUE: Color primario (cyan/teal) unificado con variables de CSS nativas
@@ -635,5 +636,20 @@ export const Badge = ({ children, variant = "primary", className = "", darkMode 
     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${variants[variant] || variants.primary} ${className}`}>
       {children}
     </span>
+  );
+};
+
+// ─── Componente ConnectionStatusBadge ──────────────────────────────────────
+// Muestra el estado actual del WebSocket de tiempo real
+export const ConnectionStatusBadge = ({ darkMode }) => {
+  const status = useSupabaseConnectionState();
+  const label = status === "connected" ? "Conectado" : status === "connecting" ? "Reconectando..." : "Desconectado";
+  const statusClass = status === "connected" ? "connected" : status === "connecting" ? "connecting" : "disconnected";
+
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-500/10 bg-zinc-500/5 text-[10px] font-bold select-none whitespace-nowrap">
+      <span className={`connection-indicator ${statusClass}`} />
+      <span className={darkMode ? "text-zinc-400" : "text-gray-500"}>{label}</span>
+    </div>
   );
 };

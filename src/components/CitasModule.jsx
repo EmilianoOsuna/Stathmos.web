@@ -323,6 +323,8 @@ export default function CitasModule({
   const [rtTick, setRtTick] = useState(0);
   useSupabaseRealtime("citas", () => setRtTick(t => t + 1));
   useSupabaseRealtime("dias_inhabiles", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("clientes", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("vehiculos", () => setRtTick(t => t + 1));
 
   useEffect(() => {
     fetchCitas();
