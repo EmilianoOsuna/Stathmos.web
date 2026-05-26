@@ -47,12 +47,12 @@ export default function HistorialServiciosAdmin({
   const [lightbox, setLightbox] = useState(null);
 
   // Realtime
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("proyectos", () => fetchServicios({ silent: true }));
+  useSupabaseRealtime("fotografias", () => fetchServicios({ silent: true }));
 
-  const fetchAllServicios = async () => {
-    setLoading(true);
+  const fetchAllServicios = async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     try {
       const { data, error } = await supabase.from("proyectos").select(`
         id, titulo, descripcion, observaciones, estado,
@@ -82,14 +82,15 @@ export default function HistorialServiciosAdmin({
     } catch (error) {
       console.error("Error al cargar todos los servicios:", error);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
-  const fetchServicios = useCallback(async () => {
+  const fetchServicios = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
     if (!searchTerm.trim()) {
       // Si no hay término de búsqueda, mostrar todos
-      await fetchAllServicios();
+      await fetchAllServicios(options);
       return;
     }
 
@@ -191,7 +192,7 @@ export default function HistorialServiciosAdmin({
       console.error("Error al buscar servicios:", error);
       setServicios([]);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [searchTerm, searchType]);
 
@@ -218,7 +219,7 @@ export default function HistorialServiciosAdmin({
 
   useEffect(() => {
     fetchServicios();
-  }, [searchTerm, searchType, rtTick]);
+  }, [fetchServicios]);
 
   useEffect(() => {
     if (expandedServicio) {

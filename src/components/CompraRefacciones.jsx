@@ -31,8 +31,9 @@ export default function CompraRefacciones({ darkMode }) {
   const [saving, setSaving] = useState(false);
 
   // ÚNICA declaración de fetchAll corregida
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     try {
       const [{ data: refData }, { data: provData }, { data: projData }] = await Promise.all([
         supabase.from("refacciones").select("id, nombre, numero_parte, precio_compra, stock").order("nombre"),
@@ -45,7 +46,7 @@ export default function CompraRefacciones({ darkMode }) {
     } catch (err) {
       console.error("Error cargando datos:", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
@@ -53,9 +54,9 @@ export default function CompraRefacciones({ darkMode }) {
     fetchAll();
   }, []);
 
-  useSupabaseRealtime("refacciones", fetchAll);
-  useSupabaseRealtime("proveedores", fetchAll);
-  useSupabaseRealtime("proyectos", fetchAll);
+  useSupabaseRealtime("refacciones", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("proveedores", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("proyectos", () => fetchAll({ silent: true }));
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>

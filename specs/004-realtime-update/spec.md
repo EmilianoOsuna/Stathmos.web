@@ -11,6 +11,8 @@
 
 - Q: ¿Deberían las vistas orientadas al cliente (detalles de proyecto, notas de mecánicos y carga de fotografías) actualizarse también en tiempo real de forma completa? → A: Sí, todas las vistas del cliente (detalles de ticket, fotos y diagnósticos) deben actualizarse en tiempo real de forma transparente.
 - Q: ¿Cómo debería reflejarse visualmente en la interfaz de usuario el estado de la conexión en tiempo real (si está activa o desconectada)? → A: Mostrar un indicador de estado de conexión sutil (un pequeño badge o icono) en la cabecera de los módulos o TopBar.
+- Q: ¿Qué estrategia técnica debe usarse para eliminar el parpadeo (loading flicker) durante actualizaciones en tiempo real? → A: Silent re-fetch — mantener el fetch completo a Supabase pero omitir `setLoading(true)` durante actualizaciones RT, de modo que los datos se reemplacen en background sin mostrar spinner. No se usará payload patching del evento Postgres.
+- Q: Si el silent re-fetch falla (error de red o timeout), ¿qué debe ocurrir en la UI? → A: Silencioso — ignorar el error del silent fetch; los datos anteriores siguen mostrándose sin interrupción. El error se loguea en `console.error` pero no se notifica al usuario. El sistema se recuperará automáticamente en el siguiente evento RT o navegación.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -80,6 +82,7 @@
 - **FR-005**: El componente `ProyectosModule` DEBE integrar suscripciones en tiempo real para las tablas de apoyo `clientes`, `vehiculos` y `empleados` a fin de mantener sus dropdowns de asignación completamente sincronizados.
 - **FR-006**: Las vistas del portal del cliente (`Ticket.jsx` y `HistorialTickets.jsx`) DEBEN recibir actualizaciones en tiempo real para proyectos, cotizaciones, diagnósticos y fotografías utilizando la infraestructura de suscripciones compartidas.
 - **FR-007**: El sistema DEBE exponer visualmente el estado del canal de comunicación en tiempo real mediante un indicador o badge sutil (icono o círculo de color) en la TopBar o cabecera de los módulos, mostrando si está conectado o reintentando la conexión.
+- **FR-008**: Las actualizaciones de datos disparadas por eventos WebSocket en tiempo real DEBEN ejecutarse mediante un "silent re-fetch" — completando el fetch a Supabase sin activar el indicador de carga (`loading`) — de modo que la UI nunca muestre un estado vacío o spinner durante sincronizaciones de tiempo real subsecuentes a la carga inicial.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -92,6 +95,7 @@
 - **SC-001**: El número máximo de canales WebSocket de Supabase abiertos simultáneamente para consultas en tiempo real de tablas del sistema no debe exceder de **1 por tabla activa**, sin importar cuántos componentes escuchen esa tabla en la sesión actual.
 - **SC-002**: Todos los cambios de datos realizados en catálogos (clientes, proveedores, stock de refacciones) deben propagarse a las pantallas de transacciones abiertas en un lapso máximo de **2 segundos** desde su confirmación en base de datos, sin requerir recarga manual (F5) de la página.
 - **SC-003**: Cero fugas de memoria o canales huérfanos tras cambiar repetidamente de módulo en la navegación lateral del panel.
+- **SC-004**: Durante una actualización de datos en tiempo real en cualquier módulo, el indicador de carga (`loading` / spinner / skeleton) NO debe ser visible en ningún momento posterior a la carga inicial. El contenido existente debe permanecer visible de forma continua mientras el nuevo dato se obtiene en background.
 
 ## Assumptions
 

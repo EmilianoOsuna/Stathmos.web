@@ -136,3 +136,19 @@ input:-webkit-autofill {
     box-shadow: 0 0 2px rgba(245, 158, 11, 0.1);
   }
 }
+
+/* Smooth fade-in animation for list items and table rows */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+tr, 
+.md\:hidden > div, 
+.card {
+  animation: fadeIn 150ms ease-out;
+}

@@ -6,7 +6,7 @@
 // - Historial de diagnósticos por proyecto
 // - Notificaciones al cliente cuando se registra diagnóstico
 // - Sincronización en tiempo real
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import DiagnosticoModal from "./DiagnosticoModal";
@@ -40,18 +40,9 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
     fetchMecanicoId();
   }, [session]);
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("diagnosticos", () => setRtTick(t => t + 1));
-
-  useEffect(() => {
-    if (mecanico_id) {
-      fetchProyectos();
-    }
-  }, [mecanico_id, rtTick]);
-
-  const fetchProyectos = async () => {
-    setLoading(true);
+  const fetchProyectos = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     try {
       // Obtener todos los proyectos asignados al mecánico
       const { data, error } = await supabase
@@ -101,9 +92,18 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
     } catch (error) {
       console.error("Error al cargar proyectos:", error);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, [mecanico_id]);
+
+  useSupabaseRealtime("proyectos", () => fetchProyectos({ silent: true }));
+  useSupabaseRealtime("diagnosticos", () => fetchProyectos({ silent: true }));
+
+  useEffect(() => {
+    if (mecanico_id) {
+      fetchProyectos();
+    }
+  }, [mecanico_id, fetchProyectos]);
 
   const handleOpenModal = (proyecto) => {
     if (!["activo", "en_progreso"].includes(proyecto.estado)) return;

@@ -48,11 +48,12 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
   const [pendingSave, setPendingSave] = useState(null);
   const [proveedores, setProveedores] = useState([]);
 
-  const fetchRefacciones = useCallback(async () => {
-    setLoading(true);
+  const fetchRefacciones = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const { data } = await supabase.from("refacciones").select("*").order("numero_parte");
     setRefacciones(data || []);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, []);
 
   const fetchProveedores = useCallback(async () => {
@@ -65,7 +66,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
     fetchProveedores();
   }, [fetchRefacciones, fetchProveedores]);
 
-  useSupabaseRealtime("refacciones", fetchRefacciones);
+  useSupabaseRealtime("refacciones", () => fetchRefacciones({ silent: true }));
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>

@@ -7,7 +7,7 @@
 // - Rotación de refacciones (más vendidas)
 // - Flujo de citas y cuellos de botella
 // - Exportación a PDF y CSV
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity, FileText } from "lucide-react";
@@ -58,31 +58,14 @@ export default function ReportesOperativosModule({ darkMode = false }) {
   const [flujoCitas, setFlujoCitas] = useState(null);
   const [cuellosBotella, setCuellosBotella] = useState([]);
 
-  useEffect(() => {
-    const hoy = new Date();
-    const hace30Dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
-    setFechaFin(hoy.toISOString().split("T")[0]);
-    setFechaInicio(hace30Dias.toISOString().split("T")[0]);
-  }, []);
-
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("citas", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("cotizaciones", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("compras_refacciones", () => setRtTick(t => t + 1));
-
-  useEffect(() => {
-    if (resumenGeneral) {
-      generateReports();
-    }
-  }, [rtTick]);
-
-  const generateReports = async () => {
+  const generateReports = useCallback(async (options = {}) => {
     if (!fechaInicio || !fechaFin) {
       alert("Debes seleccionar fecha de inicio y fin");
       return;
     }
 
-    setLoading(true);
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     try {
       const fechaInicioISO = new Date(`${fechaInicio}T00:00:00`).toISOString();
       const fechaFinISO = new Date(`${fechaFin}T23:59:59`).toISOString();
@@ -283,9 +266,26 @@ export default function ReportesOperativosModule({ darkMode = false }) {
       console.error("Error al generar reportes:", error);
       alert("Error al generar reportes operativos");
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, [fechaInicio, fechaFin]);
+
+  useEffect(() => {
+    const hoy = new Date();
+    const hace30Dias = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000);
+    setFechaFin(hoy.toISOString().split("T")[0]);
+    setFechaInicio(hace30Dias.toISOString().split("T")[0]);
+  }, []);
+
+  useEffect(() => {
+    if (fechaInicio && fechaFin) {
+      generateReports();
+    }
+  }, [fechaInicio, fechaFin, generateReports]);
+
+  useSupabaseRealtime("citas", () => generateReports({ silent: true }));
+  useSupabaseRealtime("cotizaciones", () => generateReports({ silent: true }));
+  useSupabaseRealtime("compras_refacciones", () => generateReports({ silent: true }));
 
     const generatePDF = async () => {
       if (!resumenGeneral) return;

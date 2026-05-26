@@ -7,7 +7,7 @@
 // - Tipos de servicio predefinidos
 // - Confirmación de citas por cliente
 // - Notificaciones en tiempo real
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import {
@@ -213,8 +213,9 @@ export default function CitasModule({
     return ymd(startDate);
   };
 
-  const fetchCitas = async () => {
-    setLoading(true);
+  const fetchCitas = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     setError("");
     try {
       let currentCitas = [];
@@ -222,7 +223,7 @@ export default function CitasModule({
       if (role === "cliente") {
         if (!clienteId) {
           setCitas([]);
-          setLoading(false);
+          if (!isSilent) setLoading(false);
           return;
         }
 
@@ -316,20 +317,18 @@ export default function CitasModule({
     } catch (e) {
       setError(e.message || "No se pudieron cargar las citas.");
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, [role, clienteId]);
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("citas", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("dias_inhabiles", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("clientes", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("vehiculos", () => setRtTick(t => t + 1));
+  useSupabaseRealtime("citas", () => fetchCitas({ silent: true }));
+  useSupabaseRealtime("dias_inhabiles", () => fetchCitas({ silent: true }));
+  useSupabaseRealtime("clientes", () => fetchCitas({ silent: true }));
+  useSupabaseRealtime("vehiculos", () => fetchCitas({ silent: true }));
 
   useEffect(() => {
     fetchCitas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, clienteId, rtTick]);
+  }, [fetchCitas]);
 
   useEffect(() => {
     if (isBlockedDate(form.fecha)) {

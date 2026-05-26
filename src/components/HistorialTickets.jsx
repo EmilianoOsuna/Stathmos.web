@@ -5,7 +5,7 @@
 // - Modal detallado con opción de reabrir tickets
 // - Generación de PDF con resumen del servicio
 // - Sincronización en tiempo real con Supabase
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import Ticket from "./Ticket";
@@ -30,16 +30,10 @@ export default function HistorialTickets({
   useEffect(() => { setFilter(initialFilter); }, [initialFilter]);
   useEffect(() => { setSortBy(initialSort); }, [initialSort]);
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
-
-  useEffect(() => {
-    fetchTickets();
-  }, [rtTick]);
-
-  const fetchTickets = async () => {
+  const fetchTickets = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
 
       const { data: proyectos, error } = await supabase
         .from("proyectos")
@@ -95,9 +89,15 @@ export default function HistorialTickets({
     } catch (error) {
       console.error("Error al obtener historial:", error);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchTickets();
+  }, [fetchTickets]);
+
+  useSupabaseRealtime("proyectos", () => fetchTickets({ silent: true }));
 
   const filteredTickets = tickets
     .filter((ticket) => {

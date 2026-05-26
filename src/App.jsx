@@ -591,13 +591,15 @@ const ClientesModule = ({ darkMode, session }) => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const fetchClientes = useCallback(async () => {
-    setLoading(true);
+  const fetchClientes = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const { data } = await supabase.from("clientes").select("*").order("created_at", { ascending: false });
-    setClientes(data || []); setLoading(false);
+    setClientes(data || []);
+    if (!isSilent) setLoading(false);
   }, []);
   useEffect(() => { fetchClientes(); }, [fetchClientes]);
-  useSupabaseRealtime("clientes", fetchClientes);
+  useSupabaseRealtime("clientes", () => fetchClientes({ silent: true }));
 
   const openCreate = () => { setEditTarget(null); setForm({ nombre: "", telefono: "", correo: "", direccion: "", rfc: "", activo: true }); setFormError(""); setModalOpen(true); };
   const openEdit   = (c) => { setEditTarget(c); setForm({ nombre: c.nombre||"", telefono: c.telefono||"", correo: c.correo||"", direccion: c.direccion||"", rfc: c.rfc||"", activo: c.activo??true }); setFormError(""); setModalOpen(true); };
@@ -862,19 +864,20 @@ const EmpleadosModule = ({ darkMode }) => {
   });
 
 
-const fetchAll = useCallback(async () => {
-  setLoading(true);
+const fetchAll = useCallback(async (options = {}) => {
+  const isSilent = options.silent === true;
+  if (!isSilent) setLoading(true);
   const { data: e, error: eErr } = await supabase
     .from("empleados")
     .select("id,nombre,correo,usuario_id,telefono,rfc,fecha_ingreso,disponible,activo")
     .order("nombre");
   
   setEmpleados(e || []);
-  setLoading(false);
+  if (!isSilent) setLoading(false);
 }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useSupabaseRealtime("empleados", fetchAll);
+  useSupabaseRealtime("empleados", () => fetchAll({ silent: true }));
 
 
 // EmpleadosModule helpers consolidated at top level
@@ -1227,16 +1230,18 @@ const VehiculosModule = ({ darkMode }) => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const [v, c] = await Promise.all([
       supabase.from("vehiculos").select("*, clientes(nombre)").order("created_at", { ascending: false }),
       supabase.from("clientes").select("id,nombre").eq("activo", true).order("nombre"),
     ]);
-    setVehiculos(v.data || []); setClientes(c.data || []); setLoading(false);
+    setVehiculos(v.data || []); setClientes(c.data || []);
+    if (!isSilent) setLoading(false);
   }, []);
   useEffect(() => { fetchAll(); }, [fetchAll]);
-  useSupabaseRealtime("vehiculos", fetchAll);
+  useSupabaseRealtime("vehiculos", () => fetchAll({ silent: true }));
 
   const openCreate = () => { setEditTarget(null); setForm({ cliente_id: "", marca: "", modelo: "", anio: "", placas: "", vin: "", color: "", activo: true }); setFormError(""); setModalOpen(true); };
   const openEdit   = (v) => { setEditTarget(v); setForm({ cliente_id: v.cliente_id||"", marca: v.marca||"", modelo: v.modelo||"", anio: v.anio||"", placas: v.placas||"", vin: v.vin||"", color: v.color||"", activo: v.activo??true }); setFormError(""); setModalOpen(true); };
@@ -1523,8 +1528,9 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
   const isAdmin = metaRole === "administrador";
   const isMecanico = metaRole === "mecanico";
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     let proyectosQuery = supabase
       .from("proyectos")
       .select("*,observaciones, clientes(nombre, usuario_id), vehiculos(marca,modelo,placas), empleados(nombre), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
@@ -1539,17 +1545,18 @@ const ProyectosModule = ({ darkMode, session, initialProjectId = null, empleadoI
       supabase.from("refacciones").select("id,nombre,numero_parte,precio_venta,stock,activo").eq("activo", true).order("nombre"),
       supabase.from("citas").select("id,cliente_id,vehiculo_id,fecha_hora,motivo,estado,proyectos(id)").in("estado", ["pendiente", "confirmada"]).order("fecha_hora"),
     ]);
-    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]); setLoading(false);
+    setProyectos(p.data||[]); setClientes(c.data||[]); setVehiculos(v.data||[]); setEmpleados(e.data||[]); setRefCatalog(r.data||[]); setCitas(ci.data||[]);
+    if (!isSilent) setLoading(false);
   }, [empleadoId]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // Usar el hook global en lugar de la suscripción manual
-  useSupabaseRealtime("proyectos", fetchAll);
-  useSupabaseRealtime("cotizaciones", fetchAll);
-  useSupabaseRealtime("fotografias", fetchAll);
-  useSupabaseRealtime("clientes", fetchAll);
-  useSupabaseRealtime("vehiculos", fetchAll);
-  useSupabaseRealtime("empleados", fetchAll);
+  useSupabaseRealtime("proyectos", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("cotizaciones", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("fotografias", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("clientes", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("vehiculos", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("empleados", () => fetchAll({ silent: true }));
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
@@ -4884,8 +4891,9 @@ const PagosAdminModule = ({ darkMode, session }) => {
   const [authMessage, setAuthMessage] = useState(null); // "success" | "error" | null
   const [authMessageText, setAuthMessageText] = useState("");
 
-  const fetchPagos = useCallback(async () => {
-    setLoading(true);
+  const fetchPagos = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     // Pagos pendientes
     const { data: pagosPend, error: errPend } = await supabase
       .from("pagos")
@@ -4920,14 +4928,14 @@ const PagosAdminModule = ({ darkMode, session }) => {
     
     if (!errComp) setPagosCompletados(pagosComp || []);
     
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchPagos();
   }, [fetchPagos]);
 
-  useSupabaseRealtime("pagos", fetchPagos);
+  useSupabaseRealtime("pagos", () => fetchPagos({ silent: true }));
 
   const handleAuthorizeClick = (pago) => {
     setSelectedPago(pago);
@@ -5216,24 +5224,26 @@ const MisVehiculosModule = ({ darkMode, clienteId }) => {
   const [vehiculos, setVehiculos] = useState([]);
   const [loading,   setLoading]   = useState(true);
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("vehiculos", () => setRtTick(t => t + 1));
+  const fetchVehiculos = useCallback(async (options = {}) => {
+    if (!clienteId) return;
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
+    const { data } = await supabase
+      .from("vehiculos")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .eq("activo", true)
+      .order("created_at", { ascending: false });
+    setVehiculos(data || []);
+    if (!isSilent) setLoading(false);
+  }, [clienteId]);
 
   useEffect(() => {
-    if (!clienteId) return;
-    const fetch = async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("vehiculos")
-        .select("*")
-        .eq("cliente_id", clienteId)
-        .eq("activo", true)
-        .order("created_at", { ascending: false });
-      setVehiculos(data || []);
-      setLoading(false);
-    };
-    fetch();
-  }, [clienteId, rtTick]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchVehiculos();
+  }, [fetchVehiculos]);
+
+  useSupabaseRealtime("vehiculos", () => fetchVehiculos({ silent: true }));
 
   const t  = darkMode ? "text-zinc-100" : "text-gray-800";
   const st = darkMode ? "text-zinc-500" : "text-gray-400";
@@ -5973,14 +5983,15 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   const [decisionSuccess, setDecisionSuccess] = useState("");
   const [quoteConfirm, setQuoteConfirm] = useState(null);
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (options = {}) => {
     if (!clienteId) {
       setProyectos([]);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const { data } = await supabase
       .from("proyectos")
       .select("*, clientes(nombre), vehiculos(marca,modelo,placas), empleados(nombre),  diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,notas,created_at,fecha_emision,fecha_respuesta)")
@@ -5988,7 +5999,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
       .order("created_at", { ascending: false });
 
     setProyectos(data || []);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, [clienteId]);
 
   useEffect(() => {
@@ -5996,9 +6007,9 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
     fetch();
   }, [fetch]);
 
-  useSupabaseRealtime("proyectos", fetch);
-  useSupabaseRealtime("cotizaciones", fetch);
-  useSupabaseRealtime("diagnosticos", fetch);
+  useSupabaseRealtime("proyectos", () => fetch({ silent: true }));
+  useSupabaseRealtime("cotizaciones", () => fetch({ silent: true }));
+  useSupabaseRealtime("diagnosticos", () => fetch({ silent: true }));
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
@@ -6284,23 +6295,24 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
   const [estadoConfirm, setEstadoConfirm] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [_mecEditar, _setMecEditar] = useState(null);
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (options = {}) => {
     if (!empleadoId) return;
-    setLoading(true);
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const { data } = await supabase
       .from("proyectos")
       .select("*, clientes(nombre,telefono,usuario_id), vehiculos(marca,modelo,placas,anio), diagnosticos(id,tipo,sintomas,descripcion,causa_raiz,created_at,empleados(nombre),tipo_operacion), cotizaciones(id,monto_mano_obra,monto_refacc,monto_total,estado,created_at,updated_at,fecha_emision,fecha_respuesta)")
       .eq("mecanico_id", empleadoId)
       .order("created_at", { ascending: false });
     setProyectos(data || []);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, [empleadoId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetch();
   }, [fetch]);
-  useSupabaseRealtime("proyectos", fetch);
+  useSupabaseRealtime("proyectos", () => fetch({ silent: true }));
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {

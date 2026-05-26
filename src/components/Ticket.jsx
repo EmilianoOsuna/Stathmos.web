@@ -24,7 +24,7 @@
  * @param {boolean} [props.showOmit=true] - Muestra botón para omitir/cerrar
  * @returns {JSX.Element} Vista del ticket con información completa
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
@@ -75,27 +75,10 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
     confirmacion: false,
   });
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("pagos", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("proyectos", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("cotizaciones", () => setRtTick(t => t + 1));
-  useSupabaseRealtime("fotografias", () => setRtTick(t => t + 1));
-
-  useEffect(() => {
-    fetchTicket();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proyectoId, rtTick]);
-
-  /**
-   * Obtiene los datos completos del ticket desde la base de datos.
-   * Incluye información del proyecto, cliente, vehículo, diagnósticos, 
-   * cotizaciones, refacciones y pagos.
-   * @async
-   * @returns {Promise<void>}
-   */
-  const fetchTicket = async () => {
+  const fetchTicket = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
 
       // Obtener datos del proyecto con información completa
       const { data: proyecto, error: errorProyecto } = await supabase
@@ -182,9 +165,18 @@ export default function Ticket({ proyectoId, darkMode = false, onClose = null, s
       console.error("Error al obtener ticket:", error);
       setPaymentError("Error al cargar el ticket");
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, [proyectoId]);
+
+  useEffect(() => {
+    fetchTicket();
+  }, [fetchTicket]);
+
+  useSupabaseRealtime("pagos", () => fetchTicket({ silent: true }));
+  useSupabaseRealtime("proyectos", () => fetchTicket({ silent: true }));
+  useSupabaseRealtime("cotizaciones", () => fetchTicket({ silent: true }));
+  useSupabaseRealtime("fotografias", () => fetchTicket({ silent: true }));
 
   const generatePDF = async () => {
     try {

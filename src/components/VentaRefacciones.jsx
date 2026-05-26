@@ -25,8 +25,9 @@ export default function VentaRefacciones({ darkMode }) {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [saving, setSaving] = useState(false);
 
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     try {
       const { data, error } = await supabase
         .from("refacciones")
@@ -39,7 +40,7 @@ export default function VentaRefacciones({ darkMode }) {
     } catch (err) {
       console.error("Error al cargar refacciones:", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
@@ -47,9 +48,9 @@ export default function VentaRefacciones({ darkMode }) {
     fetchAll();
   }, []);
 
-  useSupabaseRealtime("refacciones", fetchAll);
-  useSupabaseRealtime("clientes", fetchAll);
-  useSupabaseRealtime("proyectos", fetchAll);
+  useSupabaseRealtime("refacciones", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("clientes", () => fetchAll({ silent: true }));
+  useSupabaseRealtime("proyectos", () => fetchAll({ silent: true }));
 
   const filtered = useMemo(() => (
     refacciones.filter((r) =>

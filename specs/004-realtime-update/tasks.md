@@ -104,59 +104,40 @@
 
 - [x] T016 Run ESLint code check and verify project build (`npm run build`) with all real-time changes.
 - [x] T017 Execute manual validation checklist defined in `specs/004-realtime-update/quickstart.md` on mobile viewports.
+- [x] T018 [P] Refine the `<ConnectionStatusBadge />` in `src/components/UIPrimitives.jsx` to hide the status text label on mobile screens and only display the indicator dot.
 
 ---
 
-## Dependencies & Execution Order
+## Phase 8: Seamless Real-Time Updates (Sin parpadeo / Sin loading flicker)
 
-### Phase Dependencies
+**Purpose**: Eliminar el "flash" o parpadeo de pantalla que ocurre cuando llegan eventos de tiempo real, separando la carga inicial (con loading state) de las actualizaciones silenciosas posteriores.
 
-- **Setup (Phase 1)**: No dependencies - can start immediately.
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories.
-- **User Stories (Phase 3+)**: All depend on Foundational phase completion.
-  - User stories can then proceed in parallel.
-- **Polish (Final Phase)**: Depends on all user story tasks being complete.
+**Root Cause**: Todos los callbacks del hook `useSupabaseRealtime` actualmente llaman directamente a `fetchAll`/`fetchClientes`/etc., funciones que comienzan con `setLoading(true)`. Esto hace que cada evento WebSocket provoque un ciclo loading→datos→loading→datos visible para el usuario.
 
-### User Story Dependencies
+**Strategy**: Introducir un flag booleano `silent` (o una función separada `fetchSilent`) que ejecute el mismo fetch pero **sin modificar el estado `loading`**, de modo que la UI nunca quede en blanco durante actualizaciones de tiempo real.
 
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories.
-- **User Story 2 (P2)**: Can start after Foundational (Phase 2).
-- **User Story 3 (P3)**: Can start after Foundational (Phase 2).
-- **User Story 4 (P4)**: Can start after Foundational (Phase 2).
+### Phase 8a: Infrastructure — Hook upgrade (prerequisite for all 8b tasks)
 
-### Parallel Opportunities
+- [x] T019 Upgrade `useSupabaseRealtime` in `src/hooks/useSupabaseRealtime.js` to forward the raw Postgres change payload (eventType, new, old) to the callback, so components can choose between a full refetch or a targeted state patch.
 
-- All Setup tasks marked [P] can run in parallel.
-- All Foundational tasks marked [P] can run in parallel (within Phase 2).
-- Once Foundational phase completes, all user stories can start in parallel (US1, US2, US3, US4).
-- All implementation tasks within the same story marked [P] can run in parallel.
+### Phase 8b: Silent fetch pattern — Components with `setLoading(true)` in fetch (can run in parallel after T019)
 
----
+- [x] T020 [P] Refactor `ClientesModule` in `src/App.jsx`: extract a `fetchSilent` variant (no `setLoading` toggle) and wire it to `useSupabaseRealtime` instead of the full `fetchClientes`.
+- [x] T021 [P] Refactor `EmpleadosModule` in `src/App.jsx`: extract a `fetchSilent` variant and wire it to `useSupabaseRealtime` instead of the full `fetchAll`.
+- [x] T022 [P] Refactor `VehiculosModule` in `src/App.jsx`: extract a `fetchSilent` variant and wire it to `useSupabaseRealtime` instead of the full `fetchAll`.
+- [x] T023 [P] Refactor `ProyectosModule` in `src/App.jsx`: extract a `fetchSilent` variant and wire it to all six `useSupabaseRealtime` subscriptions.
+- [x] T024 [P] Refactor `CompraRefacciones` in `src/components/CompraRefacciones.jsx`: extract a `fetchSilent` variant (no `setLoading`) and wire it to the three `useSupabaseRealtime` calls.
+- [x] T025 [P] Refactor `VentaRefacciones` in `src/components/VentaRefacciones.jsx`: extract a `fetchSilent` variant and wire it to the three `useSupabaseRealtime` calls.
+- [x] T026 [P] Refactor `RefaccionesModule` in `src/components/RefaccionesModule.jsx`: extract a `fetchSilent` variant and wire it to `useSupabaseRealtime`.
+- [x] T027 [P] Refactor `HistorialTickets` in `src/components/HistorialTickets.jsx`: verify the `rtTick` pattern doesn't trigger a visible loading state; if it does, refactor to silent fetch.
+- [x] T028 [P] Refactor `Ticket` in `src/components/Ticket.jsx`: verify the `rtTick` pattern doesn't trigger a visible loading state on the `fotografias`/`cotizaciones`/`proyectos`/`pagos` subscriptions; refactor if needed.
+- [x] T029 [P] Refactor `CitasModule` in `src/components/CitasModule.jsx`: verify the `rtTick` pattern doesn't trigger a visible loading state; refactor to silent fetch if needed.
 
-## Parallel Example: User Story 1
+### Phase 8c: CSS micro-transition polish (can run in parallel with 8b)
 
-```bash
-# Launch all refactors of administrative modules together:
-Task: "Refactor ClientesModule inside src/App.jsx to consume the multiplexed useSupabaseRealtime hook"
-Task: "Refactor EmpleadosModule inside src/App.jsx to consume the multiplexed useSupabaseRealtime hook"
-Task: "Refactor VehiculosModule inside src/App.jsx to consume the multiplexed useSupabaseRealtime hook"
-```
+- [x] T030 [P] Add a CSS fade-in transition (`opacity 0 → 1`, ~150 ms) to list items and table rows in `src/index.css` so that newly inserted/updated rows appear smoothly instead of snapping in.
 
----
+### Phase 8d: Validation
 
-## Implementation Strategy
-
-### MVP First (User Story 1 Only)
-
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Test User Story 1 independently on browser
-5. Deploy/demo if ready
-
-### Incremental Delivery
-
-1. Complete Setup + Foundational -> Foundation ready
-2. Add User Story 1 -> Test independently -> Deploy/Demo (MVP!)
-3. Add User Story 2 & 4 -> Test independently -> Deploy/Demo
-4. Add User Story 3 -> Test independently -> Deploy/Demo
+- [x] T031 Run `npm run build` and ESLint after all Phase 8 changes to confirm no regressions.
+- [x] T032 Manual smoke test: trigger a real-time DB update while viewing each affected module and confirm zero loading flicker is visible.

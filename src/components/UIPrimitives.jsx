@@ -647,9 +647,9 @@ export const ConnectionStatusBadge = ({ darkMode }) => {
   const statusClass = status === "connected" ? "connected" : status === "connecting" ? "connecting" : "disconnected";
 
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-500/10 bg-zinc-500/5 text-[10px] font-bold select-none whitespace-nowrap">
+    <div className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border border-zinc-500/10 bg-zinc-500/5 text-[10px] font-bold select-none whitespace-nowrap">
       <span className={`connection-indicator ${statusClass}`} />
-      <span className={darkMode ? "text-zinc-400" : "text-gray-500"}>{label}</span>
+      <span className={`${darkMode ? "text-zinc-400" : "text-gray-500"} hidden sm:inline`}>{label}</span>
     </div>
   );
 };

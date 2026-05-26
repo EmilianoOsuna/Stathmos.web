@@ -14,7 +14,7 @@ const channelRegistry = {};
 // Debounce timer registry to group high-frequency write events per table
 const debouncedDispatch = {};
 
-const triggerTableCallbacks = (table) => {
+const triggerTableCallbacks = (table, payload) => {
   if (debouncedDispatch[table]) {
     clearTimeout(debouncedDispatch[table]);
   }
@@ -23,7 +23,7 @@ const triggerTableCallbacks = (table) => {
     if (entry) {
       entry.callbacks.forEach((cb) => {
         try {
-          cb();
+          cb(payload);
         } catch (e) {
           console.error("Error executing realtime callback for table:", table, e);
         }
@@ -59,8 +59,8 @@ export default function useSupabaseRealtime(table, callback) {
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: table },
-          () => {
-            triggerTableCallbacks(table);
+          (payload) => {
+            triggerTableCallbacks(table, payload);
           }
         );
 
@@ -74,9 +74,9 @@ export default function useSupabaseRealtime(table, callback) {
     const entry = channelRegistry[table];
 
     // Callback proxy to invoke the latest callback version registered by the calling component
-    const callbackRunner = () => {
+    const callbackRunner = (payload) => {
       if (savedCallback.current) {
-        savedCallback.current();
+        savedCallback.current(payload);
       }
     };
 

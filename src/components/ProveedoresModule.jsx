@@ -5,7 +5,7 @@
 // - Información de contacto (teléfono, correo, RFC)
 // - Sincronización en tiempo real
 // - Búsqueda y filtrado
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { Icon, Input, Select, Textarea, Button, Card, ModuleHeader, Field } from "./UIPrimitives";
@@ -30,23 +30,22 @@ export default function ProveedoresModule({ darkMode }) {
     activo: true,
   });
 
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (options = {}) => {
+    const isSilent = options.silent === true;
+    if (!isSilent) setLoading(true);
     const { data } = await supabase
       .from("proveedores")
       .select("id, nombre, telefono, correo, direccion, rfc, activo")
       .order("nombre");
     setProveedores(data || []);
-    setLoading(false);
-  };
+    if (!isSilent) setLoading(false);
+  }, []);
 
   useEffect(() => {
     fetchAll();
-  }, []);
+  }, [fetchAll]);
 
-  const [rtTick, setRtTick] = useState(0);
-  useSupabaseRealtime("proveedores", () => setRtTick(t => t + 1));
-  useEffect(() => { fetchAll(); }, [rtTick]);
+  useSupabaseRealtime("proveedores", () => fetchAll({ silent: true }));
 
   const showStatus = (type, message) => setStatus({ type, message });
 
