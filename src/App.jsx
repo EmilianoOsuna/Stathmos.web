@@ -867,7 +867,6 @@ const fetchAll = useCallback(async () => {
   const { data: e, error: eErr } = await supabase
     .from("empleados")
     .select("id,nombre,correo,usuario_id,telefono,rfc,fecha_ingreso,disponible,activo")
-    .eq("activo", true)
     .order("nombre");
   
   setEmpleados(e || []);
