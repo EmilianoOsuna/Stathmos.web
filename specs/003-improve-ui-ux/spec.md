@@ -60,7 +60,7 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 ### Functional Requirements
 
 - **FR-001**: El proyecto DEBE centralizar sus tokens de diseño en archivos globales reutilizables.
-- **FR-002**: Todos los ModuleHeaders DEBE usar el componente `ModuleHeader` de `UIPrimitives.jsx` con idénticos paddings y gaps.
+- **FR-002**: Todos los ModuleHeaders DEBEN usar el componente `ModuleHeader` de `UIPrimitives.jsx` con idénticos paddings y gaps.
 - **FR-003**: Los botones de acción DEBEN utilizar de manera exclusiva el componente `Button` de `UIPrimitives.jsx` con sus variantes (primary, accent, ghost, outline) para unificar bordes y sombras.
 - **FR-004**: El sistema DEBE cargar y aplicar una familia tipográfica moderna uniforme, específicamente la tipografía Inter cargada vía Google Fonts.
 - **FR-005**: Los tokens de diseño (colores primarios, espaciados y sombras) DEBEN centralizarse mediante variables de CSS nativas en `index.css`.
