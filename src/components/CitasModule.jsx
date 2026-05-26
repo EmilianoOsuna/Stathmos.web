@@ -977,7 +977,7 @@ export default function CitasModule({
       {canManage && (
         <div className={`mt-5 rounded-xl border ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
           <div className={`px-4 py-3 border-b ${darkMode ? "border-zinc-800" : "border-gray-200"}`}>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-row items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap pb-1">
               <button onClick={() => setFilterMode("hoy")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "hoy" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Hoy</button>
               <button onClick={() => setFilterMode("7dias")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "7dias" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Siguientes 7 días</button>
               <DatePicker

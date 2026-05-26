@@ -68,6 +68,7 @@
 - [x] T024 [US3] Add horizontal bounding checks to the `DatePicker` coordinate positioning in `src/components/UIPrimitives.jsx` to prevent the portal dropdown from overflowing the left or right edges on mobile screens.
 - [x] T027 [US3] Add a `trigger` render prop to `DatePicker` in `src/components/UIPrimitives.jsx` to support custom elements acting as the dropdown trigger.
 - [x] T028 [US3] Refactor the specific day filter button in `src/components/CitasModule.jsx` to render `<DatePicker>` inline using the custom button trigger, showing the selected date on the button label.
+- [x] T031 [US3] Refactor the filter buttons wrapper in `src/components/CitasModule.jsx` to prevent wrapping (`whitespace-nowrap`) and allow horizontal scrolling (`overflow-x-auto no-scrollbar`) on mobile devices.
 
 ---
 
@@ -82,6 +83,8 @@
 - [x] T026 Perform manual verification on mobile simulator for the DatePicker positioning and compact monthly calendar views
 - [x] T029 Run ESLint code linters and verify project build (`npm run build`) with the new filter button trigger changes.
 - [x] T030 Perform manual verification on mobile simulator for the new date selection filter.
+- [x] T032 Run ESLint code linters and verify project build (`npm run build`) with the horizontal filter buttons layout changes.
+- [x] T033 Perform manual verification on mobile viewport simulator for the horizontal scrolling filter buttons.
 
 ---
 
