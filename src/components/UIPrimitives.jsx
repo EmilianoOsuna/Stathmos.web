@@ -471,24 +471,33 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
         setIsOpen(false);
       }
     };
+    const handleScroll = () => {
+      setIsOpen(false);
+    };
+
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
+      window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
+      
       const rect = containerRef.current.getBoundingClientRect();
       
       const dropdownWidth = 256; // w-64
-      const dropdownHeight = 290; // estimated height
+      const dropdownHeight = 340; // safer height estimate to prevent bottom overflow
       
-      // Limitar posicionamiento horizontal en móvil
-      const leftCoord = rect.left + window.scrollX;
-      const minLeft = window.scrollX + 8;
-      const maxLeft = window.scrollX + window.innerWidth - dropdownWidth - 8;
-      const finalLeft = Math.max(minLeft, Math.min(leftCoord, maxLeft));
+      // Limitar posicionamiento horizontal en móvil (viewport-relative coords)
+      const minLeft = 8;
+      const maxLeft = window.innerWidth - dropdownWidth - 8;
+      const finalLeft = Math.max(minLeft, Math.min(rect.left, maxLeft));
 
-      // Limitar y ajustar verticalmente si choca abajo del viewport
-      const willOverflowBottom = rect.bottom + dropdownHeight > window.innerHeight;
-      const finalTop = willOverflowBottom
-        ? rect.top + window.scrollY - dropdownHeight - 4
-        : rect.bottom + window.scrollY;
+      // Limitar y ajustar verticalmente si choca abajo del viewport (viewport-relative coords)
+      let finalTop = rect.bottom;
+      if (rect.bottom + dropdownHeight > window.innerHeight) {
+        finalTop = rect.top - dropdownHeight - 4;
+      }
+      
+      // Asegurar que la posición vertical se mantiene estrictamente dentro de los límites del viewport
+      const maxTop = window.innerHeight - dropdownHeight - 8;
+      finalTop = Math.max(8, Math.min(finalTop, maxTop));
 
       setCoords({ 
         top: finalTop, 
@@ -496,7 +505,10 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
         width: rect.width 
       });
     }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll, { capture: true });
+    };
   }, [isOpen]);
 
   const ymd = (d) => {
@@ -559,7 +571,7 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
       {isOpen && createPortal(
         <div 
           ref={portalRef}
-          className={`absolute z-[999] w-64 mt-1 rounded-xl border shadow-2xl p-3 anim-fadeUp ${
+          className={`fixed z-[999] w-64 mt-1 rounded-xl border shadow-2xl p-3 anim-fadeUp ${
             darkMode ? "bg-[#1e1e28] border-zinc-700 shadow-black/50" : "bg-white border-gray-200 shadow-gray-200/50"
           }`}
           style={{ top: coords.top, left: coords.left }}

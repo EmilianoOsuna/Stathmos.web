@@ -69,6 +69,11 @@
 - [x] T027 [US3] Add a `trigger` render prop to `DatePicker` in `src/components/UIPrimitives.jsx` to support custom elements acting as the dropdown trigger.
 - [x] T028 [US3] Refactor the specific day filter button in `src/components/CitasModule.jsx` to render `<DatePicker>` inline using the custom button trigger, showing the selected date on the button label.
 - [x] T031 [US3] Refactor the filter buttons wrapper in `src/components/CitasModule.jsx` to prevent wrapping (`whitespace-nowrap`) and allow horizontal scrolling (`overflow-x-auto no-scrollbar`) on mobile devices.
+- [x] T034 [US3] Refactor the portal dropdown positioning in `DatePicker` (`src/components/UIPrimitives.jsx`) to use `fixed` positioning relative to the viewport (removing `window.scrollY`/`window.scrollX` offset) to prevent extending the body scrollable height and showing white background space.
+- [x] T035 [US3] Add a scroll listener in `DatePicker` (`src/components/UIPrimitives.jsx`) to close the datepicker dropdown when the page scrolls, preventing floating alignment issues.
+- [x] T038 [US3] Refactor the scroll listener in `DatePicker` (`src/components/UIPrimitives.jsx`) to use capture mode (`{ capture: true }`) to correctly intercept scrolling of the main scroll container.
+- [x] T039 [US3] Adjust estimated height and constrain vertical positioning of `DatePicker` in `src/components/UIPrimitives.jsx` to stay strictly within viewport boundaries to prevent expanding the scroll height.
+- [x] T040 [US3] Add theme-aware background color to `body` in `src/index.css` to prevent showing a white background during scroll.
 
 ---
 
@@ -85,6 +90,10 @@
 - [x] T030 Perform manual verification on mobile simulator for the new date selection filter.
 - [x] T032 Run ESLint code linters and verify project build (`npm run build`) with the horizontal filter buttons layout changes.
 - [x] T033 Perform manual verification on mobile viewport simulator for the horizontal scrolling filter buttons.
+- [x] T036 Run ESLint code linters and verify project build (`npm run build`) with the DatePicker viewport positioning changes.
+- [x] T037 Perform manual verification on mobile simulator for the DatePicker viewport behavior and scrolling.
+- [x] T041 Run ESLint and verify project build (`npm run build`) with the datepicker viewport constraints and body background changes.
+- [ ] T042 Perform manual verification on mobile viewport simulator for the new datepicker constraints, body background, and scroll behavior.
 
 ---
 
