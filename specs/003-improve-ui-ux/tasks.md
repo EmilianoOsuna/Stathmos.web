@@ -66,6 +66,8 @@
 - [x] T019 [US3] Refactor tables and summaries in `src/components/ReporteFinancieroModule.jsx` to adapt to mobile grids
 - [x] T023 [US3] Refactor the monthly calendar grid view in `src/components/CitasModule.jsx` to use compact day cells (`min-h-12 md:min-h-24`) on mobile viewports, hiding the verbose list of appointments inside cells (delegating to the day-click details modal) and replacing it with a simple dot indicator.
 - [x] T024 [US3] Add horizontal bounding checks to the `DatePicker` coordinate positioning in `src/components/UIPrimitives.jsx` to prevent the portal dropdown from overflowing the left or right edges on mobile screens.
+- [x] T027 [US3] Add a `trigger` render prop to `DatePicker` in `src/components/UIPrimitives.jsx` to support custom elements acting as the dropdown trigger.
+- [x] T028 [US3] Refactor the specific day filter button in `src/components/CitasModule.jsx` to render `<DatePicker>` inline using the custom button trigger, showing the selected date on the button label.
 
 ---
 
@@ -78,6 +80,8 @@
 - [x] T022 Execute manual validation checklist defined in `quickstart.md`
 - [x] T025 Run ESLint code linters and verify project build (`npm run build`) with the new calendar and datepicker changes
 - [x] T026 Perform manual verification on mobile simulator for the DatePicker positioning and compact monthly calendar views
+- [x] T029 Run ESLint code linters and verify project build (`npm run build`) with the new filter button trigger changes.
+- [x] T030 Perform manual verification on mobile simulator for the new date selection filter.
 
 ---
 

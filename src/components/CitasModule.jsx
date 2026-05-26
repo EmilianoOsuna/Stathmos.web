@@ -980,17 +980,25 @@ export default function CitasModule({
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setFilterMode("hoy")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "hoy" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Hoy</button>
               <button onClick={() => setFilterMode("7dias")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "7dias" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Siguientes 7 días</button>
-              <button onClick={() => setFilterMode("fecha")} className={`px-3 py-1.5 rounded text-xs border ${filterMode === "fecha" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}>Día específico</button>
-              {filterMode === "fecha" && (
-                <div className="ml-auto w-40">
-                  <DatePicker
-                    value={filterDate}
-                    onChange={handleFilterDateChange}
-                    darkMode={darkMode}
-                    isBlockedDate={(d) => inhabilSet.has(d)}
-                  />
-                </div>
-              )}
+              <DatePicker
+                value={filterDate}
+                onChange={handleFilterDateChange}
+                darkMode={darkMode}
+                isBlockedDate={(d) => inhabilSet.has(d)}
+                trigger={(open) => (
+                  <button
+                    onClick={() => {
+                      setFilterMode("fecha");
+                      open();
+                    }}
+                    className={`px-3 py-1.5 rounded text-xs border ${filterMode === "fecha" ? "bg-sky-600 text-white border-sky-600" : darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600"}`}
+                  >
+                    {filterMode === "fecha" && filterDate
+                      ? `Día: ${new Date(filterDate + "T12:00:00").toLocaleDateString("es-MX", { day: 'numeric', month: 'short' })}`
+                      : "Día específico"}
+                  </button>
+                )}
+              />
             </div>
           </div>
 

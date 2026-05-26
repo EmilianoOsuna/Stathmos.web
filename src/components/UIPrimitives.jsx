@@ -456,7 +456,7 @@ export const Textarea = ({ darkMode, ...props }) => (
 // Selector de fecha con calendario interactivo
 // Soporta: blocking dates (isBlockedDate), navegación mes anterior/siguiente, formato es-MX
 // Usa portal para desplegable fuera del flujo normal del documento
-export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkMode, placeholder = "Seleccionar fecha..." }) => {
+export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkMode, placeholder = "Seleccionar fecha...", trigger }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(value ? new Date(value + "T12:00:00") : new Date());
   const containerRef = useRef(null);
@@ -538,19 +538,23 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
 
   return (
     <div className="relative w-full" ref={containerRef}>
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center justify-between px-3 py-2.5 md:py-2 rounded border cursor-pointer transition-all text-sm ${
-          darkMode 
-            ? "bg-[#2a2a35] border-zinc-700 text-white hover:border-zinc-500" 
-            : "bg-gray-50 border-gray-200 text-gray-800 hover:border-gray-300"
-        } ${isOpen ? "border-blue-500 ring-2 ring-blue-500/20" : ""}`}
-      >
-        <span className={!value ? st : ""}>
-          {value ? new Date(value + "T12:00:00").toLocaleDateString("es-MX", { day: 'numeric', month: 'short', year: 'numeric' }) : placeholder}
-        </span>
-        <Icon name="calendar" className={`w-4 h-4 ${darkMode ? "text-zinc-500" : "text-gray-400"}`} />
-      </div>
+      {trigger ? (
+        trigger(() => setIsOpen(!isOpen))
+      ) : (
+        <div
+          onClick={() => setIsOpen(!isOpen)}
+          className={`flex items-center justify-between px-3 py-2.5 md:py-2 rounded border cursor-pointer transition-all text-sm ${
+            darkMode 
+              ? "bg-[#2a2a35] border-zinc-700 text-white hover:border-zinc-500" 
+              : "bg-gray-50 border-gray-200 text-gray-800 hover:border-gray-300"
+          } ${isOpen ? "border-blue-500 ring-2 ring-blue-500/20" : ""}`}
+        >
+          <span className={!value ? st : ""}>
+            {value ? new Date(value + "T12:00:00").toLocaleDateString("es-MX", { day: 'numeric', month: 'short', year: 'numeric' }) : placeholder}
+          </span>
+          <Icon name="calendar" className={`w-4 h-4 ${darkMode ? "text-zinc-500" : "text-gray-400"}`} />
+        </div>
+      )}
 
       {isOpen && createPortal(
         <div 
