@@ -824,7 +824,7 @@ export default function CitasModule({
 
                 <div className="grid grid-cols-7 gap-2">
                   {calendarDates.map((dateObj, idx) => {
-                    if (!dateObj) return <div key={`empty-${idx}`} className="min-h-24" />;
+                    if (!dateObj) return <div key={`empty-${idx}`} className="min-h-12 md:min-h-24" />;
                     const key = ymd(dateObj);
                     const count = citasPorDia.get(key) || 0;
                     const isToday = key === todayKey;
@@ -834,13 +834,18 @@ export default function CitasModule({
                       <div
                         key={key}
                         onClick={() => setSelectedDayDetails({ date: dateObj, citas: citasDelDia })}
-                        className={`min-h-24 rounded-lg border p-1.5 cursor-pointer transition-colors ${calendarDayBg(dateObj)} ${darkMode ? "hover:border-zinc-500" : "hover:border-gray-400"}`}
+                        className={`min-h-12 md:min-h-24 rounded-lg border p-1 md:p-1.5 cursor-pointer transition-colors ${calendarDayBg(dateObj)} ${darkMode ? "hover:border-zinc-500" : "hover:border-gray-400"}`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <p className={`text-xs font-semibold ${isToday ? "text-sky-500" : t}`}>{dateObj.getDate()}</p>
-                          {count > 0 && <span className="text-[10px] text-emerald-500 font-medium">{count}</span>}
+                          {count > 0 && <span className="text-[10px] text-emerald-500 font-medium hidden md:inline">{count}</span>}
                         </div>
-                        <div className="mt-1 space-y-1">
+                        {count > 0 && (
+                          <div className="flex justify-center mt-1 md:hidden">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          </div>
+                        )}
+                        <div className="mt-1 space-y-1 hidden md:block">
                           {visibleItems.map((cita) => (
                             <div
                               key={cita.id}

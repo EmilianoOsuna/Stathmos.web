@@ -12,6 +12,11 @@
 - Q: ¿Cómo prefieres estructurar y centralizar los tokens de diseño? → A: Variables de CSS Nativas (`index.css`).
 - Q: ¿Cuál es la estrategia de usabilidad móvil para las tablas densas de datos del sistema? → A: Tarjetas Responsivas (Cards).
 
+### Session 2026-05-26
+- Q: ¿Qué comportamiento visual y alineación debe tener el DatePicker al abrirse en pantallas móviles estrechas? → A: Popover flotante con límites de pantalla, ajustando dinámicamente la posición horizontal (`left`) para asegurar una visibilidad completa y mantener un margen mínimo de 8px de los bordes laterales del viewport.
+- Q: ¿Cómo se deben representar visualmente los días que tienen citas en el calendario mensual para móvil? → A: Punto indicador de color simple (dot indicator) debajo de la fecha para mantener la interfaz limpia.
+- Q: ¿Cómo debe comportarse el DatePicker ante desbordamiento vertical inferior? → A: Adaptativo con detección de colisión, posicionando el calendario desplegable arriba del input si excede el borde inferior de la pantalla.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Consistencia y Centralización Visual (Priority: P1)
@@ -65,6 +70,8 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 - **FR-004**: El sistema DEBE cargar y aplicar una familia tipográfica moderna uniforme, específicamente la tipografía Inter cargada vía Google Fonts.
 - **FR-005**: Los tokens de diseño (colores primarios, espaciados y sombras) DEBEN centralizarse mediante variables de CSS nativas en `index.css`.
 - **FR-006**: Las tablas de datos densas en pantallas móviles DEBEN optimizarse mediante la conversión a tarjetas responsivas independientes (cards).
+- **FR-007**: El componente `DatePicker` DEBE ajustar dinámicamente su posición horizontal (`left`) y vertical (`top`) ante colisiones con los bordes de la pantalla (izquierda, derecha e inferior), para mantenerse completamente visible y asegurar un margen mínimo de 8px respecto a los límites del viewport.
+- **FR-008**: El calendario mensual en pantallas móviles DEBE mostrar celdas de fecha compactas y limpias, reemplazando la lista detallada de citas por un punto indicador de color simple (dot indicator) en los días con citas programadas.
 
 ### Key Entities
 
@@ -78,6 +85,8 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 - **SC-001**: El 100% de las interfaces de los módulos en `src/components/` utilizan los componentes primitivos centralizados de `UIPrimitives.jsx`.
 - **SC-002**: Ninguna vista de la aplicación presenta desbordamiento horizontal (scroll en eje X) en resoluciones superiores a 320px de ancho.
 - **SC-003**: Las áreas de interacción táctil (botones, inputs, selectores) en dispositivos móviles cumplen con un tamaño mínimo de 44x44 píxeles para asegurar su usabilidad.
+- **SC-004**: El menú desplegable del `DatePicker` no se corta ni causa scroll horizontal en pantallas móviles (ancho >=320px).
+- **SC-005**: En la vista mensual del calendario en dispositivos móviles (pantallas < 768px), ninguna celda de fecha muestra texto de citas encimado u overflow, limitando su contenido al número de día y al punto indicador.
 
 ## Assumptions
 

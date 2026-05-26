@@ -474,9 +474,25 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       const rect = containerRef.current.getBoundingClientRect();
+      
+      const dropdownWidth = 256; // w-64
+      const dropdownHeight = 290; // estimated height
+      
+      // Limitar posicionamiento horizontal en móvil
+      const leftCoord = rect.left + window.scrollX;
+      const minLeft = window.scrollX + 8;
+      const maxLeft = window.scrollX + window.innerWidth - dropdownWidth - 8;
+      const finalLeft = Math.max(minLeft, Math.min(leftCoord, maxLeft));
+
+      // Limitar y ajustar verticalmente si choca abajo del viewport
+      const willOverflowBottom = rect.bottom + dropdownHeight > window.innerHeight;
+      const finalTop = willOverflowBottom
+        ? rect.top + window.scrollY - dropdownHeight - 4
+        : rect.bottom + window.scrollY;
+
       setCoords({ 
-        top: rect.bottom + window.scrollY, 
-        left: rect.left + window.scrollX, 
+        top: finalTop, 
+        left: finalLeft, 
         width: rect.width 
       });
     }
@@ -539,7 +555,7 @@ export const DatePicker = ({ value, onChange, isBlockedDate = () => false, darkM
       {isOpen && createPortal(
         <div 
           ref={portalRef}
-          className={`fixed z-[999] w-64 mt-1 rounded-xl border shadow-2xl p-3 anim-fadeUp ${
+          className={`absolute z-[999] w-64 mt-1 rounded-xl border shadow-2xl p-3 anim-fadeUp ${
             darkMode ? "bg-[#1e1e28] border-zinc-700 shadow-black/50" : "bg-white border-gray-200 shadow-gray-200/50"
           }`}
           style={{ top: coords.top, left: coords.left }}
