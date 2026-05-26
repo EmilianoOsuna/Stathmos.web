@@ -345,10 +345,6 @@ export default function CitasModule({
 
   const todayKey = todayWorkshopYmd();
 
-  const upcomingCitas = useMemo(() => {
-    const now = new Date();
-    return (citas || []).filter((c) => new Date(c.fecha_hora) >= now && c.estado !== "cancelada");
-  }, [citas]);
 
   const availableCitas = useMemo(() => {
     return (citas || [])
@@ -997,63 +993,115 @@ export default function CitasModule({
             {managedList.length === 0 ? (
               <p className={`text-sm ${st}`}>No hay citas para este filtro.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={darkMode ? "text-zinc-500" : "text-gray-500"}>
-                    <th className="text-left py-2">Fecha</th>
-                    <th className="text-left py-2">Cliente</th>
-                    <th className="text-left py-2">Vehículo</th>
-                    <th className="text-left py-2">Servicio</th>
-                    <th className="text-left py-2">Estado</th>
-                    <th className="text-right py-2">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                <table className="hidden md:table w-full text-sm">
+                  <thead>
+                    <tr className={darkMode ? "text-zinc-500" : "text-gray-500"}>
+                      <th className="text-left py-2">Fecha</th>
+                      <th className="text-left py-2">Cliente</th>
+                      <th className="text-left py-2">Vehículo</th>
+                      <th className="text-left py-2">Servicio</th>
+                      <th className="text-left py-2">Estado</th>
+                      <th className="text-right py-2">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {managedList.map((c) => (
+                      <tr key={c.id} className={darkMode ? "border-t border-zinc-800" : "border-t border-gray-200"}>
+                        <td className={`py-2 ${t}`}>{formatDateTimeWorkshop(c.fecha_hora)}</td>
+                        <td className={t}>{c.clientes?.nombre || "—"}</td>
+                        <td className={st}>{c.vehiculos ? `${c.vehiculos.marca} ${c.vehiculos.modelo} · ${c.vehiculos.placas}` : "—"}</td>
+                        <td className={t}>{c.motivo || "—"}</td>
+                        <td>
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs border ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
+                        </td>
+                        <td className="text-right">
+                          {c.estado === "pendiente" ? (
+                            <div className="inline-flex gap-2">
+                              {role === "administrador" ? (
+                                <button
+                                  disabled={saving}
+                                  onClick={() => handleResolver(c.id, "aceptar")}
+                                  className="px-2.5 py-1 rounded text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
+                                >
+                                  Validar cita
+                                </button>
+                              ) : (
+                                <button
+                                  disabled={saving}
+                                  onClick={() => handleResolver(c.id, "aceptar")}
+                                  className="px-2.5 py-1 rounded text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  Aceptar
+                                </button>
+                              )}
+                              <button
+                                  disabled={saving}
+                                  onClick={() => handleResolver(c.id, "rechazar")}
+                                  className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                Rechazar
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={st}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800">
                   {managedList.map((c) => (
-                    <tr key={c.id} className={darkMode ? "border-t border-zinc-800" : "border-t border-gray-200"}>
-                      <td className={`py-2 ${t}`}>{formatDateTimeWorkshop(c.fecha_hora)}</td>
-                      <td className={t}>{c.clientes?.nombre || "—"}</td>
-                      <td className={st}>{c.vehiculos ? `${c.vehiculos.marca} ${c.vehiculos.modelo} · ${c.vehiculos.placas}` : "—"}</td>
-                      <td className={t}>{c.motivo || "—"}</td>
-                      <td>
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs border ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
-                      </td>
-                      <td className="text-right">
-                        {c.estado === "pendiente" ? (
-                          <div className="inline-flex gap-2">
-                            {role === "administrador" ? (
-                              <button
-                                disabled={saving}
-                                onClick={() => handleResolver(c.id, "aceptar")}
-                                className="px-2.5 py-1 rounded text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
-                              >
-                                Validar cita
-                              </button>
-                            ) : (
-                              <button
-                                disabled={saving}
-                                onClick={() => handleResolver(c.id, "aceptar")}
-                                className="px-2.5 py-1 rounded text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                Aceptar
-                              </button>
-                            )}
+                    <div key={c.id} className="py-3.5 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className={`text-sm font-semibold ${t}`}>{formatDateTimeWorkshop(c.fecha_hora)}</p>
+                          <p className={`text-xs ${st}`}>{c.clientes?.nombre || "—"}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-xs border font-medium ${estadoBadge(c.estado, darkMode)}`}>{c.estado}</span>
+                      </div>
+                      <p className={`text-xs ${st}`}>
+                        <span className="font-medium text-[10px] uppercase tracking-wider block">Vehículo</span>
+                        {c.vehiculos ? `${c.vehiculos.marca} ${c.vehiculos.modelo} · ${c.vehiculos.placas}` : "—"}
+                      </p>
+                      <p className={`text-xs ${t}`}>
+                        <span className="font-medium text-[10px] uppercase tracking-wider block text-zinc-500">Servicio</span>
+                        {c.motivo || "—"}
+                      </p>
+                      {c.estado === "pendiente" && (
+                        <div className="mt-2 flex gap-2">
+                          {role === "administrador" ? (
                             <button
                               disabled={saving}
-                              onClick={() => handleResolver(c.id, "rechazar")}
-                              className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                              onClick={() => handleResolver(c.id, "aceptar")}
+                              className="px-3 py-2.5 rounded-lg text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 flex-1 text-center font-medium"
                             >
-                              Rechazar
+                              Validar cita
                             </button>
-                          </div>
-                        ) : (
-                          <span className={st}>—</span>
-                        )}
-                      </td>
-                    </tr>
+                          ) : (
+                            <button
+                              disabled={saving}
+                              onClick={() => handleResolver(c.id, "aceptar")}
+                              className="px-3 py-2.5 rounded-lg text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex-1 text-center font-medium"
+                            >
+                              Aceptar
+                            </button>
+                          )}
+                          <button
+                            disabled={saving}
+                            onClick={() => handleResolver(c.id, "rechazar")}
+                            className="px-3 py-2.5 rounded-lg text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 flex-1 text-center font-medium"
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
         </div>

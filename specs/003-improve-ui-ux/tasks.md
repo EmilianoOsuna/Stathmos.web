@@ -1,144 +1,53 @@
-# Tasks: Sistema de Dise帽o y Optimizaci贸n UI/UX
+# Tasks: Sistema de Dise駉 y Optimizaci髇 UI/UX
 
-**Input**: Design documents from `/specs/003-improve-ui-ux/`
-**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, quickstart.md
+## Execution Rule
+Tasks MUST be executed sequentially in the order listed. A task is considered complete when its checkbox is checked.
+Do not proceed to the next phase until all tasks in the current phase are complete.
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+## Dependencies
+- Phase 1 (Setup) -> Phase 2, 3, 4
+- Phase 2 (Centralizaci髇 Visual) -> Phase 3
+- Phase 3 (Armonizaci髇 Vistas) -> Phase 4
+- Phase 4 (Mobile Tablas) -> Phase 5
+- Phase 5 (Mobile Calendario)
 
-## Format: `[ID] [P?] [Story] Description`
+## Phase 1: Setup
+- [ ] T001 Evaluar e incorporar la tipograf韆 Inter (Google Fonts) en index.html e index.css.
 
-- **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
-- Include exact file paths in descriptions
+## Phase 2: User Story 1 - Consistencia y Centralizaci髇 Visual (P1)
+**Goal:** Definir los design tokens en index.css y crear los componentes UI base reutilizables.
+**Test:** Cambiar el modo oscuro o una variable en index.css debe afectar todos los primitivos globalmente.
 
----
+- [ ] T002 [US1] Definir tokens globales (Colors, Spacings, Borders, Shadows) mediante @theme de Tailwind V4 en src/index.css.
+- [ ] T003 [US1] Refactorizar componente Button en src/components/UIPrimitives.jsx para usar las variables CSS y variants definidas, con touch target min h-11.
+- [ ] T004 [US1] Mover estilos del header a un componente reutilizable ModuleHeader en src/components/UIPrimitives.jsx.
+- [ ] T005 [US1] Crear el componente contenedor Card en src/components/UIPrimitives.jsx con los tokens de radio de borde, padding y superficie.
 
-## Phase 1: Setup (Shared Infrastructure)
+## Phase 3: User Story 2 - Armonizaci髇 de Interfaces y Vistas de M骴ulos (P2)
+**Goal:** Implementar los primitivos base en todos los m骴ulos de administraci髇 existentes.
+**Test:** Navegaci髇 secuencial por m骴ulos debe mostrar alineaci髇 y estilos 100% id閚ticos.
 
-**Purpose**: Project initialization and base assets loading
+- [ ] T006 [P] [US2] Reemplazar headers y botones en src/components/HistorialServiciosAdmin.jsx utilizando UIPrimitives.jsx.
+- [ ] T007 [P] [US2] Reemplazar headers y botones en src/components/CentroReportes.jsx utilizando UIPrimitives.jsx.
+- [ ] T008 [P] [US2] Reemplazar headers y botones en src/components/MecanicoDiagnosticosModule.jsx utilizando UIPrimitives.jsx.
+- [ ] T009 [P] [US2] Reemplazar headers y botones en m骴ulos de Inventario (src/components/GestionInventario.jsx, CompraRefacciones.jsx, etc.) utilizando UIPrimitives.jsx.
+- [ ] T010 [US2] Aplicar el componente contenedor Card a las vistas principales de la aplicaci髇 para estandarizar m醨genes y fondos.
 
-- [ ] T001 Connect Google Fonts link tags for the Inter font in `index.html`
-- [ ] T002 Configure the `@theme` directive, `--font-sans`, and color tokens in `src/index.css`
+## Phase 4: User Story 3 (Parte 1) - Adaptabilidad Mobile Tablas (P3)
+**Goal:** Transformar todas las tablas nativas de datos en layouts de tarjetas responsive (Cards) para pantallas <768px.
+**Test:** Pantallas menores a 768px no deben tener scroll horizontal en m骴ulos con tablas.
 
----
+- [ ] T011 [US3] Construir abstracci髇 o clases CSS para MobileResponsiveTable (pasar a Card Layout responsivo) en los datos renderizados (pueden ser funciones/helper classes integradas directamente a las vistas).
+- [ ] T012 [P] [US3] Refactorizar tablas en src/components/HistorialServiciosAdmin.jsx a layout responsivo m髒il.
+- [ ] T013 [P] [US3] Refactorizar tablas en src/components/MecanicoDiagnosticosModule.jsx a layout responsivo m髒il.
+- [ ] T014 [P] [US3] Refactorizar tablas en los m骴ulos de reportabilidad e inventario a layouts responsivos m髒iles.
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 5: User Story 3 (Parte 2) - Usabilidad Mobile Calendario (P3)
+**Goal:** Adaptar el calendario de citas para visualizaci髇 髉tima mobile.
+**Test:** Calendario de citas renderizado en celular muestra botones interactivos (44x44) y no desborda la pantalla.
 
-**Purpose**: Bind local design assets to native CSS variables and ensure primitives support tactile size rules
+- [ ] T015 [US3] Refactorizar secci髇 del calendario mensual utilizando iteraciones CSS Grid compactas para <768px en src/components/CitasModule.jsx.
+- [ ] T016 [US3] Ajustar botones y touch targets del calendario en src/components/CitasModule.jsx para garantizar altura m韓ima de 44px (h-11).
 
-**鈿狅笍 CRITICAL**: No user story work can begin until this phase is complete
-
-- [ ] T003 Bind local colors `C_BLUE` and `C_RED` to `var(--color-primary)` and `var(--color-accent)` in `src/components/UIPrimitives.jsx`
-- [ ] T004 Refactor `Button`, `Input`, `Select`, `Card`, `Modal`, `DatePicker`, `Badge`, and `ModuleHeader` in `src/components/UIPrimitives.jsx` to consume native CSS variables and guarantee tactile padding/sizes >=44px on mobile viewports
-
-**Checkpoint**: Foundation ready - user story implementation can now begin
-
----
-
-## Phase 3: User Story 1 - Consistencia y Centralizaci贸n Visual (Priority: P1) 馃幆 MVP
-
-**Goal**: Apply typography and primitive styling guidelines to main app views
-
-**Independent Test**: Switch light/dark mode and confirm that login and basic text areas update style dynamically according to the custom variables.
-
-### Implementation for User Story 1
-
-- [ ] T005 [P] [US1] Apply font-sans configuration to the main body container in `src/index.css`
-- [ ] T006 [US1] Refactor `src/Login.jsx` to use `Card`, `Input`, and `Button` primitives from UIPrimitives
-- [ ] T007 [US1] Refactor `src/CompletarRegistro.jsx` to use standard primitive input/button components
-- [ ] T008 [US1] Refactor `src/CambiarContrasena.jsx` to use standard primitive input/button components
-
-**Checkpoint**: User Story 1 complete. Core views are styled with the centralized tokens.
-
----
-
-## Phase 4: User Story 2 - Armonizaci贸n de Interfaces y Vistas de M贸dulos (Priority: P2)
-
-**Goal**: Align headers, alignments, margins, and actions across all dashboard modules
-
-**Independent Test**: Verify margins and positioning of `ModuleHeader` and search bars when navigating between client, employee, vehicle, and inventory screens.
-
-### Implementation for User Story 2
-
-- [ ] T009 [US2] Update inline `ClientesModule` in `src/App.jsx` to leverage standard primitive buttons and inputs
-- [ ] T010 [US2] Update inline `EmpleadosModule` in `src/App.jsx` to leverage standard primitive buttons and inputs
-- [ ] T011 [US2] Update inline `VehiculosModule` (inside `src/App.jsx`) to leverage standard primitive buttons and inputs
-- [ ] T012 [US2] Refactor `src/components/MecanicoDiagnosticosModule.jsx` to use standard header actions and primitives
-- [ ] T013 [US2] Refactor `src/components/RefaccionesModule.jsx` to use standard header actions and primitives
-- [ ] T014 [US2] Refactor `src/components/ProveedoresModule.jsx` to use standard header actions and primitives
-
-**Checkpoint**: User Story 2 complete. Dashboard modules share uniform UI structures.
-
----
-
-## Phase 5: User Story 3 - Adaptabilidad y Usabilidad M贸vil Completa (Priority: P3)
-
-**Goal**: Collapse dense layout tables into card lists for screens under 768px wide
-
-**Independent Test**: Inspect app at 360px viewport width and verify that no horizontal overflow exists on any module.
-
-### Implementation for User Story 3
-
-- [ ] T015 [US3] Refactor the appointments table in `src/components/CitasModule.jsx` to render as responsive cards on mobile viewports (`hidden md:table` / `md:hidden`)
-- [ ] T016 [US3] Refactor the tables in `src/components/HistorialServiciosAdmin.jsx` (services, diagnostics, and quotes) to collapse into responsive card grids on mobile viewports
-- [ ] T017 [US3] Refactor the historical parts table in `src/components/HistorialRefacciones.jsx` to collapse into responsive cards on mobile viewports
-- [ ] T018 [US3] Refactor report lists and tables in `src/components/ReportesOperativosModule.jsx` to collapse into responsive cards on mobile viewports
-- [ ] T019 [US3] Refactor tables and summaries in `src/components/ReporteFinancieroModule.jsx` to adapt to mobile grids
-
-**Checkpoint**: User Story 3 complete. Mobile layouts are fully responsive and touch-friendly.
-
----
-
-## Phase 6: Polish & Cross-Cutting Concerns
-
-**Purpose**: Cleanup, build verification, and final validation
-
-- [ ] T020 Run code linters and remove unused inline styling overrides
-- [ ] T021 Run `npm run build` to verify Vite bundle compilation
-- [ ] T022 Execute manual validation checklist defined in `quickstart.md`
-
----
-
-## Dependencies & Execution Order
-
-### Phase Dependencies
-
-- **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3+)**: All depend on Foundational phase completion
-- **Polish (Final Phase)**: Depends on all user stories being complete
-
-### Parallel Opportunities
-
-- T001 and T002 can be done in parallel
-- T003 and T004 can be worked in parallel within UIPrimitives
-- Once Foundation (Phase 2) is complete, User Story 1 (Phase 3) and User Story 2 (Phase 4) can be worked in parallel if needed (affecting different files/modules)
-- Mobile refactoring tasks (T015 - T019) can run in parallel since they target distinct component files
-
----
-
-## Parallel Example: User Story 3
-
-```bash
-# Refactor CitasModule and HistorialRefacciones tables independently:
-Task: "Refactor appointments table in src/components/CitasModule.jsx"
-Task: "Refactor parts table in src/components/HistorialRefacciones.jsx"
-```
-
----
-
-## Implementation Strategy
-
-### MVP First (User Story 1 & 2)
-
-1. Complete Setup (Phase 1)
-2. Complete Foundational (Phase 2)
-3. Complete User Story 1 & 2 (Phases 3 and 4)
-4. Validate primitive compliance and visual harmony on desktop viewports.
-
-### Incremental Delivery
-
-1. Setup + Foundation -> Central styles ready
-2. Add User Story 1 -> Core app styled
-3. Add User Story 2 -> Dashboard aligned
-4. Add User Story 3 -> Mobile responsive viewports enabled
+## Phase 6: Polish
+- [ ] T017 Validaci髇 manual unificada: Navegar en Chrome DevTools usando simulaci髇 Mobile (iPhone SE/Pro) por todos los m骴ulos verificando SC-002 y SC-003. Limpieza final de c骴igo obsoleto.

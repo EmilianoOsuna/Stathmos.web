@@ -367,7 +367,7 @@ export default function ReporteFinancieroModule({ darkMode }) {
             </div>
           </div>
 
-          <div className="h-64 flex items-end gap-12 px-8 pb-8 border-b border-zinc-800/50">
+          <div className="h-64 flex items-end gap-4 sm:gap-12 px-4 sm:px-8 pb-8 border-b border-zinc-800/50">
             <div className="flex-1 flex flex-col items-center gap-3 h-full justify-end">
               <div className="w-full bg-emerald-500/20 rounded-t-lg relative transition-all hover:bg-emerald-500/30 group border-t-2 border-emerald-500" style={{ height: `${(stats.totalIngresos / stats.maxValue) * 100}%` }}>
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-bold text-emerald-500 whitespace-nowrap bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -133,44 +133,78 @@ export default function HistorialRefacciones({
             {movimientos.length === 0 ? "No hay movimientos registrados." : "Ningún movimiento coincide con los filtros."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px] text-left">
-              <thead>
-                <tr className={`border-b ${divider} bg-zinc-900/10`}>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Fecha</th>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Operación</th>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Refacción</th>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Cant.</th>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Relacionado con</th>
-                  <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Total</th>
-                </tr>
-              </thead>
-              <tbody className={darkMode ? "divide-y divide-zinc-800" : "divide-y divide-gray-100"}>
-                {filtrados.map((m) => (
-                  <tr key={m.id} className={`${darkMode ? "hover:bg-zinc-800/20" : "hover:bg-gray-50/50"} transition-colors`}>
-                    <td className={`px-4 py-3 whitespace-nowrap ${st}`}>{formatDateTimeWorkshop(m.created_at)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${m.colorBadge}`}>
-                        {m.label}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-3 font-medium ${t}`}>{m.refacciones?.nombre || "—"}</td>
-                    <td className={`px-4 py-3 ${t}`}>{m.cantidad}</td>
-                    <td className={`px-4 py-3 ${st}`}>
+          <>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className={`border-b ${divider} bg-zinc-900/10`}>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Fecha</th>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Operación</th>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Refacción</th>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Cant.</th>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Relacionado con</th>
+                    <th className={`px-4 py-3 font-semibold uppercase tracking-wider ${st}`}>Total</th>
+                  </tr>
+                </thead>
+                <tbody className={darkMode ? "divide-y divide-zinc-800" : "divide-y divide-gray-100"}>
+                  {filtrados.map((m) => (
+                    <tr key={m.id} className={`${darkMode ? "hover:bg-zinc-800/20" : "hover:bg-gray-50/50"} transition-colors`}>
+                      <td className={`px-4 py-3 whitespace-nowrap ${st}`}>{formatDateTimeWorkshop(m.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${m.colorBadge}`}>
+                          {m.label}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 font-medium ${t}`}>{m.refacciones?.nombre || "—"}</td>
+                      <td className={`px-4 py-3 ${t}`}>{m.cantidad}</td>
+                      <td className={`px-4 py-3 ${st}`}>
+                        {m.proyectos?.titulo ? (
+                          <span className="flex items-center gap-1"> {m.proyectos.titulo}</span>
+                        ) : m.proveedores?.nombre ? (
+                          <span className="flex items-center gap-1"> {m.proveedores.nombre}</span>
+                        ) : (
+                          <span className="italic opacity-60">Venta de Mostrador</span>
+                        )}
+                      </td>
+                      <td className={`px-4 py-3 font-bold ${t}`}>${(Number(m.precio_unit) * m.cantidad).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 px-4">
+              {filtrados.map((m) => (
+                <div key={m.id} className="py-3.5 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className={`text-xs ${st}`}>{formatDateTimeWorkshop(m.created_at)}</p>
+                      <p className={`text-sm font-semibold ${t}`}>{m.refacciones?.nombre || "—"}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${m.colorBadge}`}>
+                      {m.label}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <p className={st}>
+                      <span className="font-medium text-[9px] uppercase tracking-wider block">Relacionado con</span>
                       {m.proyectos?.titulo ? (
-                        <span className="flex items-center gap-1"> {m.proyectos.titulo}</span>
+                        m.proyectos.titulo
                       ) : m.proveedores?.nombre ? (
-                        <span className="flex items-center gap-1"> {m.proveedores.nombre}</span>
+                        m.proveedores.nombre
                       ) : (
                         <span className="italic opacity-60">Venta de Mostrador</span>
                       )}
-                    </td>
-                    <td className={`px-4 py-3 font-bold ${t}`}>${(Number(m.precio_unit) * m.cantidad).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </p>
+                    <p className={`text-right ${t}`}>
+                      <span className="font-medium text-[9px] uppercase tracking-wider block text-zinc-500">Cantidad & Total</span>
+                      {m.cantidad} uds · <span className="font-bold">${(Number(m.precio_unit) * m.cantidad).toFixed(2)}</span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -11,7 +11,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
-import { Input, Button } from "./components/UIPrimitives";
+import { Card, Input, Button } from "./components/UIPrimitives";
 
 // ─── Logo (SVG incrustado — sin imports externos) ─────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -82,13 +82,7 @@ export default function Login() {
 
   // ─── Estilos dinámicos según dark mode ─────────────────────────────────
   const bg    = darkMode ? "bg-[#0f0f12]" : "bg-gradient-to-br from-gray-50 to-gray-100";
-  const card  = darkMode ? "bg-[#1e1e27] border-zinc-800" : "bg-white border-gray-200";
   const label = darkMode ? "text-zinc-500"  : "text-gray-400";
-  const input = darkMode
-    ? "border-zinc-700 text-zinc-200 placeholder-zinc-600 focus:border-[#60aebb]"
-    : "border-gray-300 text-gray-800 placeholder-gray-400 focus:border-[#60aebb]";
-  const dividerLine = darkMode ? "bg-zinc-700" : "bg-gray-200";
-  const dividerText = darkMode ? "text-zinc-600" : "text-gray-400";
   const footer      = darkMode ? "text-zinc-600" : "text-gray-400";
 
   return (
@@ -104,9 +98,9 @@ export default function Login() {
         .login-card { animation: cardIn 0.45s cubic-bezier(0.22,1,0.36,1) both; }
       `}</style>
 
-      <div
-        className={`login-card w-full max-w-sm mx-4 rounded-xl border ${card} p-8 flex flex-col items-center gap-6`}
-        style={{ boxShadow: darkMode ? "0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset" : "0 4px 24px rgba(0,0,0,0.10)" }}
+      <Card
+        darkMode={darkMode}
+        className="login-card w-full max-w-sm mx-4 p-8 flex flex-col items-center gap-6"
       >
         {/* Logo */}
         <div className="flex flex-col items-center gap-1">
@@ -168,8 +162,8 @@ export default function Login() {
 
           <Button
             onClick={handleLogin} disabled={loading}
-            variant="destructive"
-            className="w-full mt-1 py-2.5 shadow-[0_2px_10px_rgba(219,60,28,0.25)]"
+            variant="accent"
+            className="w-full mt-1"
           >
             {loading ? "Verificando..." : "Ingresar"}
           </Button>
@@ -203,7 +197,7 @@ export default function Login() {
         </div> */}
 
         <p className={`text-xs -mt-1 ${footer}`}>Taller Mecánico Don Elías © 2026</p>
-      </div>
+      </Card>
     </div>
   );
 }

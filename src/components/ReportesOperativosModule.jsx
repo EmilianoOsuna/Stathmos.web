@@ -7,7 +7,7 @@
 // - Rotación de refacciones (más vendidas)
 // - Flujo de citas y cuellos de botella
 // - Exportación a PDF y CSV
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
 import { Calendar, Download, BarChart3, AlertTriangle, Wrench, Activity, FileText } from "lucide-react";
@@ -43,7 +43,7 @@ const daysSince = (from) => {
 };
 
 export default function ReportesOperativosModule({ darkMode = false }) {
-  const reportRef = useRef(null);
+
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
   const [loading, setLoading] = useState(false);
@@ -615,7 +615,7 @@ export default function ReportesOperativosModule({ darkMode = false }) {
     }
   };
 
-  const bgInput = darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900";
+
   const bgCard = darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200";
   const bgTabs = darkMode ? "bg-zinc-800 border-zinc-700" : "bg-gray-100 border-gray-200";
   const textPrimary = darkMode ? "text-zinc-100" : "text-gray-800";
@@ -790,36 +790,56 @@ function ProductividadPanel({ darkMode, cargaMecanicos, resumenGeneral }) {
       </p>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className={`border-b ${bgBorder}`}>
-              <th className={`text-left py-3 px-4 font-semibold ${textSecondary}`}>Mecanico</th>
-              <th className={`text-right py-3 px-4 font-semibold ${textSecondary}`}>Proyectos activos</th>
-              <th className={`text-right py-3 px-4 font-semibold ${textSecondary}`}>Participacion</th>
+      <table className="hidden md:table w-full text-sm">
+        <thead>
+          <tr className={`border-b ${bgBorder}`}>
+            <th className={`text-left py-3 px-4 font-semibold ${textSecondary}`}>Mecanico</th>
+            <th className={`text-right py-3 px-4 font-semibold ${textSecondary}`}>Proyectos activos</th>
+            <th className={`text-right py-3 px-4 font-semibold ${textSecondary}`}>Participacion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cargaMecanicos.length === 0 ? (
+            <tr>
+              <td className={`py-4 px-4 ${textSecondary}`} colSpan={3}>
+                Sin carga activa registrada.
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {cargaMecanicos.length === 0 ? (
-              <tr>
-                <td className={`py-4 px-4 ${textSecondary}`} colSpan={3}>
-                  Sin carga activa registrada.
-                </td>
-              </tr>
-            ) : (
-              cargaMecanicos.map((row, i) => {
-                const total = Number(resumenGeneral?.cargaActivaTotal || 0);
-                const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
-                return (
-                  <tr key={row.mecanico + i} className={`border-b ${bgBorder} ${i % 2 === 0 ? bgEven : ""}`}>
-                    <td className={`py-3 px-4 ${textPrimary}`}>{row.mecanico}</td>
-                    <td className={`py-3 px-4 text-right font-semibold ${textPrimary}`}>{row.activos}</td>
-                    <td className={`py-3 px-4 text-right ${textSecondary}`}>{ratio}%</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+          ) : (
+            cargaMecanicos.map((row, i) => {
+              const total = Number(resumenGeneral?.cargaActivaTotal || 0);
+              const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
+              return (
+                <tr key={row.mecanico + i} className={`border-b ${bgBorder} ${i % 2 === 0 ? bgEven : ""}`}>
+                  <td className={`py-3 px-4 ${textPrimary}`}>{row.mecanico}</td>
+                  <td className={`py-3 px-4 text-right font-semibold ${textPrimary}`}>{row.activos}</td>
+                  <td className={`py-3 px-4 text-right ${textSecondary}`}>{ratio}%</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+
+      {cargaMecanicos.length > 0 && (
+        <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 space-y-2">
+          {cargaMecanicos.map((row, i) => {
+            const total = Number(resumenGeneral?.cargaActivaTotal || 0);
+            const ratio = total > 0 ? ((row.activos / total) * 100).toFixed(1) : "0.0";
+            return (
+              <div key={row.mecanico + i} className="py-2.5 flex justify-between items-center text-xs">
+                <div>
+                  <p className={`font-semibold ${textPrimary}`}>{row.mecanico}</p>
+                  <p className={textSecondary}>Participación: {ratio}%</p>
+                </div>
+                <div className={`px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 font-bold ${textPrimary}`}>
+                  {row.activos} activos
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       </div>
     </div>
   );
@@ -837,7 +857,7 @@ function InventarioPanel({ darkMode, alertasStock, rotacionRefacciones }) {
         <h3 className={`text-lg font-bold ${textPrimary}`}>Alertas de Stock Critico</h3>
         <p className={`text-sm ${textSecondary} mt-1`}>Refacciones por debajo del stock minimo configurado.</p>
         <div className="overflow-x-auto mt-3">
-          <table className="w-full text-sm">
+          <table className="hidden md:table w-full text-sm">
             <thead>
               <tr className={`border-b ${bgBorder}`}>
                 <th className={`text-left py-3 px-4 font-semibold ${textSecondary}`}>Refaccion</th>
@@ -865,6 +885,23 @@ function InventarioPanel({ darkMode, alertasStock, rotacionRefacciones }) {
               )}
             </tbody>
           </table>
+
+          {alertasStock.length > 0 && (
+            <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 space-y-2">
+              {alertasStock.map((row) => (
+                <div key={row.id} className="py-2.5 flex flex-col gap-1 text-xs">
+                  <div className="flex justify-between items-start">
+                    <p className={`font-semibold ${textPrimary}`}>{row.nombre}</p>
+                    <p className="text-red-500 font-bold">Stock: {row.stock}</p>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-zinc-500">
+                    <p>Número de parte: {row.numero_parte || "-"}</p>
+                    <p>Mínimo requerido: {row.stock_minimo}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -874,7 +911,7 @@ function InventarioPanel({ darkMode, alertasStock, rotacionRefacciones }) {
           Refacciones con mayor uso en compras_refacciones vinculadas a proyectos.
         </p>
         <div className="overflow-x-auto mt-3">
-          <table className="w-full text-sm">
+          <table className="hidden md:table w-full text-sm">
             <thead>
               <tr className={`border-b ${bgBorder}`}>
                 <th className={`text-left py-3 px-4 font-semibold ${textSecondary}`}>Refaccion</th>
@@ -902,6 +939,23 @@ function InventarioPanel({ darkMode, alertasStock, rotacionRefacciones }) {
               )}
             </tbody>
           </table>
+
+          {rotacionRefacciones.length > 0 && (
+            <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 space-y-2">
+              {rotacionRefacciones.map((row, i) => (
+                <div key={row.nombre + i} className="py-2.5 flex flex-col gap-1 text-xs">
+                  <div className="flex justify-between items-start">
+                    <p className={`font-semibold ${textPrimary}`}>{row.nombre}</p>
+                    <p className={`font-bold ${textPrimary}`}>{row.usos} uds</p>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-zinc-500">
+                    <p>Número de parte: {row.numero_parte}</p>
+                    <p>Movimientos: {row.movimientos}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

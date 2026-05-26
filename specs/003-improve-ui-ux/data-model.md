@@ -1,81 +1,21 @@
-# Design System Data Model and Primitives: Sistema de Dise帽o y Optimizaci贸n UI/UX
+# Data Model: UI/UX Refactor
 
-Este documento describe la estructura y los contratos de los tokens de dise帽o y los componentes primitivos que garantizan la consistencia visual y la adaptabilidad responsiva del sistema.
+*(Note: Esta etapa concierne 鷑icamente a la capa de vista y componentes de interfaz; el Data Model en base de datos permanece intacto. A continuaci髇 se describe la estructura del Sistema de Dise駉 (Design Tokens).)*
 
-## 1. Design Tokens (CSS Variables)
+## Design Tokens (index.css)
 
-Los tokens de dise帽o se definen de forma centralizada en `src/index.css` mediante la directiva `@theme` de Tailwind CSS v4, lo que genera autom谩ticamente variables CSS nativas disponibles en toda la aplicaci贸n.
+Se establecen grupos fundamentales de tokens:
 
-### Colores Base e Identidad
-* `--color-primary`: `#60aebb` (C_BLUE) - Usado para elementos interactivos principales, links y fondos activos.
-* `--color-accent`: `#db3c1c` (C_RED) - Usado para alertas, botones peligrosos y estados de error.
-* `--color-success`: `#10b981` - Usado para estados positivos e indicaciones de finalizaci贸n.
-* `--color-warning`: `#f59e0b` - Usado para estados de advertencia o pendientes de aprobaci贸n.
+- **Colors**:
+  - --color-primary, --color-primary-dark, --color-accent
+  - --color-bg-base, --color-bg-surface (Tema claro y oscuro)
+  - --color-text-base, --color-text-muted
+- **Spacings**: Variables o escala est醤dar de Tailwind.
+- **Borders & Shadows**: Radios est醤dar (--radius-md, --radius-lg) y elevaci髇 para Cards (sombras ligeras con bordes sutiles).
 
-### Tipograf铆a y Espaciados
-* `--font-sans`: `'Inter', sans-serif` - Tipograf铆a uniforme para todo el sistema cargada v铆a Google Fonts.
-* `--radius-lg`: `0.5rem` (8px) - Radio de bordes est谩ndar para inputs, botones y badges.
-* `--radius-xl`: `0.75rem` (12px) - Radio de bordes para tarjetas y modales.
+## Component Contract: UIPrimitives.jsx
 
----
-
-## 2. Componentes Primitivos (UIPrimitives)
-
-Definidos en `src/components/UIPrimitives.jsx`. Son los bloques de construcci贸n obligatorios para todas las vistas.
-
-### `Button`
-Bot贸n estandarizado con soporte para variantes consistentes.
-* **Props**:
-  * `variant`: `'primary' | 'accent' | 'ghost' | 'outline'` (Default: `'primary'`)
-  * `darkMode`: `boolean`
-  * `disabled`: `boolean`
-  * `className`: `string`
-* **Estilos**:
-  * Altura m铆nima garantizada de interacci贸n t谩ctil en m贸vil (min-h-[44px] o padding px-4 py-2.5).
-
-### `Input` y `Textarea`
-Campos de texto con estilos consistentes en temas claro/oscuro.
-* **Props**:
-  * `darkMode`: `boolean`
-  * `icon`: `string` (nombre de icono SVG opcional)
-  * `className`: `string`
-* **Estilos**:
-  * Bordes y focos din谩micos en base a `--color-primary`.
-
-### `Select`
-Selector personalizado desplegado v铆a portal React para evitar desbordamientos y recortes de flujo.
-* **Props**:
-  * `options`: `Array<{ value: any, label: string }>`
-  * `value`: `any`
-  * `onChange`: `(e: { target: { value: any } }) => void`
-  * `darkMode`: `boolean`
-
-### `DatePicker`
-Selector de fecha interactivo con restricciones del taller (excluye domingos e inh谩biles).
-* **Props**:
-  * `value`: `string` (formato YYYY-MM-DD)
-  * `onChange`: `(value: string) => void`
-  * `isBlockedDate`: `(dateString: string) => boolean`
-  * `darkMode`: `boolean`
-
-### `Card`
-Contenedor base con bordes, color de fondo din谩mico por tema y sombreado premium.
-* **Props**:
-  * `darkMode`: `boolean`
-  * `className`: `string`
-
-### `ModuleHeader`
-Encabezado est谩ndar de cada m贸dulo de trabajo.
-* **Props**:
-  * `title`: `string`
-  * `count`: `number` (opcional)
-  * `countLabel`: `string` (opcional)
-  * `action`: `React.ReactNode` (ej. bot贸n de acci贸n "+ Nuevo")
-  * `darkMode`: `boolean`
-
----
-
-## 3. Reglas de Validaci贸n de Interacci贸n (Touch Target size)
-
-* **Botones e Inputs**: El tama帽o m铆nimo en m贸vil debe ser de **44px** de alto.
-  * *Implementaci贸n*: Asegurar que las clases base en `UIPrimitives.jsx` tengan los paddings correctos (`py-2.5` en m贸vil, `md:py-2` en pantallas m谩s grandes) o alturas m铆nimas espec铆ficas (`h-[44px]`).
+- Button: ariant ('primary' | 'secondary' | 'outline' | 'ghost'), size ('sm' | 'md' | 'lg'), onClick, children, className. Asegura un height de al menos h-11 (44px) en touch targets m髒iles.
+- Card: Contenedor base de contenido con padding estandarizado, border-radius global y background surface (color-bg-surface).
+- ModuleHeader: Estandariza los t韙ulos principales y filtros/botones de acci髇 de una pantalla (ej. HistorialTickets, MecanicoDiagnosticosModule).
+- MobileResponsiveTable: Componente o l骻ica de iteraci髇. Recibe data y columns. Renderiza <table> en escritorio y bloque flex/grid tipo <Card> en mobile (menor a md brekapoint).

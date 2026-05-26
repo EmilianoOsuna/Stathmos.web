@@ -565,9 +565,9 @@ const ConfirmModal = ({ open, onClose, title, message, onConfirm, confirmLabel, 
   <Modal open={open} onClose={onClose} title={title} darkMode={darkMode}>
     <p className={`text-sm mb-5 ${darkMode ? "text-zinc-400" : "text-gray-500"}`} dangerouslySetInnerHTML={{ __html: message }} />
     <div className="flex gap-3">
-      <button onClick={onClose}
-        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${darkMode ? "border-zinc-700 text-zinc-400 hover:text-zinc-200" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}
-      >Cancelar</button>
+      <Button variant="ghost" onClick={onClose} darkMode={darkMode} className="flex-1">
+        Cancelar
+      </Button>
       <BtnAccent onClick={onConfirm} color={confirmColor} className="flex-1 justify-center">{confirmLabel}</BtnAccent>
     </div>
   </Modal>
@@ -812,7 +812,7 @@ const ClientesModule = ({ darkMode, session }) => {
           </Field>
           {formError && <p className="text-xs" style={{ color: C_RED }}>{formError}</p>}
           <div className="flex gap-3 mt-1">
-            <button onClick={() => setModalOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)} darkMode={darkMode} className="flex-1">Cancelar</Button>
             <BtnAccent onClick={handleSave} disabled={saving} color={C_BLUE} className="flex-1 justify-center">{saving ? "Guardando…" : editTarget ? "Actualizar" : "Crear"}</BtnAccent>
           </div>
         </div>
@@ -1187,7 +1187,7 @@ const fetchAll = useCallback(async () => {
           {formError && <p className="text-xs" style={{ color: C_RED }}>{formError}</p>}
 
           <div className="flex gap-3 mt-1">
-            <button onClick={() => setModalOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)} darkMode={darkMode} className="flex-1">Cancelar</Button>
             <BtnAccent onClick={handleSave} disabled={saving} color={C_BLUE} className="flex-1 justify-center">{saving ? "Guardando…" : editTarget ? "Actualizar" : "Crear"}</BtnAccent>
           </div>
         </div>
@@ -1422,7 +1422,7 @@ const VehiculosModule = ({ darkMode }) => {
           </Field>
           {formError && <p className="text-xs" style={{ color: C_RED }}>{formError}</p>}
           <div className="flex gap-3 mt-1">
-            <button onClick={() => setModalOpen(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${darkMode ? "border-zinc-700 text-zinc-400" : "border-gray-200 text-gray-500"}`}>Cancelar</button>
+            <Button variant="ghost" onClick={() => setModalOpen(false)} darkMode={darkMode} className="flex-1">Cancelar</Button>
             <BtnAccent onClick={handleSave} disabled={saving} color={C_BLUE} className="flex-1 justify-center">{saving ? "Guardando…" : editTarget ? "Actualizar" : "Crear"}</BtnAccent>
           </div>
         </div>

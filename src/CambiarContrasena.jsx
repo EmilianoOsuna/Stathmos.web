@@ -10,7 +10,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
-import { Icon, Input, Button } from "./components/UIPrimitives";
+import { Icon, Input, Button, Card } from "./components/UIPrimitives";
 
 // ─── Logo (reutilizado del Login) ─────────────────────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -177,20 +177,14 @@ export default function CambiarContrasena() {
   const handleKey = (e) => { if (e.key === "Enter") handleSubmit(); };
 
   const bg    = darkMode ? "bg-[#18181f]"                         : "bg-gray-100";
-  const card  = darkMode ? "bg-[#1e1e27] border-zinc-800"         : "bg-white border-gray-200";
   const label = darkMode ? "text-zinc-500"                        : "text-gray-400";
-  const inputBase = darkMode
-    ? "border-zinc-700 text-zinc-200 placeholder-zinc-600 focus:border-[#60aebb]"
-    : "border-gray-300 text-gray-800 placeholder-gray-400 focus:border-[#60aebb]";
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center ${bg} transition-colors duration-300`}>
-      <div
-        className={`w-full max-w-sm mx-4 rounded-xl border ${card} p-8 flex flex-col`}
-        style={{
-          boxShadow: darkMode ? "0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset" : "0 4px 24px rgba(0,0,0,0.10)",
-          minHeight: "420px"
-        }}
+      <Card
+        darkMode={darkMode}
+        className="w-full max-w-sm mx-4 p-8 flex flex-col"
+        style={{ minHeight: "420px" }}
       >
         <div className="flex flex-col items-center gap-1 mb-8">
           <Logo className="w-44 h-auto" darkMode={darkMode} />
@@ -279,15 +273,15 @@ export default function CambiarContrasena() {
 
               <Button
                 onClick={handleSubmit} disabled={saving}
-                variant="destructive"
-                className="w-full py-2.5 shadow-[0_2px_10px_rgba(219,60,28,0.25)] hover:opacity-90 transition-all"
+                variant="accent"
+                className="w-full"
               >
                 {saving ? "Guardando..." : "Actualizar Contraseña"}
               </Button>
             </div>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

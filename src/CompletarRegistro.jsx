@@ -10,7 +10,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "./supabase";
-import { Icon, Input, Button } from "./components/UIPrimitives";
+import { Icon, Input, Button, Card } from "./components/UIPrimitives";
 
 // ─── Logo (reutilizado del Login) ─────────────────────────────────────────────
 const Logo = ({ className = "", darkMode }) => (
@@ -105,10 +105,19 @@ export default function CompletarRegistro() {
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState("");
   const [clienteNombre, setClienteNombre] = useState("");
-  const [sessionReady, setSessionReady] = useState(false);
 
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
   const [darkMode]  = useState(prefersDark);
+
+  const loadClienteNombre = async (session) => {
+    // Buscar el nombre del cliente por correo
+    const { data } = await supabase
+      .from("clientes")
+      .select("nombre")
+      .eq("correo", session.user.email)
+      .maybeSingle();
+    if (data?.nombre) setClienteNombre(data.nombre.split(" ")[0]); // Solo primer nombre
+  };
 
   // ── Verificar que existe sesión activa (del magic link) ───────────────────
   useEffect(() => {
@@ -136,7 +145,6 @@ export default function CompletarRegistro() {
         }
 
         await loadClienteNombre(data.session);
-        setSessionReady(true);
         setPhase("form");
 
         // 4. Limpiar el hash de la URL para que no se reutilice
@@ -148,7 +156,6 @@ export default function CompletarRegistro() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         await loadClienteNombre(session);
-        setSessionReady(true);
         setPhase("form");
       } else {
         setPhase("error");
@@ -157,16 +164,6 @@ export default function CompletarRegistro() {
 
     init();
   }, []);
-
-  const loadClienteNombre = async (session) => {
-    // Buscar el nombre del cliente por correo
-    const { data } = await supabase
-      .from("clientes")
-      .select("nombre")
-      .eq("correo", session.user.email)
-      .maybeSingle();
-    if (data?.nombre) setClienteNombre(data.nombre.split(" ")[0]); // Solo primer nombre
-  };
 
   // ── Guardar contraseña y completar registro ───────────────────────────────
   const handleSubmit = async () => {
@@ -203,11 +200,7 @@ export default function CompletarRegistro() {
 
   // ── Estilos ───────────────────────────────────────────────────────────────
   const bg    = darkMode ? "bg-[#18181f]"                         : "bg-gray-100";
-  const card  = darkMode ? "bg-[#1e1e27] border-zinc-800"         : "bg-white border-gray-200";
   const label = darkMode ? "text-zinc-500"                        : "text-gray-400";
-  const inputBase = darkMode
-    ? "border-zinc-700 text-zinc-200 placeholder-zinc-600 focus:border-[#60aebb]"
-    : "border-gray-300 text-gray-800 placeholder-gray-400 focus:border-[#60aebb]";
 
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center ${bg} transition-colors duration-300`}>
@@ -219,9 +212,9 @@ export default function CompletarRegistro() {
         .reg-card { animation: cardIn 0.45s cubic-bezier(0.22,1,0.36,1) both; }
       `}</style>
 
-      <div
-        className={`reg-card w-full max-w-sm mx-4 rounded-xl border ${card} p-8 flex flex-col items-center gap-6`}
-        style={{ boxShadow: darkMode ? "0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset" : "0 4px 24px rgba(0,0,0,0.10)" }}
+      <Card
+        darkMode={darkMode}
+        className="reg-card w-full max-w-sm mx-4 p-8 flex flex-col items-center gap-6"
       >
         {/* Logo */}
         <div className="flex flex-col items-center gap-1">
@@ -336,7 +329,7 @@ export default function CompletarRegistro() {
               onClick={handleSubmit}
               disabled={saving || !password || !confirm}
               variant="primary"
-              className="w-full mt-1 py-2.5 shadow-[0_2px_10px_rgba(96,174,187,0.25)]"
+              className="w-full mt-1"
             >
               {saving ? "Guardando…" : "Activar mi cuenta"}
             </Button>
@@ -349,7 +342,7 @@ export default function CompletarRegistro() {
         )}
 
         <p className={`text-xs -mt-1 ${label}`}>Taller Mecánico Don Elías © 2026</p>
-      </div>
+      </Card>
     </div>
   );
 }

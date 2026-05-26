@@ -140,7 +140,6 @@ export default function MecanicoDiagnosticosModule({ darkMode = false, session =
     return colors[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-500 border-gray-200");
   };
 
-  const bgInput = darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900";
   const bgCard = darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200";
   const textPrimary = darkMode ? "text-zinc-100" : "text-gray-800";
   const textSecondary = darkMode ? "text-zinc-500" : "text-gray-500";

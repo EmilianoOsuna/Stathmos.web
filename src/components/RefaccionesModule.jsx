@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import supabase from "../supabase";
 import useSupabaseRealtime from "../hooks/useSupabaseRealtime";
-import { Icon, Input, Select, Textarea, Button } from "./UIPrimitives";
+import { Icon, Input, Select, Textarea, Button, Card, ModuleHeader } from "./UIPrimitives";
 
 const C_BLUE = "#60aebb";
 
@@ -265,20 +265,15 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className={`text-lg font-semibold ${t}`}>Refacciones</h2>
-          <p className={`text-xs ${st} mt-0.5`}>{refacciones.length} refacciones</p>
-        </div>
-        {!readOnly && (
-          <Button
-            onClick={openCreate}
-            variant="secondary"
-          >
-            + Agregar refaccion
-          </Button>
+      <ModuleHeader
+        title="Refacciones"
+        count={refacciones.length}
+        countLabel="refacciones"
+        darkMode={darkMode}
+        action={!readOnly && (
+          <Button onClick={openCreate}>+ Agregar refaccion</Button>
         )}
-      </div>
+      />
 
       {status.message && (
         <div
@@ -297,7 +292,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
       )}
 
       {!readOnly && showForm && (
-        <div className={`rounded-xl border p-4 mb-5 ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
+        <Card darkMode={darkMode} className="p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className={`text-sm font-semibold ${t}`}>{editTarget ? "Editar Refaccion" : "Nueva Refaccion"}</h3>
             <Button
@@ -369,7 +364,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
           >
             {saving ? "Guardando..." : editTarget ? "Actualizar" : "Crear"}
           </Button>
-        </div>
+        </Card>
       )}
 
       {confirmOpen && (
@@ -421,7 +416,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
         />
       </div>
 
-      <div className={`rounded-xl border overflow-hidden ${darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200"}`}>
+      <Card darkMode={darkMode} className="overflow-hidden">
         {loading ? (
           <div className={`p-12 text-center ${st} text-sm`}>Cargando...</div>
         ) : filtered.length === 0 ? (
@@ -521,7 +516,7 @@ export default function RefaccionesModule({ darkMode, readOnly = false, allowSto
             ))}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

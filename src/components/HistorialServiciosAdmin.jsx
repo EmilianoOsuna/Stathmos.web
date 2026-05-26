@@ -26,6 +26,7 @@ export default function HistorialServiciosAdmin({
   const [searchType, setSearchType] = useState(initialSearchType);
   const [servicios, setServicios] = useState([]);
   const [loading, setLoading] = useState(false);
+
   const [expandedServicio, setExpandedServicio] = useState(null);
   const [fotos, setFotos] = useState({});
   const [loadingFotos, setLoadingFotos] = useState({});
@@ -244,15 +245,6 @@ export default function HistorialServiciosAdmin({
     return true;
   });
 
-  const getLatestCotizacion = (cotizaciones = []) => {
-    if (!Array.isArray(cotizaciones) || !cotizaciones.length) return null;
-    return [...cotizaciones].sort((a, b) => {
-      const ad = new Date(a?.created_at || a?.fecha_emision || 0).getTime();
-      const bd = new Date(b?.created_at || b?.fecha_emision || 0).getTime();
-      return bd - ad;
-    })[0];
-  };
-
   const cleanHallazgosText = (value = "") =>
     String(value)
       .split("\n")
@@ -287,7 +279,7 @@ export default function HistorialServiciosAdmin({
       : [];
     const cotizacionInicial = cotizacionesOrdenadas[0] || null;
     const cotizacionFinal = cotizacionesOrdenadas[cotizacionesOrdenadas.length - 1] || null;
-    const utilidadColor = "#059669";
+
 
     const diagnosticoInicial = Array.isArray(servicio.diagnosticos)
       ? servicio.diagnosticos.find((d) => d.tipo === "inicial")
@@ -585,14 +577,6 @@ export default function HistorialServiciosAdmin({
     }
   };
 
-  const estados = [
-    { value: "todos", label: "Todos" },
-    { value: "activo", label: "Activo" },
-    { value: "en_progreso", label: "En Progreso" },
-    { value: "terminado", label: "Terminado" },
-    { value: "entregado", label: "Entregado" },
-    { value: "cancelado", label: "Cancelado" },
-  ];
 
   const estadoColor = (estado) => {
     const colors = {
@@ -606,7 +590,7 @@ export default function HistorialServiciosAdmin({
     return colors[estado] || (darkMode ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-gray-100 text-gray-500 border-gray-200");
   };
 
-  const bgInput = darkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900";
+
   const bgCard = darkMode ? "bg-[#1e1e28] border-zinc-800" : "bg-white border-gray-200";
   const textPrimary = darkMode ? "text-zinc-100" : "text-gray-800";
   const textSecondary = darkMode ? "text-zinc-500" : "text-gray-500";
@@ -617,7 +601,11 @@ export default function HistorialServiciosAdmin({
 
       {/* Resultados */}
       <div className="px-4 md:px-6 pb-6">
-        {serviciosFiltrados.length === 0 ? (
+        {loading ? (
+          <div className={`text-center py-12 rounded-lg border ${bgCard}`}>
+            <p className={`text-sm ${textSecondary}`}>Cargando servicios...</p>
+          </div>
+        ) : serviciosFiltrados.length === 0 ? (
           <div className={`text-center py-12 rounded-lg border ${bgCard}`}>
             <p className={`text-sm ${textSecondary}`}>
               {servicios.length === 0
@@ -844,8 +832,8 @@ export default function HistorialServiciosAdmin({
                                 </div>
                               </div>
                               {Array.isArray(cot.cotizacion_items) && cot.cotizacion_items.length > 0 && (
-                                <div className="mb-3 overflow-x-auto">
-                                  <table className="w-full text-sm">
+                                <div className="mb-3">
+                                  <table className="hidden md:table w-full text-sm">
                                     <thead>
                                       <tr className={`border-b ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
                                         <th className={`text-left py-2 px-2 ${textSecondary}`}>Descripción</th>
@@ -865,6 +853,21 @@ export default function HistorialServiciosAdmin({
                                       ))}
                                     </tbody>
                                   </table>
+
+                                  <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 space-y-2">
+                                    {cot.cotizacion_items.map((item, i) => (
+                                      <div key={item.id || i} className="py-2 flex flex-col gap-1">
+                                        <div className="flex justify-between items-start">
+                                          <p className={`text-xs font-medium ${textPrimary}`}>{item.descripcion}</p>
+                                          <p className={`text-xs font-semibold ${textPrimary}`}>${Number(item.subtotal || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div className="flex justify-between text-[11px] text-zinc-500">
+                                          <p>Cantidad: {item.cantidad}</p>
+                                          <p>Precio: ${Number(item.precio_unit || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                               <div className={`pt-3 border-t ${darkMode ? "border-zinc-700" : "border-gray-200"} space-y-1`}>
@@ -950,7 +953,7 @@ export default function HistorialServiciosAdmin({
                       <div className="mb-6">
                         <h4 className={`font-semibold ${textPrimary} mb-3`}>Refacciones Utilizadas</h4>
                         <div className={`rounded border overflow-hidden ${darkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                          <table className="w-full text-sm">
+                          <table className="hidden md:table w-full text-sm">
                             <thead className={darkMode ? "bg-zinc-800" : "bg-gray-50"}>
                               <tr>
                                 <th className={`text-left py-2 px-3 ${textSecondary}`}>Refacción</th>
@@ -973,6 +976,26 @@ export default function HistorialServiciosAdmin({
                               ))}
                             </tbody>
                           </table>
+
+                          <div className="md:hidden divide-y divide-zinc-800/10 dark:divide-zinc-800 p-3 space-y-2">
+                            {servicio.proyecto_refacciones.map((r) => (
+                              <div key={r.id} className="py-2 flex flex-col gap-1">
+                                <div className="flex justify-between items-start">
+                                  <p className={`text-xs font-medium ${textPrimary}`}>
+                                    {r.refacciones?.nombre || "—"}
+                                    {r.refacciones?.numero_parte && <span className="block text-[10px] text-zinc-500">#{r.refacciones.numero_parte}</span>}
+                                  </p>
+                                  <p className={`text-xs font-semibold ${textPrimary}`}>
+                                    ${(Number(r.precio_unitario || 0) * Number(r.cantidad || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div className="flex justify-between text-[11px] text-zinc-500">
+                                  <p>Cantidad: {r.cantidad}</p>
+                                  <p>Precio unitario: ${Number(r.precio_unitario || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}

@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --color-primary: #60aebb;
+  --color-accent: #db3c1c;
+}
+
+:root {
+  --color-primary-shadow: rgba(96, 174, 187, 0.3);
+  --color-accent-shadow: rgba(219, 60, 28, 0.3);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
 input:-webkit-autofill {
     -webkit-background-clip: text;
     -webkit-text-fill-color: #1f2937; /* dark text for light mode */

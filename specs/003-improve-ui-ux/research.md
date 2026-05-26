@@ -1,24 +1,16 @@
-# Research and Decisions: Sistema de Dise√±o y Optimizaci√≥n UI/UX
+# Research: UI/UX Refactor & Mobile Optimization
 
-## 1. Centralizaci√≥n de CSS y Tokens de Dise√±o
+## Area 1: CSS Variables integration with Tailwind CSS V4
+**Decision**: Utilizar variables CSS nativas mapeadas con la directiva @theme de Tailwind V4 en index.css.
+**Rationale**: Tailwind v4 simplifica enormemente el uso de variables CSS. Podemos declarar nuestras variables en la raÌz (ej. --color-primary) y exponerlas a las clases de utilidad nativa a travÈs del bloque @theme. Esto asegura un sistema de diseÒo centralizado sin desaprovechar el motor de utilidades de Tailwind.
+**Alternatives considered**: Usar un archivo de configuraciÛn separado 	ailwind.config.js (cl·sico de v3). Sin embargo, vemos que ya se est· usando v4 (@import "tailwindcss" en index.css), por lo que aprovechar CSS nativo y @theme es la opciÛn m·s limpia.
 
-* **Decision**: Utilizar variables CSS nativas centralizadas dentro de la directiva `@theme` de Tailwind CSS v4.2.1 en `src/index.css`.
-* **Rationale**: En Tailwind v4, cualquier variable definida dentro del bloque `@theme` se expone autom√°ticamente como una variable de CSS nativa (e.g., `--color-primary`) y al mismo tiempo genera las clases correspondientes de Tailwind (e.g., `bg-primary`). Esto satisface la preferencia por variables CSS nativas sin perder la potencia y velocidad de desarrollo de Tailwind.
-* **Alternatives considered**:
-  * *Valores hardcoded*: Mantener colores en hexadecimal directamente en cada componente. Rechazado por violar los principios de consistencia y dificultar el mantenimiento del modo oscuro.
-  * *JavaScript Theme Config*: Configuraci√≥n cl√°sica a trav√©s de un objeto JS. Rechazado porque Tailwind v4 prefiere la configuraci√≥n declarativa en CSS y la compilaci√≥n es m√°s eficiente usando CSS nativo.
+## Area 2: PatrÛn Responsive para Tablas
+**Decision**: TransiciÛn autom·tica de Tablas <table/> orientadas a escritorio hacia Interfaces basadas en Tarjetas (<Card/>) en contenedores Grid o flex para max-width: 768px. Ocultar elemento de encabezado nativo (<thead/>) y renderizar contenido individual de fila como un bloque completo con etiquetas para cada columna.
+**Rationale**: Las tablas densas desbordan pantallas de mÛviles (scroll X), lo que va en contra del criterio de Èxito SC-002 y la usabilidad mÛvil.  
+**Alternatives considered**: Hacer la tabla scrolleable solo horizontalmente. Descartado porque rompe la experiencia de toque mÛvil (preferencia de swipe vertical sobre horizontal).  
 
-## 2. Integraci√≥n de la Familia Tipogr√°fica (Inter)
-
-* **Decision**: Cargar la tipograf√≠a Inter desde Google Fonts utilizando etiquetas `<link>` de preconexi√≥n en `index.html` y declararla como la tipograf√≠a base en `src/index.css`.
-* **Rationale**: La carga por CDN con preconexi√≥n minimiza el retardo en el renderizado inicial de la p√°gina (FOIT/FONT) y asegura que los navegadores m√≥viles descarguen r√°pidamente los pesos requeridos (300, 400, 500, 600, 700).
-* **Alternatives considered**:
-  * *Self-hosting de fuentes*: Descargar los archivos `.woff2` e importarlos localmente. Rechazado por a√±adir peso de assets al paquete de la PWA innecesariamente y requerir mayor esfuerzo de configuraci√≥n.
-
-## 3. Adaptabilidad M√≥vil para Tablas Densas (Citas y M√≥dulos de Historial/Reportes)
-
-* **Decision**: Implementar el patr√≥n de renderizado condicional responsivo: ocultar la estructura `<table>` tradicional en dispositivos m√≥viles (`hidden md:table` o `hidden md:block` para su contenedor) y renderizar en su lugar una lista vertical de tarjetas (`md:hidden` con flex/grid) con √°reas de click ampliadas.
-* **Rationale**: Las tarjetas responsivas eliminan el scroll horizontal en dispositivos m√≥viles de menos de 768px, alinean la experiencia t√°ctil con los tama√±os objetivos de 44x44px y se adaptan a la lectura vertical natural en tel√©fonos celulares.
-* **Alternatives considered**:
-  * *Contenedores con scroll horizontal (`overflow-x-auto`)*: Mantener la tabla y dejar que el usuario se desplace lateralmente. Rechazado porque la usabilidad m√≥vil se ve gravemente afectada al tener scroll bidireccional y celdas dif√≠ciles de tocar con precisi√≥n.
-  * *Ocultar columnas menos importantes*: Mostrar solo 2 o 3 columnas en m√≥vil. Rechazado porque en un entorno operativo de taller, los mec√°nicos y administradores necesitan ver toda la informaci√≥n de la cita/servicio (veh√≠culo, cliente, estado, etc.) en su dispositivo.
+## Area 3: Calendario Mobile-Friendly
+**Decision**: Adaptar la vista del mÛdulo CitasModule.jsx utilizando CSS Grid para crear una vista mensual compacta, asegurando botones y acciones t·ctiles mediante clases como h-11 w-11 (min 44x44px, SC-003). Cambiar vista apilada verticalmente o carrusel ligero de dÌas y eventos para mobile por debajo de los breakpoints est·ndares de Tailwind (md:). 
+**Rationale**: Los usuarios mÛviles necesitan interactuar eficientemente sin roturas visuales (Requirement FR-007).
+**Alternatives considered**: Cargar un calendario de terceros; descartado para evitar inflar el bundle de dependencias (react, framer-motion ya presentes, podemos hacer UI local).
