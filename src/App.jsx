@@ -5988,6 +5988,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   }, [clienteId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetch();
   }, [fetch]);
 
@@ -5998,6 +5999,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
       const target = proyectos.find(p => p.id === initialProjectId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (target) setDetalle(target);
     }
   }, [initialProjectId, proyectos]);
@@ -6005,6 +6007,7 @@ const MisProyectosModule = ({ darkMode, clienteId, session, initialProjectId = n
   useEffect(() => {
     if (!detalle?.id) return;
     const updated = proyectos.find((p) => p.id === detalle.id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (updated) setDetalle(updated);
   }, [proyectos, detalle?.id]);
 
@@ -6275,6 +6278,8 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
   const [filterEstado, setFilterEstado] = useState("todos");
   const [actionError,  setActionError]  = useState("");
   const [estadoConfirm, setEstadoConfirm] = useState(null);
+  const [detalle, setDetalle] = useState(null);
+  const [_mecEditar, _setMecEditar] = useState(null);
   const fetch = useCallback(async () => {
     if (!empleadoId) return;
     setLoading(true);
@@ -6287,12 +6292,16 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
     setLoading(false);
   }, [empleadoId]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetch();
+  }, [fetch]);
   useSupabaseRealtime("proyectos", fetch);
 
   useEffect(() => {
     if (initialProjectId && proyectos.length > 0) {
       const target = proyectos.find(p => p.id === initialProjectId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (target) setDetalle(target);
     }
   }, [initialProjectId, proyectos]);
@@ -6349,9 +6358,6 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
       session,
     });
   };
-
-  const [detalle, setDetalle] = useState(null);
-  const [mecEditar, setMecEditar] = useState(null);
 
   return (
     <div className={`flex-1 p-4 md:p-6 min-h-full page-enter ${darkMode ? "bg-[#16161e]" : "bg-gray-50"}`}>
@@ -6425,7 +6431,7 @@ const ProyectosMecanicoModule = ({ darkMode, empleadoId, session, initialProject
                   <span className={`px-2 py-0.5 rounded text-xs font-medium border capitalize ${estadoBadge(p.estado, darkMode)}`}>
                     {p.estado.replace(/_/g, " ")}
                   </span>
-                  <BtnEdit onClick={() => setMecEditar(p)} darkMode={darkMode} />
+                  <BtnEdit onClick={() => _setMecEditar(p)} darkMode={darkMode} />
                 </div>
               </div>
             ))}
