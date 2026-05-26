@@ -54,7 +54,6 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 **Acceptance Scenarios**:
 
 1. **Given** una pantalla móvil de menos de 768px, **When** se visualiza cualquier tabla de datos (ej. diagnósticos o citas), **Then** la información se colapsa en un layout responsivo tipo tarjeta (cards) en lugar de una tabla horizontal ancha.
-2. **Given** un dispositivo móvil, **When** el usuario interactúa con el calendario de citas, **Then** el calendario se redimensiona y adapta correctamente sin desbordar los límites de la pantalla, manteniendo interactivos y visibles los controles de navegación.
 
 ## Requirements *(mandatory)*
 
@@ -66,7 +65,6 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 - **FR-004**: El sistema DEBE cargar y aplicar una familia tipográfica moderna uniforme, específicamente la tipografía Inter cargada vía Google Fonts.
 - **FR-005**: Los tokens de diseño (colores primarios, espaciados y sombras) DEBEN centralizarse mediante variables de CSS nativas en `index.css`.
 - **FR-006**: Las tablas de datos densas en pantallas móviles DEBEN optimizarse mediante la conversión a tarjetas responsivas independientes (cards).
-- **FR-007**: La visualización del calendario de citas DEBE redimensionarse y reorganizarse correctamente en dispositivos móviles (resoluciones < 768px), permitiendo realizar todas las acciones sin necesidad de scroll horizontal en la página.
 
 ### Key Entities
 
@@ -80,7 +78,6 @@ Como mecánico en el taller, quiero ver la aplicación en mi teléfono celular s
 - **SC-001**: El 100% de las interfaces de los módulos en `src/components/` utilizan los componentes primitivos centralizados de `UIPrimitives.jsx`.
 - **SC-002**: Ninguna vista de la aplicación presenta desbordamiento horizontal (scroll en eje X) en resoluciones superiores a 320px de ancho.
 - **SC-003**: Las áreas de interacción táctil (botones, inputs, selectores) en dispositivos móviles cumplen con un tamaño mínimo de 44x44 píxeles para asegurar su usabilidad.
-- **SC-004**: Los usuarios de dispositivos móviles pueden visualizar, crear y editar citas en el calendario en un 100% de la funcionalidad disponible en escritorio sin perder de vista los controles de navegación diarios ni causar roturas visuales.
 
 ## Assumptions
 
