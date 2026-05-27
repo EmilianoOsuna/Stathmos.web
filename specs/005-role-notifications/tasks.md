@@ -82,8 +82,22 @@
 
 - [x] T012 [P] [US1] Scope localStorage pushPromptDismissed key by userId in `src/components/PushPrompt.jsx` and pass it from `src/App.jsx`
 - [x] T013 [P] [US1] Implement background auto-subscription when Notification.permission is granted and active session is detected in `src/hooks/usePushNotifications.js`
-- [ ] T014 Deploy updated files, compile (`npm run build`), and push the Edge Function to production
-- [ ] T015 Perform manual validation scenarios in production using both Client and Administrator sessions to confirm push notifications arrive
+- [x] T014 Deploy updated files, compile (`npm run build`), and push the Edge Function to production
+- [X] T015 Perform manual validation scenarios in production using both Client and Administrator sessions to confirm push notifications arrive
+
+---
+
+## Phase 8: Matriz Extendida de Notificaciones (Priority: P2)
+
+**Goal**: Implementar y validar la matriz extendida de notificaciones útiles y de estándar de la industria para cada rol (Administrador, Mecánico, Cliente).
+
+**Independent Test**: Invocar la Edge Function para notificar a un Cliente sobre una acción administrativa (ej. "Pago recibido") y validar en los logs que es rechazada por discrepancia de rol.
+
+### Implementation for Phase 8
+
+- [x] T016 [P] [US3] Agregar reglas de validación en `getRequiredRole` dentro de `supabase/functions/enviar-notificacion/index.ts` para mapear "Cotización aceptada/rechazada" y "Alerta de inventario" al rol "administrador".
+- [x] T017 [P] [US3] Agregar reglas de validación en `getRequiredRole` dentro de `supabase/functions/enviar-notificacion/index.ts` para mapear "Refacciones disponibles" y "Cita asignada" al rol "mecanico".
+- [x] T018 [P] [US3] Agregar reglas de validación en `getRequiredRole` dentro de `supabase/functions/enviar-notificacion/index.ts` para mapear "Cita confirmada/rechazada", "Presupuesto disponible", "Vehículo listo para entrega" y "Pago pendiente" al rol "cliente".
 
 ---
 
@@ -92,7 +106,7 @@
 **Purpose**: Verificaciones de calidad, compilación y linter global final.
 
 - [x] T010 Run ESLint code check and verify project build (`npm run build`)
-- [ ] T011 Execute manual validation checklist defined in `specs/005-role-notifications/quickstart.md`
+- [X] T011 Execute manual validation checklist defined in `specs/005-role-notifications/quickstart.md`
 
 ---
 
@@ -106,7 +120,8 @@
   - User Story 1 (P1) should be done first to establish clean registration patterns.
   - User Story 2 and 3 can proceed in parallel once US1 is done.
   - Remediation (Phase 6) depends on User Stories 1, 2, and 3.
-- **Polish (Final Phase)**: Depends on all user stories and remediation being complete
+  - Matriz Extendida (Phase 8) depends on User Story 3 (Phase 5).
+- **Polish (Final Phase)**: Depends on all user stories, remediation and Phase 8 being complete
 
 ### Parallel Opportunities
 
