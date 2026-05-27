@@ -69,6 +69,78 @@ serve(async (req) => {
       );
     }
 
+    // T008: Fetch target user's role information
+    const { data: usuarioRoleData, error: roleError } = await supabaseAdmin
+      .from("usuarios")
+      .select(`
+        id,
+        roles (
+          nombre
+        )
+      `)
+      .eq("id", usuario_id)
+      .maybeSingle();
+
+    if (roleError) {
+      console.error(`Error al consultar el rol del usuario ${usuario_id}:`, roleError);
+    }
+
+    // Extraer y normalizar rol del destinatario
+    const rolesObject = usuarioRoleData?.roles;
+    let userRoleName = "";
+    if (rolesObject) {
+      if (Array.isArray(rolesObject)) {
+        userRoleName = rolesObject[0]?.nombre || "";
+      } else {
+        userRoleName = rolesObject.nombre || "";
+      }
+    }
+
+    const normalizeRole = (value: string = "") =>
+      value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const targetUserRole = normalizeRole(userRoleName);
+
+    // T009: Validation logic to verify user has the required role for the notification
+    const getRequiredRole = (title: string): string | null => {
+      const t = title.toLowerCase().trim();
+      if (t.includes("cita agendada") || t.includes("pago recibido")) {
+        return "administrador";
+      }
+      if (t.includes("proyecto asignado")) {
+        return "mecanico";
+      }
+      if (
+        t.includes("actualizacion de tu proyecto") ||
+        t.includes("proyecto finalizado") ||
+        t.includes("nuevas fotos") ||
+        t.includes("pago autorizado") ||
+        t.includes("diagnostico inicial") ||
+        t.includes("nueva observacion")
+      ) {
+        return "cliente";
+      }
+      return null;
+    };
+
+    const requiredRole = getRequiredRole(titulo);
+
+    if (requiredRole && targetUserRole !== requiredRole) {
+      console.warn(`[Role Validation Check] Envío abortado: La notificación "${titulo}" requiere el rol "${requiredRole}", pero el usuario destinatario "${usuario_id}" tiene el rol "${targetUserRole || "ninguno"}".`);
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          skipped: true, 
+          reason: `Role mismatch: notification requires "${requiredRole}" but user has "${targetUserRole || "none"}"` 
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
+    }
+
     // Guardar en la DB
     const { data: notificacion, error: insertError } = await supabaseAdmin
       .from("notificaciones")

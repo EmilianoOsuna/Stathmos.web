@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 // Custom hook para suscripción a cambios en tiempo real de Supabase
 import useSupabaseRealtime from "./hooks/useSupabaseRealtime";
+// Import para borrar la suscripción de push de la base de datos al cerrar sesión
+import { deletePushSubscription } from "./hooks/usePushNotifications";
 // Portal para renderizar componentes en el DOM (modales, tooltips, etc)
 import { createPortal } from "react-dom";
 // Router de React para navegación multi-página y gestión de rutas
@@ -4735,6 +4737,11 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
+    try {
+      await deletePushSubscription();
+    } catch (e) {
+      console.warn("Error al eliminar la suscripción push durante logout:", e);
+    }
     await supabase.auth.signOut();
     navigate("/login", { replace: true });
   };
