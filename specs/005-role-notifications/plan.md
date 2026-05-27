@@ -9,7 +9,8 @@ Implementar un aislamiento robusto de notificaciones push de navegador (Web Push
 El plan de diseño técnico consta de:
 1. **Unicidad de endpoints**: Modificar `usePushNotifications.js` para buscar y remover cualquier registro en `push_subscriptions` que contenga el mismo endpoint de navegador antes de registrar un nuevo usuario.
 2. **Cierre de sesión seguro**: Modificar `handleLogout` en `App.jsx` para realizar la baja de la suscripción push del navegador de forma asíncrona antes de invalidar la sesión del usuario.
-3. **Validación de roles en Edge Function**: Añadir validación de roles en la Edge Function `enviar-notificacion` para descartar envíos automáticos (como alertas de pago o citas) si el destinatario no cumple con el rol requerido.
+3. **Validación de roles en Edge Function**: Añadir validación de roles en la Edge Function `enviar-notificacion` para descartar envíos automáticos si el destinatario no cumple con el rol requerido.
+4. **Matriz de Notificaciones Extendida**: Registrar e implementar las reglas de validación para las nuevas notificaciones recomendadas del mercado en `enviar-notificacion/index.ts` (ej. "Cotización aceptada/rechazada", "Refacciones disponibles", "Cita confirmada/rechazada", "Presupuesto disponible", "Vehículo listo para entrega").
 
 ## Technical Context
 

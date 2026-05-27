@@ -12,6 +12,7 @@
 - Q: ¿A través de qué canal o componentes visuales de la aplicación te están llegando las notificaciones del administrador mientras estás en la sesión del cliente? → A: Solamente en las notificaciones push (ventanas emergentes del navegador); en la campana de notificaciones web solo aparecen las correspondientes a su rol (eso funciona de forma correcta).
 - Q: ¿Deberíamos registrar automáticamente la suscripción push en segundo plano si el usuario ya concedió permisos en el navegador y tiene una sesión activa? → A: Sí, registrar la suscripción automáticamente en segundo plano si el usuario tiene una sesión activa y los permisos del navegador ya están concedidos.
 - Q: ¿Cómo debemos almacenar el estado de descarte del prompt de notificaciones para evitar bloquear a otros usuarios en un mismo navegador? → A: Escopar el estado de descarte en localStorage utilizando el identificador único del usuario (`pushPromptDismissed_${userId}`).
+- Q: ¿Podemos usar la notificación de "Comprobante de pago subido"? No parece haber opción para que el cliente suba comprobantes de pago. → A: Tienes razón. La funcionalidad de subir archivos de comprobante de pago por el cliente no está en el alcance del sistema, por lo tanto se remueve de la matriz de notificaciones de administrador.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -74,6 +75,10 @@
 - **FR-005**: Si se detecta que el destinatario de una notificación de rol administrativo o de taller ya no posee dicho rol, la Edge Function DEBE omitir el envío y registrar el incidente en los logs.
 - **FR-006**: Si el usuario inicia sesión y el navegador ya cuenta con permisos de notificación concedidos (`granted`), el sistema DEBE registrar la suscripción push automáticamente en segundo plano sin requerir interacción manual del usuario.
 - **FR-007**: El estado de descarte del prompt de activación de notificaciones push DEBE ser específico para cada usuario, almacenándose en localStorage utilizando una clave escopada por su identificador único (ej: `pushPromptDismissed_${userId}`).
+- **FR-008**: El sistema DEBE soportar y validar el envío de notificaciones push específicas según la matriz de roles y utilidad del mercado:
+  - **Administrador**: "Nueva cita agendada", "Pago recibido", "Cotización aceptada/rechazada", "Alerta de inventario".
+  - **Mecánico**: "Nuevo proyecto asignado", "Refacciones disponibles", "Cita asignada".
+  - **Cliente**: "Actualización de tu proyecto", "Proyecto finalizado", "Nuevas fotos de tu vehículo", "Pago Autorizado", "Diagnóstico inicial registrado", "Nueva observación en tu proyecto", "Cita confirmada/rechazada", "Presupuesto disponible", "Vehículo listo para entrega", "Pago pendiente".
 
 ### Key Entities *(include if feature involves data)*
 

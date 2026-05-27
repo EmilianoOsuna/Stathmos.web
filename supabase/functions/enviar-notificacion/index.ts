@@ -108,10 +108,21 @@ serve(async (req) => {
     // T009: Validation logic to verify user has the required role for the notification
     const getRequiredRole = (title: string): string | null => {
       const t = title.toLowerCase().trim();
-      if (t.includes("cita agendada") || t.includes("pago recibido")) {
+      if (
+        t.includes("cita agendada") ||
+        t.includes("pago recibido") ||
+        t.includes("cotizacion aceptada") ||
+        t.includes("cotizacion rechazada") ||
+        t.includes("alerta de inventario")
+      ) {
         return "administrador";
       }
-      if (t.includes("proyecto asignado")) {
+      if (
+        t.includes("proyecto asignado") ||
+        t.includes("refacciones disponibles") ||
+        t.includes("refacciones listas") ||
+        t.includes("cita asignada")
+      ) {
         return "mecanico";
       }
       if (
@@ -120,7 +131,12 @@ serve(async (req) => {
         t.includes("nuevas fotos") ||
         t.includes("pago autorizado") ||
         t.includes("diagnostico inicial") ||
-        t.includes("nueva observacion")
+        t.includes("nueva observacion") ||
+        t.includes("cita confirmada") ||
+        t.includes("cita rechazada") ||
+        t.includes("presupuesto disponible") ||
+        t.includes("vehiculo listo para entrega") ||
+        t.includes("pago pendiente")
       ) {
         return "cliente";
       }
