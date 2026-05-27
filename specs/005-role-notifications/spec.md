@@ -10,6 +10,8 @@
 ### Session 2026-05-26
 
 - Q: ¿A través de qué canal o componentes visuales de la aplicación te están llegando las notificaciones del administrador mientras estás en la sesión del cliente? → A: Solamente en las notificaciones push (ventanas emergentes del navegador); en la campana de notificaciones web solo aparecen las correspondientes a su rol (eso funciona de forma correcta).
+- Q: ¿Deberíamos registrar automáticamente la suscripción push en segundo plano si el usuario ya concedió permisos en el navegador y tiene una sesión activa? → A: Sí, registrar la suscripción automáticamente en segundo plano si el usuario tiene una sesión activa y los permisos del navegador ya están concedidos.
+- Q: ¿Cómo debemos almacenar el estado de descarte del prompt de notificaciones para evitar bloquear a otros usuarios en un mismo navegador? → A: Escopar el estado de descarte en localStorage utilizando el identificador único del usuario (`pushPromptDismissed_${userId}`).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -67,9 +69,11 @@
 
 - **FR-001**: El sistema DEBE garantizar que un endpoint de suscripción push (`endpoint` de la carga útil del navegador) solo esté asociado a un único `usuario_id` en la tabla `push_subscriptions` a la vez.
 - **FR-002**: Durante el registro de notificaciones en `usePushNotifications.js`, el sistema DEBE eliminar cualquier registro de suscripción preexistente en la base de datos que comparta el mismo endpoint, antes de insertar la nueva asociación.
-- **FR-003**: Al ejecutar la acción de cierre de sesión (`handleLogout` en `App.jsx`), el sistema DEBE eliminar de forma segura la suscripción push asociada al navegador actual en la base de datos antes de invalidar la sesión.
+- **FR-003**: Al ejecutar la acción de cierre de sesión (`handleLogout` en `App.jsx`), el sistema DEBE eliminar de forma segura la suscripción push asociada al navegador actual en la base de datos antes de finalizar la sesión.
 - **FR-004**: La Edge Function `enviar-notificacion` DEBE verificar el rol del usuario destinatario antes de persistir o transmitir notificaciones push de carácter exclusivo (ej. avisos de pagos, citas nuevas).
 - **FR-005**: Si se detecta que el destinatario de una notificación de rol administrativo o de taller ya no posee dicho rol, la Edge Function DEBE omitir el envío y registrar el incidente en los logs.
+- **FR-006**: Si el usuario inicia sesión y el navegador ya cuenta con permisos de notificación concedidos (`granted`), el sistema DEBE registrar la suscripción push automáticamente en segundo plano sin requerir interacción manual del usuario.
+- **FR-007**: El estado de descarte del prompt de activación de notificaciones push DEBE ser específico para cada usuario, almacenándose en localStorage utilizando una clave escopada por su identificador único (ej: `pushPromptDismissed_${userId}`).
 
 ### Key Entities *(include if feature involves data)*
 

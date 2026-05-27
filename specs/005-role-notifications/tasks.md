@@ -68,9 +68,28 @@
 
 ---
 
-## Phase 6: Polish & Cross-Cutting Concerns
+## Phase 6: Remediation of Push Sync Gap & Auto-Subscription (Priority: P1)
 
-**Purpose**: Verificaciones de calidad, compilación y linter global.
+**Goal**: Asegurar que las suscripciones push de base de datos se sincronicen automáticamente en segundo plano cuando la sesión se inicie y el permiso ya sea 'granted', y separar por usuario el estado de descarte del prompt para que no bloquee otros usuarios en el mismo navegador.
+
+**Independent Test**:
+1. Iniciar sesión como Cliente y activar notificaciones.
+2. Cerrar sesión (debe eliminarse la suscripción de la base de datos).
+3. Iniciar sesión como Administrador en el mismo navegador. El sistema debe suscribir automáticamente al Administrador en segundo plano sin mostrar prompts de activación.
+4. Validar en la base de datos que se registró el token para el Administrador y que funciona la recepción de la notificación push de cita agendada.
+
+### Implementation for Remediation
+
+- [x] T012 [P] [US1] Scope localStorage pushPromptDismissed key by userId in `src/components/PushPrompt.jsx` and pass it from `src/App.jsx`
+- [x] T013 [P] [US1] Implement background auto-subscription when Notification.permission is granted and active session is detected in `src/hooks/usePushNotifications.js`
+- [ ] T014 Deploy updated files, compile (`npm run build`), and push the Edge Function to production
+- [ ] T015 Perform manual validation scenarios in production using both Client and Administrator sessions to confirm push notifications arrive
+
+---
+
+## Phase 7: Polish & Cross-Cutting Concerns
+
+**Purpose**: Verificaciones de calidad, compilación y linter global final.
 
 - [x] T010 Run ESLint code check and verify project build (`npm run build`)
 - [ ] T011 Execute manual validation checklist defined in `specs/005-role-notifications/quickstart.md`
@@ -86,11 +105,12 @@
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
   - User Story 1 (P1) should be done first to establish clean registration patterns.
   - User Story 2 and 3 can proceed in parallel once US1 is done.
-- **Polish (Final Phase)**: Depends on all user stories being complete
+  - Remediation (Phase 6) depends on User Stories 1, 2, and 3.
+- **Polish (Final Phase)**: Depends on all user stories and remediation being complete
 
 ### Parallel Opportunities
 
-- Tasks marked with `[P]` (T004, T006, T008) can be developed in parallel as they target different files.
+- Tasks marked with `[P]` (T004, T006, T008, T012, T013) can be developed in parallel as they target different files.
 
 ---
 
@@ -109,3 +129,4 @@
 2. Add User Story 1 -> Test -> Deploy (MVP!)
 3. Add User Story 2 -> Test -> Deploy
 4. Add User Story 3 -> Test -> Deploy
+5. Add Remediation -> Test -> Deploy (Complete Fix!)

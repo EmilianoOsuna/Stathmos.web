@@ -15,6 +15,50 @@ export function usePushNotifications() {
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
           setIsSubscribed(true);
+
+          // Asegurar que esté registrado en la DB para el usuario actual
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const subJson = subscription.toJSON();
+              const { data: existing } = await supabase
+                .from('push_subscriptions')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('subscription->>endpoint', subJson.endpoint)
+                .maybeSingle();
+
+              if (!existing) {
+                console.log('Suscripción activa en navegador pero ausente en DB para este usuario. Registrando...');
+                if (subJson.endpoint) {
+                  await supabase
+                    .from('push_subscriptions')
+                    .delete()
+                    .eq('subscription->>endpoint', subJson.endpoint);
+                }
+                await supabase
+                  .from('push_subscriptions')
+                  .insert({
+                    user_id: user.id,
+                    subscription: subJson
+                  });
+              }
+            }
+          } catch (err) {
+            console.warn('Error verificando/sincronizando suscripción en base de datos:', err);
+          }
+
+        } else if (Notification.permission === 'granted') {
+          // Si ya otorgó permisos pero la suscripción local se limpió (ej: tras un logout anterior)
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              console.log('Permisos otorgados previamente. Suscribiendo automáticamente en segundo plano...');
+              await subscribe();
+            }
+          } catch (e) {
+            console.warn('Error en auto-suscripción en segundo plano:', e);
+          }
         }
       });
     }

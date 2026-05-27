@@ -5,6 +5,7 @@ import { usePushNotifications } from '../hooks/usePushNotifications';
 
 export default function PushPrompt({
   appName = "Stathmos",
+  userId = null,
   bgColor = "bg-[#1E1E1E]",
   textColor = "text-white",
   accentColor = "text-[#60aebb]",
@@ -32,10 +33,16 @@ export default function PushPrompt({
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    localStorage.setItem('pushPromptDismissed', 'true');
+    if (userId) {
+      localStorage.setItem(`pushPromptDismissed_${userId}`, 'true');
+    } else {
+      localStorage.setItem('pushPromptDismissed', 'true');
+    }
   };
 
-  const hasPromptBeenDismissed = localStorage.getItem('pushPromptDismissed');
+  const hasPromptBeenDismissed = userId
+    ? localStorage.getItem(`pushPromptDismissed_${userId}`)
+    : localStorage.getItem('pushPromptDismissed');
   if (hasPromptBeenDismissed) return null;
 
   return (

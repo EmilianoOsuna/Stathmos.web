@@ -6732,6 +6732,7 @@ export default function App() {
       />}
       {session && <PushPrompt 
         appName="Stathmos"
+        userId={session.user.id}
         bgColor={darkMode ? "bg-[#1E1E1E]" : "bg-white"}
         textColor={darkMode ? "text-white" : "text-black"}
         buttonBgColor={darkMode ? "bg-white text-black hover:bg-gray-200" : "bg-black text-white hover:bg-gray-800"}
