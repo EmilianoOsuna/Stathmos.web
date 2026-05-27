@@ -2,7 +2,7 @@
 // Core React hooks para state management, lifecycle, performance optimization
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 // Custom hook para suscripción a cambios en tiempo real de Supabase
-import useSupabaseRealtime from "./hooks/useSupabaseRealtime";
+import useSupabaseRealtime, { cleanAllRealtimeChannels } from "./hooks/useSupabaseRealtime";
 // Import para borrar la suscripción de push de la base de datos al cerrar sesión
 import { deletePushSubscription } from "./hooks/usePushNotifications";
 // Portal para renderizar componentes en el DOM (modales, tooltips, etc)
@@ -4738,11 +4738,20 @@ const DashboardShell = ({ session, darkMode, navItems, activeModule, setActiveMo
 
   const handleLogout = async () => {
     try {
+      cleanAllRealtimeChannels();
+    } catch (e) {
+      console.warn("Error al limpiar canales realtime durante logout:", e);
+    }
+    try {
       await deletePushSubscription();
     } catch (e) {
       console.warn("Error al eliminar la suscripción push durante logout:", e);
     }
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Error al cerrar sesión en Supabase (signOut):", e);
+    }
     navigate("/login", { replace: true });
   };
 

@@ -94,11 +94,19 @@ export default function useSupabaseRealtime(table, callback) {
 
     // Cleanup and release channel when no component is listening anymore
     return () => {
+      if (!channelRegistry[table]) {
+        // Already cleaned up globally
+        return;
+      }
       entry.callbacks.delete(callbackRunner);
       entry.refCount--;
 
       if (entry.refCount <= 0) {
-        supabase.removeChannel(entry.channel);
+        try {
+          supabase.removeChannel(entry.channel);
+        } catch (e) {
+          console.warn(`Error removing channel for table ${table}:`, e);
+        }
         delete channelRegistry[table];
         if (debouncedDispatch[table]) {
           clearTimeout(debouncedDispatch[table]);
@@ -107,6 +115,26 @@ export default function useSupabaseRealtime(table, callback) {
       }
     };
   }, [table]);
+}
+
+/**
+ * Elimina y cancela todas las suscripciones a canales realtime activos.
+ * Debe ser invocado antes de cerrar sesión para evitar advertencias de conexión.
+ */
+export function cleanAllRealtimeChannels() {
+  Object.keys(channelRegistry).forEach((table) => {
+    const entry = channelRegistry[table];
+    if (entry) {
+      if (entry.channel) {
+        try {
+          supabase.removeChannel(entry.channel);
+        } catch (e) {
+          console.warn(`Error removing channel for table ${table} during global cleanup:`, e);
+        }
+      }
+      delete channelRegistry[table];
+    }
+  });
 }
 
 /**

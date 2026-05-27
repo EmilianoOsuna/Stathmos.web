@@ -19,7 +19,7 @@
 
 **Purpose**: Verify repository paths and status.
 
-- [ ] T001 Verify active branch `006-citas-fix` and setup planning details.
+- [x] T001 Verify active branch `006-citas-fix` and setup planning details.
 
 ---
 
@@ -27,7 +27,7 @@
 
 **Purpose**: Ensure the local development environment is configured.
 
-- [ ] T002 Verify local project dependencies and run `npm run dev` successfully.
+- [x] T002 Verify local project dependencies and run `npm run dev` successfully.
 
 ---
 
@@ -39,8 +39,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T003 Add `e.stopPropagation()` in the direct action buttons' `onClick` event handlers inside the appointment card container in [CitasModule.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/components/CitasModule.jsx).
-- [ ] T004 Manually test that clicking direct buttons triggers resolution and prevents the details modal from opening.
+- [x] T003 Add `e.stopPropagation()` in the direct action buttons' `onClick` event handlers inside the appointment card container in [CitasModule.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/components/CitasModule.jsx).
+- [x] T004 Manually test that clicking direct buttons triggers resolution and prevents the details modal from opening.
 
 ---
 
@@ -52,8 +52,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T005 Update the modal action rendering conditional block around line 1351 in [CitasModule.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/components/CitasModule.jsx) to ensure action buttons are hidden if `selectedCita.estado` is not `"pendiente"`.
-- [ ] T006 Verify modal action button conditional visibility for both pending and resolved appointments.
+- [x] T005 Update the modal action rendering conditional block around line 1351 in [CitasModule.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/components/CitasModule.jsx) to ensure action buttons are hidden if `selectedCita.estado` is not `"pendiente"`.
+- [x] T006 Verify modal action button conditional visibility for both pending and resolved appointments.
 
 ---
 
@@ -65,9 +65,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T007 [P] [US3] Refactor token verification in [resolver-cita/index.ts](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/supabase/functions/resolver-cita/index.ts) to verify authorization using a user-scoped client and `supabaseUser.auth.getUser()`.
-- [ ] T008 [P] [US3] Wrap `supabase.auth.signOut()` in a `try-catch` block inside `handleLogout` in [App.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/App.jsx).
-- [ ] T009 [US3] Deploy updated Edge Function and test user-scoped client token verification along with try-catch logout flow.
+- [x] T007 [P] [US3] Refactor token verification in [resolver-cita/index.ts](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/supabase/functions/resolver-cita/index.ts) to verify authorization using a user-scoped client and `supabaseUser.auth.getUser()`.
+- [x] T008 [P] [US3] Wrap `supabase.auth.signOut()` in a `try-catch` block inside `handleLogout` in [App.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/App.jsx).
+- [x] T009 [US3] Deploy updated Edge Function and test user-scoped client token verification along with try-catch logout flow.
 
 ---
 
@@ -79,10 +79,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T010 [P] [US4] Implement and export `cleanAllRealtimeChannels()` in [useSupabaseRealtime.js](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/hooks/useSupabaseRealtime.js) to unsubscribe and delete all registry channels.
-- [ ] T011 [US4] Add safety null-checks to the cleanup hook return block in [useSupabaseRealtime.js](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/hooks/useSupabaseRealtime.js) to avoid crashes if registry entries were deleted globally.
-- [ ] T012 [US4] Import `cleanAllRealtimeChannels` and invoke it in the `handleLogout` function in [App.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/App.jsx) before calling `signOut`.
-- [ ] T013 [US4] Validate that logging out does not output any `CHANNEL_ERROR` messages in the console.
+- [x] T010 [P] [US4] Implement and export `cleanAllRealtimeChannels()` in [useSupabaseRealtime.js](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/hooks/useSupabaseRealtime.js) to unsubscribe and delete all registry channels.
+- [x] T011 [US4] Add safety null-checks to the cleanup hook return block in [useSupabaseRealtime.js](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/hooks/useSupabaseRealtime.js) to avoid crashes if registry entries were deleted globally.
+- [x] T012 [US4] Import `cleanAllRealtimeChannels` and invoke it in the `handleLogout` function in [App.jsx](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/src/App.jsx) before calling `signOut`.
+- [x] T013 [US4] Validate that logging out does not output any `CHANNEL_ERROR` messages in the console.
 
 ---
 
@@ -90,7 +90,7 @@
 
 **Purpose**: Final verification of all functionalities.
 
-- [ ] T014 Execute full validation of [quickstart.md](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/specs/006-citas-fix/quickstart.md) tasks to ensure correct execution.
+- [x] T014 Execute full validation of [quickstart.md](file:///c:/Users/emiliano_osuna/Documents/TEC/INGENIERÍA%20DE%20SOFTWARE/Stathmos.web/specs/006-citas-fix/quickstart.md) tasks to ensure correct execution.
 
 ---
 

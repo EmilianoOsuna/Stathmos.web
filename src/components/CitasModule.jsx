@@ -953,14 +953,20 @@ export default function CitasModule({
                       <div className="mt-2 flex gap-2">
                         <button
                           disabled={saving}
-                          onClick={() => handleResolver(c.id, "aceptar")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolver(c.id, "aceptar");
+                          }}
                           className="px-2.5 py-1 rounded text-xs bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"
                         >
                           {role === "administrador" ? "Validar cita" : "Aceptar"}
                         </button>
                         <button
                           disabled={saving}
-                          onClick={() => handleResolver(c.id, "rechazar")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolver(c.id, "rechazar");
+                          }}
                           className="px-2.5 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                         >
                           Rechazar
